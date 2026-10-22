@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
         titlebox.addWidget(subtitle)
         head.addLayout(titlebox)
         head.addStretch()
-        badge = QLabel("●  Версия 0.2.2  ·  Mail.ru — только чтение")
+        badge = QLabel("●  Версия 0.2.3  ·  Mail.ru — только чтение")
         badge.setStyleSheet("color: #4278A7; background: #E6F1FC; padding: 10px; border-radius: 7px;")
         head.addWidget(badge)
         layout.addLayout(head)
@@ -255,7 +255,6 @@ class MainWindow(QMainWindow):
         toolbar.addStretch()
         self.mail_refresh = self.button("Обновить Mail.ru", lambda: self.mail_panel.sync())
         toolbar.addWidget(self.mail_refresh)
-        toolbar.addWidget(self.button("Демо-данные", self.demo))
         toolbar.addWidget(self.button("Зафиксировать план", self.freeze))
         toolbar.addWidget(self.button("Экспорт CSV", self.export))
         toolbar.addWidget(self.button("+ Мероприятие", self.add_event, primary=True))
@@ -517,15 +516,6 @@ class MainWindow(QMainWindow):
             count = self.store.freeze_day(day)
             self.reload()
             QMessageBox.information(self, "План сохранён", f"Зафиксировано мероприятий: {count}")
-        except Exception as exc:
-            error_box(self, exc)
-
-    def demo(self):
-        if QMessageBox.question(self, "Демонстрационный пример", "Добавить вымышленные мероприятия на выбранную дату? Только если дата пуста.") != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            self.store.seed_demo(self.selected_day())
-            self.reload()
         except Exception as exc:
             error_box(self, exc)
 

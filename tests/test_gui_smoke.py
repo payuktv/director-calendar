@@ -15,6 +15,10 @@ def test_main_window_can_be_created(tmp_path, monkeypatch):
     window = MainWindow(Store(tmp_path / "gui.db"))
     assert window.tabs.count() == 4
     assert window.table.rowCount() == 0
+    from PySide6.QtWidgets import QPushButton
+    assert not any("демо" in button.text().lower() for button in window.findChildren(QPushButton))
+    assert not hasattr(window, "demo")
+    assert not hasattr(window.store, "seed_demo")
     window.close()
 
 
