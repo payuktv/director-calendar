@@ -82,3 +82,87 @@ def test_partial_mail_result_is_not_presented_as_complete_success(tmp_path):
     assert "обновлён" not in window.mail_panel.status.text()
     assert store.get_setting("mail_last_sync") == "2026-10-21T10:00:00"
     window.close()
+
+
+def test_calendar_modes_search_source_filters_and_period_navigation(tmp_path):
+    from PySide6.QtCore import QDate
+    from PySide6.QtWidgets import QApplication
+    from director_control.storage import Store
+    from director_control.ui import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    store = Store(tmp_path / "modern.db")
+    first = store.create_event("Встреча команды", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
+    second = store.create_event("Mail event", "Работа", "2026-10-22T12:00:00", "2026-10-22T13:00:00",
+                                source="caldav", external_key="mail-modern-test")
+    window = MainWindow(store)
+    window.date_input.setDate(QDate(2026, 10, 22))
+    for mode, count in (("day", 1), ("week", 7), ("month", 42)):
+        window.set_view(mode)
+        assert len(window.calendar.days) == count
+    window.set_view("agenda")
+    assert window.table.rowCount() == 2
+    window.search.setText("КОМАНДЫ")
+    assert window.row_ids == [first]
+    window.search.clear()
+    window.show_manual.setChecked(False)
+    assert window.row_ids == [second]
+    window.show_manual.setChecked(True)
+    window.show_mail.setChecked(False)
+    assert window.row_ids == [first]
+    window.set_view("week")
+    window.shift_period(1)
+    assert window.selected_day() == "2026-10-29"
+    window.set_view("month")
+    window.shift_period(1)
+    assert window.selected_day() == "2026-11-29"
+    window.close()
+
+
+def test_event_inspector_and_quick_completion_preserve_plan_and_do_not_invent_fact(tmp_path):
+    from PySide6.QtCore import QDate
+    from PySide6.QtWidgets import QApplication
+    from director_control.storage import Store
+    from director_control.ui import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    store = Store(tmp_path / "inspector.db")
+    eid = store.create_event("Meeting", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
+    store.freeze_day("2026-10-22")
+    window = MainWindow(store)
+    window.date_input.setDate(QDate(2026, 10, 22))
+    window.select_event(eid)
+    assert window.inspector.title.text() == "Meeting"
+    window.mark_done()
+    event = store.get_event(eid)
+    assert event.status == "done" and event.actual_start is None
+    assert event.baseline_start == "2026-10-22T09:00:00"
+    window.show()
+    window.resize(1050, 720)
+    app.processEvents()
+    assert not window.inspector.isVisible()
+    assert window.calendar.hour_height == 52
+    window.close()
+
+
+def test_redesigned_dialog_preserves_mail_plan_and_accepts_local_comment(tmp_path):
+    from datetime import datetime
+    from PySide6.QtWidgets import QApplication
+    from director_control.storage import Store
+    from director_control.ui import EventDialog
+
+    app = QApplication.instance() or QApplication([])
+    store = Store(tmp_path / "dialog.db")
+    eid = store.create_event("Mail title", "Работа", "2026-10-22T09:00:15", "2026-10-22T10:00:15",
+                             source="caldav", external_key="dialog-test")
+    dialog = EventDialog(store, "2026-10-22", event=store.get_event(eid))
+    assert not dialog.title_input.isEnabled() and not dialog.start_input.isEnabled()
+    dialog.note_input.setText("Local comment")
+    dialog.save()
+    assert store.get_event(eid).current_start == "2026-10-22T09:00:15"
+    assert store.get_event(eid).note == "Local comment"
+    fresh = EventDialog(store, "2026-10-23", initial_start=datetime(2026, 10, 23, 11, 30))
+    assert fresh.start_input.dateTime().toString("HH:mm") == "11:30"
+    assert fresh.end_input.dateTime().toString("HH:mm") == "12:30"
+    dialog.close()
+    fresh.close()

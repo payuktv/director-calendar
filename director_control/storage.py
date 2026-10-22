@@ -286,6 +286,16 @@ class Store:
             """, (end, start, end, start, day)).fetchall()
             return [self._as_event(r) for r in rows]
 
+    def events_between(self, start: str, end: str) -> list[Event]:
+        """Include any current, baseline or actual interval overlapping [start, end)."""
+        validate_interval(start, end)
+        with self._connect() as con:
+            rows = con.execute("""SELECT * FROM events
+                WHERE (current_start<? AND current_end>?) OR (baseline_start<? AND baseline_end>?)
+                OR (actual_start<? AND actual_end>?) ORDER BY current_start, id""",
+                (end, start, end, start, end, start)).fetchall()
+            return [self._as_event(row) for row in rows]
+
     def coverage_for_day(self, day: str, start_hour: int = 7, end_hour: int = 19) -> dict:
         """Find uncovered intervals and simultaneous events in the CURRENT day schedule."""
         date.fromisoformat(day)
