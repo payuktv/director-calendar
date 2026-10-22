@@ -58,3 +58,23 @@ def test_mail_panel_syncs_in_background_and_updates_window(tmp_path, monkeypatch
     assert panel.password.text() == ""
     assert "test-only-password" not in store.path.read_bytes().decode("latin-1")
     window.close()
+
+
+def test_partial_mail_result_is_not_presented_as_complete_success(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from director_control.mail_calendar import CalendarSnapshot
+    from director_control.storage import Store
+    from director_control.ui import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    store = Store(tmp_path / "partial.db")
+    store.set_setting("mail_last_sync", "2026-10-21T10:00:00")
+    window = MainWindow(store)
+    snapshot = CalendarSnapshot("test", "2026-10-01T00:00:00", "2026-11-01T00:00:00", (),
+                                ("ресурс 3 из 20: calendar-data 404; GET 404",))
+    window.mail_panel.apply_snapshot(snapshot)
+    assert "частично" in window.mail_panel.status.text()
+    assert "недоступных записей 1" in window.mail_panel.status.text()
+    assert "обновлён" not in window.mail_panel.status.text()
+    assert store.get_setting("mail_last_sync") == "2026-10-21T10:00:00"
+    window.close()
