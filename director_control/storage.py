@@ -94,6 +94,8 @@ class Store:
 
     def _initialize(self) -> None:
         with self._connect() as con:
+            if con.execute("PRAGMA user_version").fetchone()[0] > 2:
+                raise ValueError("База создана более новой версией программы. Обнови приложение.")
             con.executescript("""
                 CREATE TABLE IF NOT EXISTS categories (
                     name TEXT PRIMARY KEY,
@@ -135,6 +137,18 @@ class Store:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS calendar_events (
+                    event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+                    calendar_key TEXT NOT NULL,
+                    uid TEXT NOT NULL,
+                    recurrence_id TEXT NOT NULL,
+                    missing INTEGER NOT NULL DEFAULT 0,
+                    cancelled INTEGER NOT NULL DEFAULT 0,
+                    all_day INTEGER NOT NULL DEFAULT 0,
+                    baseline_all_day INTEGER,
+                    local_status INTEGER NOT NULL DEFAULT 0
+                );
+                PRAGMA user_version=2;
             """)
             for name, color, track in DEFAULT_CATEGORIES:
                 con.execute("INSERT OR IGNORE INTO categories VALUES (?, ?, ?)", (name, color, track))
@@ -204,6 +218,9 @@ class Store:
         if not updates or not set(updates).issubset(allowed):
             raise ValueError("Недопустимые поля изменения")
         old = self.get_event(event_id)
+        if old.source == "caldav" and any(k in updates and updates[k] != getattr(old, k)
+                                          for k in ("title", "current_start", "current_end")):
+            raise ValueError("Название и плановое время импортированного события меняются в Mail.ru.")
         data = asdict(old)
         data.update(updates)
         if not str(data["title"]).strip():
@@ -222,10 +239,14 @@ class Store:
             columns = [f"{k}=?" for k in changes]
             con.execute(f"UPDATE events SET {', '.join(columns)}, updated_at=? WHERE id=?",
                         [data[k] for k in changes] + [now_iso(), event_id])
+            if "status" in changes or "actual_start" in changes or "actual_end" in changes:
+                con.execute("UPDATE calendar_events SET local_status=1 WHERE event_id=?", (event_id,))
             self._audit(con, event_id, str(data["title"]), "Изменение", changes)
 
     def delete_event(self, event_id: int) -> None:
         ev = self.get_event(event_id)
+        if ev.source == "caldav":
+            raise ValueError("Событием управляет Mail.ru. Отмени или удали его в исходном календаре.")
         if ev.baseline_start is not None:
             raise ValueError("Мероприятие входит в зафиксированный план. Вместо удаления укажи статус «Отменено».")
         with self._connect() as con:
@@ -242,6 +263,8 @@ class Store:
             con.execute("""UPDATE events SET baseline_start=current_start, baseline_end=current_end
                         WHERE substr(current_start,1,10)=? AND baseline_start IS NULL""", (day,))
             for row in ids:
+                con.execute("UPDATE calendar_events SET baseline_all_day=all_day WHERE event_id=?", (row["id"],))
+            for row in ids:
                 self._audit(con, row["id"], row["title"], "Фиксация плана", {"day": day})
             return len(ids)
 
@@ -251,11 +274,14 @@ class Store:
 
     def daily_events(self, day: str) -> list[Event]:
         date.fromisoformat(day)
+        start = f"{day}T00:00:00"
+        end = (date.fromisoformat(day) + timedelta(days=1)).isoformat() + "T00:00:00"
         with self._connect() as con:
             rows = con.execute("""
-                SELECT * FROM events WHERE substr(current_start,1,10)=? OR substr(baseline_start,1,10)=?
+                SELECT * FROM events WHERE (current_start<? AND current_end>?)
+                OR (baseline_start<? AND baseline_end>?)
                 ORDER BY CASE WHEN substr(current_start,1,10)=? THEN current_start ELSE baseline_start END, id
-            """, (day, day, day)).fetchall()
+            """, (end, start, end, start, day)).fetchall()
             return [self._as_event(r) for r in rows]
 
     def coverage_for_day(self, day: str, start_hour: int = 7, end_hour: int = 19) -> dict:
@@ -264,8 +290,10 @@ class Store:
         day_start = datetime.fromisoformat(f"{day}T{start_hour:02}:00:00")
         day_end = datetime.fromisoformat(f"{day}T{end_hour:02}:00:00")
         slots = []
+        metadata = self.calendar_info()
         for event in self.daily_events(day):
-            if event.current_start[:10] != day or event.status in {"cancelled", "moved"}:
+            if (event.status in {"cancelled", "moved"}
+                    or metadata.get(event.id, {}).get("all_day")):
                 continue
             start = max(day_start, datetime.fromisoformat(event.current_start))
             end = min(day_end, datetime.fromisoformat(event.current_end))
@@ -286,11 +314,13 @@ class Store:
         return {"gaps": gaps, "overlaps": overlaps}
 
     def day_summary(self, day: str) -> dict:
+        start = f"{day}T00:00:00"
+        end = (date.fromisoformat(day) + timedelta(days=1)).isoformat() + "T00:00:00"
         with self._connect() as con:
             rows = con.execute("""
                 SELECT e.*, c.track FROM events e JOIN categories c ON e.category=c.name
-                WHERE substr(e.current_start,1,10)=? OR substr(e.baseline_start,1,10)=?
-            """, (day, day)).fetchall()
+                WHERE (e.current_start<? AND e.current_end>?) OR (e.baseline_start<? AND e.baseline_end>?)
+            """, (end, start, end, start)).fetchall()
         planned = [r for r in rows if r["baseline_start"] and r["baseline_start"][:10] == day and r["track"]]
         uncontrolled = [r for r in rows if r["track"] == 0]
         unscheduled = [r for r in rows if r["track"] and (not r["baseline_start"] or r["baseline_start"][:10] != day)
@@ -308,12 +338,15 @@ class Store:
 
     def category_totals(self, day: str) -> list[tuple[str, int, int]]:
         totals: dict[str, list[int]] = {}
+        metadata = self.calendar_info()
+        start = f"{day}T00:00:00"
+        end = (date.fromisoformat(day) + timedelta(days=1)).isoformat() + "T00:00:00"
         for ev in self.daily_events(day):
             planned, fact = totals.setdefault(ev.category, [0, 0])
-            if ev.baseline_start and ev.baseline_start[:10] == day:
-                planned += minutes_between(ev.baseline_start, ev.baseline_end)
-            if ev.actual_start and ev.actual_start[:10] == day and ev.status in {"done", "partial"}:
-                fact += minutes_between(ev.actual_start, ev.actual_end)
+            if ev.baseline_start and not metadata.get(ev.id, {}).get("baseline_all_day"):
+                planned += max(0, minutes_between(max(start, ev.baseline_start), min(end, ev.baseline_end)))
+            if ev.actual_start and ev.status in {"done", "partial"}:
+                fact += max(0, minutes_between(max(start, ev.actual_start), min(end, ev.actual_end)))
             totals[ev.category] = [planned, fact]
         return sorted(((name, pair[0], pair[1]) for name, pair in totals.items()), key=lambda x: -x[1])
 
@@ -345,6 +378,74 @@ class Store:
         with sqlite3.connect(self.path) as src, sqlite3.connect(dest) as dst:
             src.backup(dst)
         return dest
+
+    def calendar_info(self) -> dict[int, dict]:
+        with self._connect() as con:
+            return {r["event_id"]: dict(r) for r in con.execute("SELECT * FROM calendar_events")}
+
+    def apply_calendar_snapshot(self, snapshot) -> dict[str, int]:
+        """Atomically upsert source data; baseline, local fact, category and notes survive."""
+        stats = {"added": 0, "updated": 0, "missing": 0}
+        seen = set()
+        # Validate before starting; on any failure the transaction also rolls back.
+        for event in snapshot.events:
+            validate_interval(event.start, event.end)
+            if event.key in seen:
+                raise ValueError("Повторный идентификатор события в ответе календаря")
+            seen.add(event.key)
+        with self._connect() as con:
+            con.execute("INSERT OR IGNORE INTO categories VALUES ('Mail.ru', '#55A7D9', 1)")
+            con.execute("INSERT OR IGNORE INTO categories VALUES ('Весь день (Mail.ru)', '#8B9EA4', 0)")
+            for event in snapshot.events:
+                row = con.execute("SELECT * FROM events WHERE external_key=?", (event.key,)).fetchone()
+                source_status = "cancelled" if event.cancelled else "pending"
+                if row is None:
+                    cur = con.execute("""INSERT INTO events
+                        (title, category, current_start, current_end, status, source, external_key, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, 'caldav', ?, ?, ?)""",
+                        (event.title, "Весь день (Mail.ru)" if event.all_day else "Mail.ru", event.start, event.end,
+                         source_status, event.key, now_iso(), now_iso()))
+                    event_id = cur.lastrowid
+                    con.execute("""INSERT INTO calendar_events
+                        (event_id, calendar_key, uid, recurrence_id, cancelled, all_day) VALUES (?, ?, ?, ?, ?, ?)""",
+                        (event_id, snapshot.calendar_key, event.uid, event.recurrence_id,
+                         int(event.cancelled), int(event.all_day)))
+                    self._audit(con, event_id, event.title, "Импорт Mail.ru", {"start": event.start, "end": event.end})
+                    stats["added"] += 1
+                else:
+                    event_id = row["id"]
+                    meta = con.execute("SELECT * FROM calendar_events WHERE event_id=?", (event_id,)).fetchone()
+                    if row["source"] != "caldav" or meta is None or meta["calendar_key"] != snapshot.calendar_key:
+                        raise ValueError("Конфликт источника календаря")
+                    status = row["status"] if meta["local_status"] else source_status
+                    changes = {k: {"было": row[k], "стало": v} for k, v in {
+                        "title": event.title, "current_start": event.start, "current_end": event.end,
+                        "status": status,
+                    }.items() if row[k] != v}
+                    if meta["missing"] or meta["cancelled"] != int(event.cancelled) or meta["all_day"] != int(event.all_day):
+                        changes["источник"] = {"missing": False, "cancelled": event.cancelled, "all_day": event.all_day}
+                    if changes:
+                        con.execute("""UPDATE events SET title=?, current_start=?, current_end=?, status=?, updated_at=?
+                            WHERE id=?""", (event.title, event.start, event.end, status, now_iso(), event_id))
+                        self._audit(con, event_id, event.title, "Обновление Mail.ru", changes)
+                        stats["updated"] += 1
+                    con.execute("UPDATE calendar_events SET missing=0, cancelled=?, all_day=? WHERE event_id=?",
+                                (int(event.cancelled), int(event.all_day), event_id))
+            # Absence in a bounded query does not prove deletion (e.g. moved outside the window).
+            rows = con.execute("""SELECT e.id, e.title, e.external_key FROM events e
+                JOIN calendar_events m ON m.event_id=e.id WHERE m.calendar_key=? AND m.missing=0
+                AND e.current_start>=? AND e.current_start<?""",
+                (snapshot.calendar_key, snapshot.start, snapshot.end)).fetchall()
+            for row in rows:
+                if row["external_key"] not in seen:
+                    con.execute("UPDATE calendar_events SET missing=1 WHERE event_id=?", (row["id"],))
+                    self._audit(con, row["id"], row["title"], "Нет в ответе Mail.ru", {"требует проверки": True})
+                    stats["missing"] += 1
+            con.execute("INSERT INTO settings VALUES ('mail_last_sync', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (now_iso(),))
+            stats["missing"] = con.execute("SELECT count(*) FROM calendar_events WHERE calendar_key=? AND missing=1",
+                                           (snapshot.calendar_key,)).fetchone()[0]
+        return stats
 
     def seed_demo(self, day: str) -> None:
         if self.daily_events(day) or self.is_frozen(day):

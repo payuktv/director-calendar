@@ -1,0 +1,225 @@
+"""Read-only CalDAV transport and iCalendar expansion. Never writes to the server."""
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
+from urllib.parse import urlsplit
+from xml.etree.ElementTree import Element, SubElement, tostring
+from zoneinfo import ZoneInfo
+
+import recurring_ical_events
+import requests
+from defusedxml.ElementTree import fromstring
+from icalendar import Calendar
+
+DAV = "DAV:"
+CALDAV = "urn:ietf:params:xml:ns:caldav"
+MAX_BYTES = 16 * 1024 * 1024
+MAX_OCCURRENCES = 20000
+
+
+class CalendarError(Exception):
+    """A user-safe error without response bodies, secrets or private calendar data."""
+
+
+@dataclass(frozen=True)
+class CalendarConfig:
+    url: str
+    username: str
+    timezone: str = "Europe/Moscow"
+
+    def validate(self) -> None:
+        p = urlsplit(self.url)
+        if (p.scheme != "https" or p.hostname != "calendar.mail.ru" or p.port not in (None, 443)
+                or p.username or p.password or p.query or p.fragment or not p.path.endswith("/")):
+            raise CalendarError("Укажи HTTPS-ссылку CalDAV с calendar.mail.ru, без параметров и с / в конце.")
+        if not self.username.strip() or "@" not in self.username:
+            raise CalendarError("Укажи полный адрес почты для входа.")
+        try:
+            ZoneInfo(self.timezone)
+        except (ValueError, KeyError):
+            raise CalendarError("Неизвестный часовой пояс.") from None
+
+    @property
+    def calendar_key(self) -> str:
+        # Account is part of identity: switching credentials must not mix calendar copies.
+        return hashlib.sha256((self.url + "\n" + self.username.lower()).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class RemoteEvent:
+    key: str
+    uid: str
+    recurrence_id: str
+    title: str
+    start: str
+    end: str
+    cancelled: bool = False
+    all_day: bool = False
+
+
+@dataclass(frozen=True)
+class CalendarSnapshot:
+    calendar_key: str
+    start: str
+    end: str
+    events: tuple[RemoteEvent, ...]
+
+
+def window_for_day(day: date) -> tuple[date, date]:
+    return day - timedelta(days=30), day + timedelta(days=91)
+
+
+def _aware(value: date | datetime, zone: ZoneInfo) -> datetime:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=zone) if value.tzinfo is None else value.astimezone(zone)
+    return datetime.combine(value, time.min, zone)
+
+
+def _identity(value: date | datetime, zone: ZoneInfo) -> str:
+    if not isinstance(value, datetime):
+        return "date:" + value.isoformat()
+    return _aware(value, zone).astimezone(UTC).isoformat(timespec="seconds")
+
+
+def parse_calendars(blobs: list[str], config: CalendarConfig, start: date, end: date) -> CalendarSnapshot:
+    """Parse the whole response before any database write. Bad series abort the snapshot."""
+    config.validate()
+    zone = ZoneInfo(config.timezone)
+    lower, upper = _aware(start, zone), _aware(end, zone)
+    if not lower < upper or (end - start).days > 366:
+        raise CalendarError("Диапазон синхронизации должен быть от 1 до 366 дней.")
+    merged = Calendar()
+    merged.add("version", "2.0")
+    components = {}
+    series = set()
+    try:
+        for blob in blobs:
+            cal = Calendar.from_ical(blob)
+            if cal.name != "VCALENDAR":
+                raise ValueError("Not a calendar")
+            for component in cal.subcomponents:
+                if component.name == "VTIMEZONE":
+                    merged.add_component(component)
+                elif component.name == "VEVENT":
+                    uid = str(component.get("UID", ""))
+                    if not uid or component.errors:
+                        raise ValueError("Invalid event")
+                    if any(field in component for field in ("RRULE", "RDATE", "RECURRENCE-ID")):
+                        series.add(uid)
+                    rid = component.decoded("RECURRENCE-ID", None)
+                    identity = (uid, _identity(rid, zone) if rid else "single")
+                    if identity in components and components[identity].to_ical() != component.to_ical():
+                        raise ValueError("Conflicting duplicate UID")
+                    components[identity] = component
+        for component in components.values():
+            rule = component.get("RRULE")
+            if rule and str(rule.get("FREQ", [""])[0]).upper() in {"SECONDLY", "MINUTELY"}:
+                raise CalendarError("Повторы каждую секунду или минуту пока не поддерживаются. Данные не изменены.")
+            # A TZID silently falling back to naive local time is unsafe.
+            for name in ("DTSTART", "DTEND", "RECURRENCE-ID"):
+                prop = component.get(name)
+                if prop is not None and prop.params.get("TZID"):
+                    dt = prop.dt
+                    if isinstance(dt, datetime) and dt.tzinfo is None:
+                        raise ValueError("Unknown TZID")
+            merged.add_component(component)
+        occurrences = recurring_ical_events.of(merged, keep_recurrence_attributes=True).between(lower, upper)
+        if len(occurrences) > MAX_OCCURRENCES:
+            raise ValueError("Too many occurrences")
+        events = {}
+        for component in occurrences:
+            uid = str(component["UID"])
+            dtstart = component.decoded("DTSTART")
+            dtend = component.decoded("DTEND", None)
+            all_day = isinstance(dtstart, date) and not isinstance(dtstart, datetime)
+            if dtend is None:
+                duration = component.decoded("DURATION", None)
+                if duration is None:
+                    if not all_day:
+                        raise ValueError("Timed event has no duration")
+                    duration = timedelta(days=1)
+                dtend = dtstart + duration
+            begin, finish = _aware(dtstart, zone), _aware(dtend, zone)
+            if finish <= begin:
+                raise ValueError("Invalid interval")
+            if begin >= upper or finish <= lower:
+                continue
+            rid = component.decoded("RECURRENCE-ID", dtstart) if uid in series else None
+            recurrence_id = _identity(rid, zone) if rid is not None else "single"
+            key = hashlib.sha256((config.calendar_key + "\n" + uid + "\n" + recurrence_id).encode()).hexdigest()
+            events[key] = RemoteEvent(
+                key=key, uid=uid, recurrence_id=recurrence_id,
+                title=(str(component.get("SUMMARY", "Без названия")).strip() or "Без названия")[:200],
+                start=begin.replace(tzinfo=None).isoformat(timespec="seconds"),
+                end=finish.replace(tzinfo=None).isoformat(timespec="seconds"),
+                cancelled=str(component.get("STATUS", "")).upper() == "CANCELLED", all_day=all_day,
+            )
+    except CalendarError:
+        raise
+    except Exception:
+        raise CalendarError("Не удалось разобрать события календаря. Данные не изменены; проверь формат и часовые пояса.") from None
+    return CalendarSnapshot(config.calendar_key, lower.replace(tzinfo=None).isoformat(timespec="seconds"),
+                            upper.replace(tzinfo=None).isoformat(timespec="seconds"), tuple(events.values()))
+
+
+def fetch_snapshot(config: CalendarConfig, password: str, start: date, end: date) -> CalendarSnapshot:
+    config.validate()
+    if not password:
+        raise CalendarError("Введи пароль внешнего приложения.")
+    zone = ZoneInfo(config.timezone)
+    if start >= end or (end - start).days > 366:
+        raise CalendarError("Недопустимый диапазон синхронизации.")
+    query = Element(f"{{{CALDAV}}}calendar-query")
+    prop = SubElement(query, f"{{{DAV}}}prop")
+    SubElement(prop, f"{{{CALDAV}}}calendar-data")
+    filtering = SubElement(query, f"{{{CALDAV}}}filter")
+    outer = SubElement(filtering, f"{{{CALDAV}}}comp-filter", name="VCALENDAR")
+    inner = SubElement(outer, f"{{{CALDAV}}}comp-filter", name="VEVENT")
+    SubElement(inner, f"{{{CALDAV}}}time-range", {
+        "start": _aware(start, zone).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ"),
+        "end": _aware(end, zone).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ"),
+    })
+    try:
+        with requests.Session() as session:
+            session.trust_env = False  # No ambient .netrc credentials or unexpected proxy credentials.
+            with session.request("REPORT", config.url, data=tostring(query, encoding="utf-8", xml_declaration=True),
+                                 headers={"Depth": "1", "Content-Type": "application/xml; charset=utf-8"},
+                                 auth=(config.username, password), timeout=(10, 45), allow_redirects=False,
+                                 stream=True) as response:
+                if response.status_code in (401, 403):
+                    raise CalendarError("Mail.ru отклонил доступ. Проверь логин, пароль приложения и права на календарь.")
+                if response.status_code != 207:
+                    raise CalendarError(f"Mail.ru вернул код {response.status_code}. Проверь ссылку и повтори позже.")
+                chunks, total = [], 0
+                for chunk in response.iter_content(65536):
+                    total += len(chunk)
+                    if total > MAX_BYTES:
+                        raise CalendarError("Ответ календаря слишком большой. Данные не изменены.")
+                    chunks.append(chunk)
+        root = fromstring(b"".join(chunks))
+        if root.tag != f"{{{DAV}}}multistatus":
+            raise CalendarError("Mail.ru вернул неожиданный формат. Данные не изменены.")
+        blobs = []
+        for result in root.findall(f"{{{DAV}}}response"):
+            direct_status = result.findtext(f"{{{DAV}}}status", "")
+            if direct_status and " 200 " not in direct_status:
+                raise CalendarError("Mail.ru вернул неполный ответ. Данные не изменены.")
+            found = False
+            for group in result.findall(f"{{{DAV}}}propstat"):
+                if " 200 " not in group.findtext(f"{{{DAV}}}status", ""):
+                    raise CalendarError("Не все события доступны. Данные не изменены.")
+                data = group.find(f"{{{DAV}}}prop/{{{CALDAV}}}calendar-data")
+                if data is not None and data.text:
+                    blobs.append(data.text)
+                    found = True
+            if not found:
+                raise CalendarError("Получен неполный ответ CalDAV. Данные не изменены.")
+        return parse_calendars(blobs, config, start, end)
+    except CalendarError:
+        raise
+    except requests.exceptions.RequestException:
+        raise CalendarError("Не удалось подключиться к Mail.ru. Проверь интернет; локальные данные сохранены.") from None
+    except Exception:
+        raise CalendarError("Не удалось прочитать ответ Mail.ru. Локальные данные не изменены.") from None
