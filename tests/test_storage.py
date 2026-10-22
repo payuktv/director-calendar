@@ -1,0 +1,136 @@
+from datetime import date
+
+import pytest
+
+from director_control.storage import Store, STATUSES
+
+
+@pytest.fixture
+def store(tmp_path):
+    return Store(tmp_path / "db" / "test.db")
+
+
+def make(store, day="2026-10-22", title="Плановое совещание", start="09:00", end="10:00"):
+    return store.create_event(title, "Совещания", f"{day}T{start}:00", f"{day}T{end}:00")
+
+
+def test_create_persists_and_is_initially_unplanned(store):
+    event_id = make(store)
+    assert store.get_event(event_id).title == "Плановое совещание"
+    assert store.daily_events("2026-10-22")[0].id == event_id
+    assert store.day_summary("2026-10-22")["planned"] == 0
+    assert store.day_summary("2026-10-22")["unplanned"] == 1
+
+
+def test_snapshot_is_immutable_after_reschedule(store):
+    eid = make(store)
+    assert store.freeze_day("2026-10-22") == 1
+    store.update_event(eid, current_start="2026-10-22T11:00:00", current_end="2026-10-22T12:00:00")
+    ev = store.get_event(eid)
+    assert ev.baseline_start == "2026-10-22T09:00:00"
+    assert ev.current_start == "2026-10-22T11:00:00"
+    with pytest.raises(ValueError, match="уже зафиксирован"):
+        store.freeze_day("2026-10-22")
+
+
+def test_recurrence_is_handled_as_distinct_occurrences(store):
+    a = make(store, "2026-10-22")
+    b = make(store, "2026-10-23")
+    store.freeze_day("2026-10-22")
+    store.freeze_day("2026-10-23")
+    store.update_event(a, status="done")
+    assert store.day_summary("2026-10-22")["done"] == 1
+    assert store.day_summary("2026-10-23")["done"] == 0
+    assert store.get_event(b).status == "pending"
+
+
+def test_planned_executed_and_unplanned_summary(store):
+    done = make(store)
+    cancelled = make(store, title="Отменённое", start="10:00", end="11:00")
+    store.freeze_day("2026-10-22")
+    store.update_event(done, status="done", actual_start="2026-10-22T09:00:00", actual_end="2026-10-22T10:20:00")
+    store.update_event(cancelled, status="cancelled")
+    make(store, title="Срочно вне плана", start="12:00", end="13:00")
+    summary = store.day_summary("2026-10-22")
+    assert (summary["planned"], summary["done"], summary["cancelled"], summary["unplanned"]) == (2, 1, 1, 1)
+    assert summary["percent"] == 50.0
+    assert store.category_totals("2026-10-22") == [("Совещания", 120, 80)]
+
+
+def test_moved_across_days_is_visible_in_both(store):
+    eid = make(store)
+    store.freeze_day("2026-10-22")
+    store.update_event(eid, current_start="2026-10-23T09:00:00", current_end="2026-10-23T10:00:00", status="moved")
+    assert len(store.daily_events("2026-10-22")) == 1
+    assert len(store.daily_events("2026-10-23")) == 1
+    assert store.day_summary("2026-10-22")["planned"] == 1
+    assert store.day_summary("2026-10-23")["unplanned"] == 1
+
+
+def test_frozen_event_cannot_be_deleted(store):
+    eid = make(store)
+    store.freeze_day("2026-10-22")
+    with pytest.raises(ValueError, match="Отменено"):
+        store.delete_event(eid)
+
+
+def test_invalid_time_and_incomplete_fact_are_rejected(store):
+    with pytest.raises(ValueError, match="позже начала"):
+        make(store, end="08:00")
+    eid = make(store)
+    with pytest.raises(ValueError, match="оба времени"):
+        store.update_event(eid, actual_start="2026-10-22T09:00:00")
+    with pytest.raises(ValueError, match="статус"):
+        store.update_event(eid, status="anything")
+
+
+def test_tracking_categories_can_be_configured(store):
+    road = store.create_event("Дорога", "Дорога", "2026-10-22T08:00:00", "2026-10-22T09:00:00")
+    store.freeze_day("2026-10-22")
+    assert store.day_summary("2026-10-22")["planned"] == 0
+    store.set_category_tracking("Дорога", True)
+    assert store.day_summary("2026-10-22")["planned"] == 1
+    assert store.get_event(road).baseline_start
+
+
+def test_csv_escapes_excel_formulas_and_uses_bom(store, tmp_path):
+    eid = make(store, title="=HYPERLINK('unsafe')")
+    store.update_event(eid, note="@SUM(3)")
+    file = tmp_path / "out.csv"
+    store.export_csv("2026-10-22", file)
+    raw = file.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+    text = raw.decode("utf-8-sig")
+    assert "'=HYPERLINK" in text
+    assert "'@SUM(3)" in text
+
+
+def test_demo_and_backup(store):
+    day = "2026-10-22"
+    store.seed_demo(day)
+    assert store.is_frozen(day)
+    assert store.day_summary(day)["planned"] >= 6
+    assert store.day_summary(day)["cancelled"] == 1
+    assert store.day_summary(day)["moved"] == 1
+    assert store.backup().is_file()
+    with pytest.raises(ValueError, match="пустую"):
+        store.seed_demo(day)
+
+
+def test_history_audit_and_persistence(store):
+    eid = make(store)
+    store.update_event(eid, status="done")
+    assert store.audit_log()[0]["action"] == "Изменение"
+    another = Store(store.path)
+    assert another.get_event(eid).status == "done"
+
+
+def test_coverage_detects_gaps_overlaps_and_cancellations(store):
+    day = "2026-10-22"
+    a = make(store, start="07:00", end="09:00")
+    make(store, title="Overlap", start="08:30", end="10:00")
+    c = make(store, title="Cancelled", start="10:00", end="11:00")
+    store.update_event(c, status="cancelled")
+    coverage = store.coverage_for_day(day)
+    assert coverage["gaps"] == [("10:00", "19:00")]
+    assert coverage["overlaps"] == 1
