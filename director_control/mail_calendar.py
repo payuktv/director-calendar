@@ -19,6 +19,16 @@ MAX_BYTES = 16 * 1024 * 1024
 MAX_OCCURRENCES = 20000
 
 
+def _status_code(value: str) -> int | None:
+    """Parse the numeric status; the HTTP reason phrase may be absent."""
+    parts = value.split()
+    if len(parts) >= 2 and parts[0].startswith("HTTP/") and parts[1].isdigit():
+        code = int(parts[1])
+        if 100 <= code <= 599:
+            return code
+    return None
+
+
 class CalendarError(Exception):
     """A user-safe error without response bodies, secrets or private calendar data."""
 
@@ -202,20 +212,32 @@ def fetch_snapshot(config: CalendarConfig, password: str, start: date, end: date
         if root.tag != f"{{{DAV}}}multistatus":
             raise CalendarError("Mail.ru вернул неожиданный формат. Данные не изменены.")
         blobs = []
-        for result in root.findall(f"{{{DAV}}}response"):
+        results = root.findall(f"{{{DAV}}}response")
+        for index, result in enumerate(results, 1):
             direct_status = result.findtext(f"{{{DAV}}}status", "")
-            if direct_status and " 200 " not in direct_status:
-                raise CalendarError("Mail.ru вернул неполный ответ. Данные не изменены.")
-            found = False
+            if direct_status and _status_code(direct_status) != 200:
+                code = _status_code(direct_status)
+                raise CalendarError(f"CalDAV: ресурс {index}, HTTP {code or 'неизвестен'}. Данные не изменены.")
+            values = []
+            data_codes = []
+            group_codes = []
             for group in result.findall(f"{{{DAV}}}propstat"):
-                if " 200 " not in group.findtext(f"{{{DAV}}}status", ""):
-                    raise CalendarError("Не все события доступны. Данные не изменены.")
+                code = _status_code(group.findtext(f"{{{DAV}}}status", ""))
+                group_codes.append(str(code) if code is not None else "неизвестен")
                 data = group.find(f"{{{DAV}}}prop/{{{CALDAV}}}calendar-data")
-                if data is not None and data.text:
-                    blobs.append(data.text)
-                    found = True
-            if not found:
-                raise CalendarError("Получен неполный ответ CalDAV. Данные не изменены.")
+                if data is not None:
+                    data_codes.append(str(code) if code is not None else "неизвестен")
+                    if code == 200 and data.text and data.text.strip():
+                        values.append(data.text)
+                # Other property failures (e.g. getetag=404) do not invalidate calendar-data=200.
+            if not values:
+                # Report only numeric statuses and ordinal positions, never hrefs, bodies or credentials.
+                detail = ", ".join(data_codes) if data_codes else "нет свойства; статусы: " + ", ".join(group_codes)
+                raise CalendarError(f"CalDAV: ресурс {index} из {len(results)}, calendar-data: {detail or 'нет статуса'}. "
+                                    "Данные не изменены.")
+            if any(value != values[0] for value in values[1:]):
+                raise CalendarError("CalDAV вернул противоречивые данные одного события. Данные не изменены.")
+            blobs.append(values[0])
         return parse_calendars(blobs, config, start, end)
     except CalendarError:
         raise
