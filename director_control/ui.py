@@ -1,4 +1,4 @@
-"""Qt Widgets desktop interface. No network traffic is initiated by the prototype."""
+"""Qt Widgets interface with optional read-only Mail.ru synchronization."""
 from __future__ import annotations
 
 import json
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from .storage import Event, STATUSES, Store, minutes_between
+from .mail_ui import MailPanel
 
 
 STYLE = """
@@ -105,6 +106,12 @@ class EventDialog(QDialog):
         self.end_input = date_edit(end)
         form.addRow("Актуальный план: начало", self.start_input)
         form.addRow("Актуальный план: конец", self.end_input)
+        if event and event.source == "caldav":
+            for control in (self.title_input, self.start_input, self.end_input):
+                control.setEnabled(False)
+            info = QLabel("Название и актуальное время обновляются из Mail.ru. Категория, факт и комментарий сохраняются локально.")
+            info.setWordWrap(True)
+            form.addRow("", info)
 
         self.status_input = QComboBox()
         for key, label in STATUSES.items():
@@ -145,14 +152,13 @@ class EventDialog(QDialog):
             start = as_iso(self.start_input)
             end = as_iso(self.end_input)
             if self.event:
-                self.store.update_event(
-                    self.event.id, title=title, category=category,
-                    current_start=start, current_end=end,
-                    status=self.status_input.currentData(),
-                    actual_start=as_iso(self.fact_start) if self.fact_checkbox.isChecked() else None,
-                    actual_end=as_iso(self.fact_end) if self.fact_checkbox.isChecked() else None,
-                    note=self.note_input.text().strip(),
-                )
+                updates = dict(category=category, status=self.status_input.currentData(),
+                               actual_start=as_iso(self.fact_start) if self.fact_checkbox.isChecked() else None,
+                               actual_end=as_iso(self.fact_end) if self.fact_checkbox.isChecked() else None,
+                               note=self.note_input.text().strip())
+                if self.event.source != "caldav":
+                    updates.update(title=title, current_start=start, current_end=end)
+                self.store.update_event(self.event.id, **updates)
             else:
                 eid = self.store.create_event(title, category, start, end)
                 if self.status_input.currentData() != "pending" or self.fact_checkbox.isChecked() or self.note_input.text():
@@ -206,10 +212,14 @@ class MainWindow(QMainWindow):
         titlebox.addWidget(subtitle)
         head.addLayout(titlebox)
         head.addStretch()
-        badge = QLabel("●  Локальная версия 0.1  ·  без подключения к Mail.ru")
+        badge = QLabel("●  Версия 0.2  ·  Mail.ru — только чтение")
         badge.setStyleSheet("color: #4278A7; background: #E6F1FC; padding: 10px; border-radius: 7px;")
         head.addWidget(badge)
         layout.addLayout(head)
+        self.mail_status = QLabel("Mail.ru: подключение на вкладке «Настройки»")
+        self.mail_status.setObjectName("Muted")
+        self.mail_status.setWordWrap(True)
+        layout.addWidget(self.mail_status)
 
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
@@ -243,6 +253,8 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.button("←", lambda: self.date_input.setDate(self.date_input.date().addDays(-1))))
         toolbar.addWidget(self.button("→", lambda: self.date_input.setDate(self.date_input.date().addDays(1))))
         toolbar.addStretch()
+        self.mail_refresh = self.button("Обновить Mail.ru", lambda: self.mail_panel.sync())
+        toolbar.addWidget(self.mail_refresh)
         toolbar.addWidget(self.button("Демо-данные", self.demo))
         toolbar.addWidget(self.button("Зафиксировать план", self.freeze))
         toolbar.addWidget(self.button("Экспорт CSV", self.export))
@@ -332,6 +344,10 @@ class MainWindow(QMainWindow):
         page = QWidget()
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 18, 0, 0)
+        self.mail_panel = MailPanel(self.store, self.selected_day)
+        self.mail_panel.changed.connect(self.reload)
+        self.mail_panel.message.connect(self.mail_status.setText)
+        v.addWidget(self.mail_panel)
         options = QGroupBox("Контроль времени")
         f = QFormLayout(options)
         self.tolerance = QSpinBox()
@@ -362,14 +378,18 @@ class MainWindow(QMainWindow):
         path_label.setWordWrap(True)
         d.addWidget(path_label)
         d.addWidget(self.button("Создать резервную копию", self.backup))
-        d.addWidget(QLabel("В прототипе нет передачи данных в интернет и хранения паролей Mail.ru."))
+        d.addWidget(QLabel("Рабочая база остаётся на этом компьютере. Подключение к Mail.ru используется только для чтения."))
         v.addWidget(data_box)
         v.addStretch()
-        self.tabs.addTab(page, "Настройки")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        self.tabs.addTab(scroll, "Настройки")
 
     def reload(self, *_):
         day = self.selected_day()
         events = self.store.daily_events(day)
+        source_info = self.store.calendar_info()
         summary = self.store.day_summary(day)
         self.cards["planned"].set_value(str(summary["planned"]))
         self.cards["done"].set_value(str(summary["done"]))
@@ -394,9 +414,16 @@ class MainWindow(QMainWindow):
                             (abs(minutes_between(ev.baseline_start, ev.actual_start)) > tolerance or
                              abs(minutes_between(ev.baseline_end, ev.actual_end)) > tolerance))
             status_label = STATUSES[ev.status] + (" · отклонение" if ev.status == "done" and deviates else "")
+            remote = source_info.get(ev.id)
+            if remote:
+                if remote["missing"]:
+                    status_label += " · проверить Mail.ru"
+                elif remote["cancelled"] and ev.status != "cancelled":
+                    status_label += " · отменено в Mail.ru"
             values = [ev.title, ev.category, interval(ev.baseline_start, ev.baseline_end),
                       interval(ev.current_start, ev.current_end), interval(ev.actual_start, ev.actual_end),
-                      status_label, "Вне плана" if not ev.baseline_start else "Из плана"]
+                      status_label, ("Вне плана" if not ev.baseline_start else "Из плана") +
+                      (" · Mail.ru" if remote else "") + (" · весь день" if remote and remote["all_day"] else "")]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if col == 5:
@@ -542,6 +569,13 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Резервная копия создана", str(saved))
         except Exception as exc:
             error_box(self, exc)
+
+    def closeEvent(self, event):
+        if self.mail_panel.busy:
+            QMessageBox.information(self, "Обновление календаря", "Дождись окончания обновления Mail.ru и закрой окно ещё раз.")
+            event.ignore()
+            return
+        super().closeEvent(event)
 
 
 def run_app() -> int:
