@@ -77,6 +77,8 @@ class Store:
         self.path = Path(path) if path is not None else default_data_dir() / "director_control.db"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
+        from .legacy_cleanup import remove_legacy_examples
+        remove_legacy_examples(self)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -448,29 +450,3 @@ class Store:
                                            (snapshot.calendar_key,)).fetchone()[0]
         return stats
 
-    def seed_demo(self, day: str) -> None:
-        if self.daily_events(day) or self.is_frozen(day):
-            raise ValueError("Демо-данные можно добавить только на пустую дату без зафиксированного плана")
-        samples = [
-            ("Утренние мероприятия", "Личное", "07:00", "08:00"),
-            ("Дорога в офис", "Дорога", "08:00", "09:00"),
-            ("Совещание с руководителями", "Совещания", "09:00", "10:00"),
-            ("Работа с документами", "Работа", "10:00", "11:30"),
-            ("Встреча с партнёрами", "Встречи", "11:30", "12:30"),
-            ("Резерв", "Резерв", "12:30", "13:00"),
-            ("Обед", "Отдых", "13:00", "14:00"),
-            ("Рабочие вопросы", "Работа", "14:00", "16:00"),
-            ("Встреча с подрядчиком", "Встречи", "16:00", "17:00"),
-            ("Дорога", "Дорога", "17:00", "18:00"),
-            ("Тренировка по боксу", "Спорт", "18:00", "19:00"),
-        ]
-        ids = []
-        for title, cat, start, end in samples:
-            ids.append(self.create_event(title, cat, f"{day}T{start}:00", f"{day}T{end}:00"))
-        self.freeze_day(day)
-        self.update_event(ids[0], status="done", actual_start=f"{day}T07:00:00", actual_end=f"{day}T08:00:00")
-        self.update_event(ids[2], status="done", actual_start=f"{day}T09:00:00", actual_end=f"{day}T10:20:00", note="Совещание завершилось позднее")
-        self.update_event(ids[3], status="partial", actual_start=f"{day}T10:20:00", actual_end=f"{day}T11:30:00")
-        self.update_event(ids[4], status="done", actual_start=f"{day}T11:30:00", actual_end=f"{day}T12:30:00")
-        self.update_event(ids[8], status="moved", note="Перенос на следующий день (демо)")
-        self.update_event(ids[10], status="cancelled", note="Решение руководителя (демо)")

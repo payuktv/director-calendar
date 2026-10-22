@@ -105,16 +105,12 @@ def test_csv_escapes_excel_formulas_and_uses_bom(store, tmp_path):
     assert "'@SUM(3)" in text
 
 
-def test_demo_and_backup(store):
-    day = "2026-10-22"
-    store.seed_demo(day)
-    assert store.is_frozen(day)
-    assert store.day_summary(day)["planned"] >= 6
-    assert store.day_summary(day)["cancelled"] == 1
-    assert store.day_summary(day)["moved"] == 1
-    assert store.backup().is_file()
-    with pytest.raises(ValueError, match="пустую"):
-        store.seed_demo(day)
+def test_backup_preserves_records(store):
+    import sqlite3
+    eid = make(store)
+    backup = store.backup()
+    with sqlite3.connect(backup) as con:
+        assert con.execute("SELECT title FROM events WHERE id=?", (eid,)).fetchone()[0] == "Плановое совещание"
 
 
 def test_history_audit_and_persistence(store):
