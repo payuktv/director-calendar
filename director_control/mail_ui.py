@@ -159,8 +159,13 @@ class MailPanel(QGroupBox):
         try:
             result = self.store.apply_calendar_snapshot(snapshot)
             last = self.store.get_setting("mail_last_sync").replace("T", " ")
-            self.show_status(f"Mail.ru обновлён {last}: новых {result['added']}, изменено {result['updated']}, "
-                             f"требуют проверки {result['missing']}.")
+            if snapshot.complete:
+                self.show_status(f"Mail.ru обновлён {last}: новых {result['added']}, изменено {result['updated']}, "
+                                 f"требуют проверки {result['missing']}.")
+            else:
+                self.show_status(f"Mail.ru загружен частично: новых {result['added']}, изменено {result['updated']}; "
+                                 f"недоступных записей {len(snapshot.unavailable)}. "
+                                 "Прежние записи сохранены, исчезновения не проверялись. " + snapshot.unavailable[0])
             self.changed.emit()
         except Exception:
             self.show_status("Не удалось сохранить обновление. Предыдущие данные сохранены.")

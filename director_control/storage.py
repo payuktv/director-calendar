@@ -435,14 +435,15 @@ class Store:
             rows = con.execute("""SELECT e.id, e.title, e.external_key FROM events e
                 JOIN calendar_events m ON m.event_id=e.id WHERE m.calendar_key=? AND m.missing=0
                 AND e.current_start>=? AND e.current_start<?""",
-                (snapshot.calendar_key, snapshot.start, snapshot.end)).fetchall()
+                (snapshot.calendar_key, snapshot.start, snapshot.end)).fetchall() if snapshot.complete else []
             for row in rows:
                 if row["external_key"] not in seen:
                     con.execute("UPDATE calendar_events SET missing=1 WHERE event_id=?", (row["id"],))
                     self._audit(con, row["id"], row["title"], "Нет в ответе Mail.ru", {"требует проверки": True})
                     stats["missing"] += 1
-            con.execute("INSERT INTO settings VALUES ('mail_last_sync', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                        (now_iso(),))
+            sync_key = "mail_last_sync" if snapshot.complete else "mail_last_partial"
+            con.execute("INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (sync_key, now_iso()))
             stats["missing"] = con.execute("SELECT count(*) FROM calendar_events WHERE calendar_key=? AND missing=1",
                                            (snapshot.calendar_key,)).fetchone()[0]
         return stats

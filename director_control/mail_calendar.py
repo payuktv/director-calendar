@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import posixpath
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
-from urllib.parse import urlsplit
+from time import monotonic
+from urllib.parse import unquote, urljoin, urlsplit
 from xml.etree.ElementTree import Element, SubElement, tostring
 from zoneinfo import ZoneInfo
 
@@ -17,6 +19,7 @@ DAV = "DAV:"
 CALDAV = "urn:ietf:params:xml:ns:caldav"
 MAX_BYTES = 16 * 1024 * 1024
 MAX_OCCURRENCES = 20000
+MAX_FALLBACK_GETS = 50
 
 
 def _status_code(value: str) -> int | None:
@@ -75,6 +78,68 @@ class CalendarSnapshot:
     start: str
     end: str
     events: tuple[RemoteEvent, ...]
+    unavailable: tuple[str, ...] = ()
+
+    @property
+    def complete(self) -> bool:
+        return not self.unavailable
+
+
+def _resource_url(config: CalendarConfig, href: str) -> str | None:
+    """Only authenticate GETs to child resources of the selected collection."""
+    if not href or any(ord(char) < 32 or char == "\\" for char in href):
+        return None
+    try:
+        target = urljoin(config.url, href)
+        parts = urlsplit(target)
+        if (parts.scheme != "https" or parts.hostname != "calendar.mail.ru" or parts.port not in (None, 443)
+                or parts.username or parts.password or parts.query or parts.fragment):
+            return None
+        path = unquote(parts.path)
+        # Reject double escaping and decoded separators that could change server routing.
+        if "%" in path or "\\" in path or any(ord(char) < 32 for char in path):
+            return None
+        collection = posixpath.normpath(unquote(urlsplit(config.url).path)) + "/"
+        normalized = posixpath.normpath(path)
+        if not normalized.startswith(collection) or path.endswith("/"):
+            return None
+        return target
+    except ValueError:
+        return None
+
+
+def _read_limited(response, budget: dict) -> bytes:
+    chunks = []
+    for chunk in response.iter_content(65536):
+        budget["bytes"] += len(chunk)
+        if budget["bytes"] > MAX_BYTES:
+            raise CalendarError("Ответ календаря слишком большой. Данные не изменены.")
+        if monotonic() > budget["deadline"]:
+            raise CalendarError("Превышено время загрузки календаря. Данные не изменены.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _fallback_get(session, config, password, href, budget):
+    url = _resource_url(config, href)
+    if url is None:
+        return None, "адрес записи отсутствует или вне выбранного календаря"
+    if budget["gets"] >= MAX_FALLBACK_GETS:
+        return None, "достигнут лимит отдельных запросов"
+    remaining = budget["deadline"] - monotonic()
+    if remaining <= 0:
+        raise CalendarError("Превышено время загрузки календаря. Данные не изменены.")
+    budget["gets"] += 1
+    with session.request("GET", url, headers={"Accept": "text/calendar"}, auth=(config.username, password),
+                         timeout=(min(10, remaining), min(15, remaining)), allow_redirects=False,
+                         stream=True) as response:
+        if response.status_code != 200:
+            return None, f"GET {response.status_code}"
+        # Parse bytes through icalendar so UTF-8 is independent of HTTP's charset guess.
+        body = _read_limited(response, budget)
+        if not body.strip():
+            return None, "пустой ответ GET"
+        return body, ""
 
 
 def window_for_day(day: date) -> tuple[date, date]:
@@ -93,7 +158,7 @@ def _identity(value: date | datetime, zone: ZoneInfo) -> str:
     return _aware(value, zone).astimezone(UTC).isoformat(timespec="seconds")
 
 
-def parse_calendars(blobs: list[str], config: CalendarConfig, start: date, end: date) -> CalendarSnapshot:
+def parse_calendars(blobs: list[str | bytes], config: CalendarConfig, start: date, end: date) -> CalendarSnapshot:
     """Parse the whole response before any database write. Bad series abort the snapshot."""
     config.validate()
     zone = ZoneInfo(config.timezone)
@@ -191,6 +256,7 @@ def fetch_snapshot(config: CalendarConfig, password: str, start: date, end: date
         "start": _aware(start, zone).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ"),
         "end": _aware(end, zone).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ"),
     })
+    budget = {"bytes": 0, "gets": 0, "deadline": monotonic() + 120}
     try:
         with requests.Session() as session:
             session.trust_env = False  # No ambient .netrc credentials or unexpected proxy credentials.
@@ -202,43 +268,50 @@ def fetch_snapshot(config: CalendarConfig, password: str, start: date, end: date
                     raise CalendarError("Mail.ru отклонил доступ. Проверь логин, пароль приложения и права на календарь.")
                 if response.status_code != 207:
                     raise CalendarError(f"Mail.ru вернул код {response.status_code}. Проверь ссылку и повтори позже.")
-                chunks, total = [], 0
-                for chunk in response.iter_content(65536):
-                    total += len(chunk)
-                    if total > MAX_BYTES:
-                        raise CalendarError("Ответ календаря слишком большой. Данные не изменены.")
-                    chunks.append(chunk)
-        root = fromstring(b"".join(chunks))
-        if root.tag != f"{{{DAV}}}multistatus":
-            raise CalendarError("Mail.ru вернул неожиданный формат. Данные не изменены.")
-        blobs = []
-        results = root.findall(f"{{{DAV}}}response")
-        for index, result in enumerate(results, 1):
-            direct_status = result.findtext(f"{{{DAV}}}status", "")
-            if direct_status and _status_code(direct_status) != 200:
-                code = _status_code(direct_status)
-                raise CalendarError(f"CalDAV: ресурс {index}, HTTP {code or 'неизвестен'}. Данные не изменены.")
-            values = []
-            data_codes = []
-            group_codes = []
-            for group in result.findall(f"{{{DAV}}}propstat"):
-                code = _status_code(group.findtext(f"{{{DAV}}}status", ""))
-                group_codes.append(str(code) if code is not None else "неизвестен")
-                data = group.find(f"{{{DAV}}}prop/{{{CALDAV}}}calendar-data")
-                if data is not None:
-                    data_codes.append(str(code) if code is not None else "неизвестен")
-                    if code == 200 and data.text and data.text.strip():
-                        values.append(data.text)
-                # Other property failures (e.g. getetag=404) do not invalidate calendar-data=200.
-            if not values:
-                # Report only numeric statuses and ordinal positions, never hrefs, bodies or credentials.
-                detail = ", ".join(data_codes) if data_codes else "нет свойства; статусы: " + ", ".join(group_codes)
-                raise CalendarError(f"CalDAV: ресурс {index} из {len(results)}, calendar-data: {detail or 'нет статуса'}. "
-                                    "Данные не изменены.")
-            if any(value != values[0] for value in values[1:]):
-                raise CalendarError("CalDAV вернул противоречивые данные одного события. Данные не изменены.")
-            blobs.append(values[0])
-        return parse_calendars(blobs, config, start, end)
+                body = _read_limited(response, budget)
+            root = fromstring(body)
+            if root.tag != f"{{{DAV}}}multistatus":
+                raise CalendarError("Mail.ru вернул неожиданный формат. Данные не изменены.")
+            blobs = []
+            unavailable = []
+            results = root.findall(f"{{{DAV}}}response")
+            for index, result in enumerate(results, 1):
+                direct_status = result.findtext(f"{{{DAV}}}status", "")
+                if direct_status and _status_code(direct_status) != 200:
+                    code = _status_code(direct_status)
+                    raise CalendarError(f"CalDAV: ресурс {index}, HTTP {code or 'неизвестен'}. Данные не изменены.")
+                values = []
+                data_codes = []
+                group_codes = []
+                for group in result.findall(f"{{{DAV}}}propstat"):
+                    code = _status_code(group.findtext(f"{{{DAV}}}status", ""))
+                    group_codes.append(str(code) if code is not None else "неизвестен")
+                    data = group.find(f"{{{DAV}}}prop/{{{CALDAV}}}calendar-data")
+                    if data is not None:
+                        data_codes.append(str(code) if code is not None else "неизвестен")
+                        if code == 200 and data.text and data.text.strip():
+                            values.append(data.text)
+                    # Other property failures (e.g. getetag=404) do not invalidate calendar-data=200.
+                if not values and data_codes and set(data_codes) == {"404"}:
+                    recovered, reason = _fallback_get(session, config, password,
+                                                      result.findtext(f"{{{DAV}}}href", ""), budget)
+                    if recovered is not None:
+                        values.append(recovered)
+                    else:
+                        unavailable.append(f"ресурс {index} из {len(results)}: calendar-data 404; {reason}")
+                        continue
+                if not values:
+                    # Report only numeric statuses and ordinal positions, never hrefs, bodies or credentials.
+                    detail = ", ".join(data_codes) if data_codes else "нет свойства; статусы: " + ", ".join(group_codes)
+                    raise CalendarError(f"CalDAV: ресурс {index} из {len(results)}, calendar-data: {detail or 'нет статуса'}. "
+                                        "Данные не изменены.")
+                if any(value != values[0] for value in values[1:]):
+                    raise CalendarError("CalDAV вернул противоречивые данные одного события. Данные не изменены.")
+                blobs.append(values[0])
+            if unavailable and not blobs:
+                raise CalendarError("Не удалось прочитать ни одной записи. " + unavailable[0] + ". Данные не изменены.")
+            snapshot = parse_calendars(blobs, config, start, end)
+            return replace(snapshot, unavailable=tuple(unavailable))
     except CalendarError:
         raise
     except requests.exceptions.RequestException:

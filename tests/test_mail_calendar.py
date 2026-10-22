@@ -284,3 +284,107 @@ def test_one_unreadable_resource_still_aborts_the_whole_import(monkeypatch):
     install_transport(monkeypatch, body=body)
     with pytest.raises(CalendarError, match="ресурс 2 из 2"):
         fetch_snapshot(CONFIG, "test-only-secret", START, END)
+
+
+def dav_response(data="", code=200, href=None):
+    return ('<d:response>' + ('<d:href>' + escape(href) + '</d:href>' if href else '') +
+            '<d:propstat><d:prop><c:calendar-data>' + escape(data) + '</c:calendar-data></d:prop>'
+            f'<d:status>HTTP/1.1 {code}</d:status></d:propstat></d:response>')
+
+
+def multistatus(*responses):
+    return ('<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">' +
+            ''.join(responses) + '</d:multistatus>').encode()
+
+
+def sequence_transport(monkeypatch, *responses):
+    calls = []
+    class Session:
+        closed = False
+        def __enter__(self): return self
+        def __exit__(self, *args): self.closed = True
+        def request(self, method, url, **kwargs):
+            assert not self.closed
+            calls.append((method, url, kwargs))
+            return FakeResponse(*responses[len(calls) - 1])
+    monkeypatch.setattr("director_control.mail_calendar.requests.Session", Session)
+    return calls
+
+
+def test_calendar_data_404_recovers_with_scoped_read_only_get(monkeypatch):
+    body = multistatus(dav_response(calendar(event("a"))), dav_response(code=404, href=URL + "b.ics"))
+    calls = sequence_transport(monkeypatch, (207, body), (200, calendar(event("b")).encode()))
+    snapshot = fetch_snapshot(CONFIG, "test-only-secret", START, END)
+    assert snapshot.complete and len(snapshot.events) == 2
+    assert [c[0] for c in calls] == ["REPORT", "GET"]
+    assert calls[1][1] == URL + "b.ics"
+    assert calls[1][2]["allow_redirects"] is False
+    assert calls[1][2]["auth"] == (CONFIG.username, "test-only-secret")
+
+
+@pytest.mark.parametrize("href", ["https://evil.test/b.ics", "http://calendar.mail.ru/b.ics",
+    "https://calendar.mail.ru/another-calendar/b.ics", "../b.ics", "//evil.test/b.ics",
+    URL + "%2e%2e/other.ics", URL + "%252e%252e/other.ics", URL + "b.ics?token=secret", URL])
+def test_fallback_never_sends_credentials_outside_selected_collection(monkeypatch, href):
+    body = multistatus(dav_response(calendar(event("a"))), dav_response(code=404, href=href))
+    calls = sequence_transport(monkeypatch, (207, body))
+    snapshot = fetch_snapshot(CONFIG, "test-only-secret", START, END)
+    assert len(calls) == 1
+    assert len(snapshot.events) == 1 and not snapshot.complete and len(snapshot.unavailable) == 1
+    assert "secret" not in snapshot.unavailable[0]
+
+
+@pytest.mark.parametrize("get_code", [301, 403, 404])
+def test_unreadable_fallback_is_explicit_partial_result(monkeypatch, get_code):
+    body = multistatus(dav_response(calendar(event("a"))), dav_response(code=404, href="b.ics"))
+    sequence_transport(monkeypatch, (207, body), (get_code, b"private-secret"))
+    snapshot = fetch_snapshot(CONFIG, "test-only-secret", START, END)
+    assert not snapshot.complete and len(snapshot.events) == 1
+    assert f"GET {get_code}" in snapshot.unavailable[0]
+    assert "private-secret" not in snapshot.unavailable[0]
+
+
+def test_no_readable_records_is_error_not_successful_empty_calendar(monkeypatch):
+    body = multistatus(dav_response(code=404, href="b.ics"))
+    sequence_transport(monkeypatch, (207, body), (404, b"private-secret"))
+    with pytest.raises(CalendarError, match="ни одной записи"):
+        fetch_snapshot(CONFIG, "test-only-secret", START, END)
+
+
+def test_partial_snapshot_keeps_old_records_and_does_not_advance_complete_sync(tmp_path):
+    store = Store(tmp_path / "db.sqlite")
+    store.apply_calendar_snapshot(parse(event("a"), event("b")))
+    old = store.daily_events("2026-10-22")
+    store.freeze_day("2026-10-22")
+    store.update_event(old[0].id, status="done", actual_start="2026-10-22T12:00:00",
+                       actual_end="2026-10-22T13:00:00", note="Keep local fact")
+    store.set_setting("mail_last_sync", "2026-10-21T10:00:00")
+    partial = replace(parse(event("a"), event("c")), unavailable=("resource unavailable",))
+    result = store.apply_calendar_snapshot(partial)
+    assert result["added"] == 1 and result["missing"] == 0
+    assert len(store.daily_events("2026-10-22")) == 3
+    assert not any(info["missing"] for info in store.calendar_info().values())
+    assert store.get_event(old[0].id).status == "done"
+    assert store.get_event(old[0].id).baseline_start == "2026-10-22T12:00:00"
+    assert store.get_event(old[0].id).note == "Keep local fact"
+    assert store.get_setting("mail_last_sync") == "2026-10-21T10:00:00"
+    assert store.get_setting("mail_last_partial")
+    assert store.apply_calendar_snapshot(parse(event("a"), event("c")))["missing"] == 1
+
+
+def test_report_and_get_share_response_size_budget(monkeypatch):
+    body = multistatus(dav_response(calendar(event("a"))), dav_response(code=404, href="b.ics"))
+    monkeypatch.setattr("director_control.mail_calendar.MAX_BYTES", len(body) + 5)
+    sequence_transport(monkeypatch, (207, body), (200, calendar(event("b")).encode()))
+    with pytest.raises(CalendarError, match="слишком большой"):
+        fetch_snapshot(CONFIG, "test-only-secret", START, END)
+
+
+def test_fallback_request_limit_marks_partial_without_unbounded_requests(monkeypatch):
+    monkeypatch.setattr("director_control.mail_calendar.MAX_FALLBACK_GETS", 1)
+    body = multistatus(dav_response(calendar(event("a"))), dav_response(code=404, href="b.ics"),
+                       dav_response(code=404, href="c.ics"))
+    calls = sequence_transport(monkeypatch, (207, body), (200, calendar(event("b")).encode()))
+    snapshot = fetch_snapshot(CONFIG, "test-only-secret", START, END)
+    assert len(calls) == 2 and not snapshot.complete and len(snapshot.events) == 2
+    assert "лимит" in snapshot.unavailable[0]
