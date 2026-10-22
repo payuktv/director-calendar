@@ -251,3 +251,36 @@ def test_xml_entities_are_rejected(monkeypatch):
                       b'<d:multistatus xmlns:d="DAV:">&x;</d:multistatus>')
     with pytest.raises(CalendarError):
         fetch_snapshot(CONFIG, "test-only-secret", START, END)
+
+
+@pytest.mark.parametrize("status", ["HTTP/1.1 200 OK", "HTTP/1.1 200", "HTTP/2 200"])
+def test_optional_property_failure_does_not_hide_accessible_calendar_data(monkeypatch, status):
+    body = ('<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response>'
+            '<d:propstat><d:prop><d:getetag/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat>'
+            '<d:propstat><d:prop><c:calendar-data>' + escape(calendar(event())) +
+            '</c:calendar-data></d:prop><d:status>' + status + '</d:status></d:propstat>'
+            '</d:response></d:multistatus>').encode()
+    install_transport(monkeypatch, body=body)
+    assert len(fetch_snapshot(CONFIG, "test-only-secret", START, END).events) == 1
+
+
+def test_missing_calendar_data_has_safe_actionable_diagnostics(monkeypatch):
+    install_transport(monkeypatch, body=b'<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+                      b'<d:response><d:href>private-person-and-secret</d:href><d:propstat><d:prop>'
+                      b'<c:calendar-data/></d:prop><d:status>HTTP/1.1 403 private-secret</d:status>'
+                      b'</d:propstat></d:response></d:multistatus>')
+    with pytest.raises(CalendarError) as exc:
+        fetch_snapshot(CONFIG, "test-only-secret", START, END)
+    assert "calendar-data: 403" in str(exc.value)
+    assert "private" not in str(exc.value) and "secret" not in str(exc.value)
+
+
+def test_one_unreadable_resource_still_aborts_the_whole_import(monkeypatch):
+    body = ('<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response>'
+            '<d:propstat><d:prop><c:calendar-data>' + escape(calendar(event())) +
+            '</c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>'
+            '<d:response><d:propstat><d:prop><c:calendar-data/></d:prop>'
+            '<d:status>HTTP/1.1 403 Forbidden</d:status></d:propstat></d:response></d:multistatus>').encode()
+    install_transport(monkeypatch, body=body)
+    with pytest.raises(CalendarError, match="ресурс 2 из 2"):
+        fetch_snapshot(CONFIG, "test-only-secret", START, END)

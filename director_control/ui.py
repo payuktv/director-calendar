@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
         titlebox.addWidget(subtitle)
         head.addLayout(titlebox)
         head.addStretch()
-        badge = QLabel("●  Версия 0.2  ·  Mail.ru — только чтение")
+        badge = QLabel("●  Версия 0.2.1  ·  Mail.ru — только чтение")
         badge.setStyleSheet("color: #4278A7; background: #E6F1FC; padding: 10px; border-radius: 7px;")
         head.addWidget(badge)
         layout.addLayout(head)
