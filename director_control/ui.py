@@ -24,6 +24,7 @@ from .inspector import EventInspector, CategoryBars, plain_label
 from .status_menu import EventStatusMenu
 from .mini_calendar import MiniCalendar
 from .date_picker import install_date_picker
+from .input_wheel import install_input_wheel_guard
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -225,7 +226,7 @@ class MainWindow(QMainWindow):
         self.mini.activated.connect(lambda day: self.date_input.setDate(day))
         side.addWidget(self.mini)
         side.addStretch()
-        side.addWidget(plain_label("Версия 0.4.5", "Muted"))
+        side.addWidget(plain_label("Версия 0.4.6", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -798,6 +799,7 @@ def run_app() -> int:
     import sys
     QLocale.setDefault(QLocale(QLocale.Language.Russian))
     app = QApplication(sys.argv)
+    install_input_wheel_guard(app)
     app.setStyle("Fusion")
     app.setStyleSheet(STYLE)
     window = MainWindow(Store())
