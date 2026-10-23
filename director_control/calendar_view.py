@@ -99,10 +99,11 @@ def split_blocks(events, days, layer, metadata):
     return {day: layout_overlaps(values) for day, values in timed.items()}, all_day
 
 
-def color_for(event):
-    if event.status == "cancelled":
+def color_for(event, status=None):
+    status = event.status if status is None else status
+    if status == "cancelled":
         return QColor("#BE7186"), QColor("#FCF0F3")
-    if event.status == "done":
+    if status == "done":
         return QColor("#369A83"), QColor("#EDF8F4")
     palette = (("#7865D9", "#F1EEFF"), ("#508BD5", "#ECF4FF"), ("#C58C42", "#FFF6E8"),
                ("#B374B8", "#F9EEFA"), ("#489B9F", "#EAF7F7"))

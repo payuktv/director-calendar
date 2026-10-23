@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
     QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
-    QTabWidget, QVBoxLayout, QWidget, QCalendarWidget, QButtonGroup, QStackedWidget, QMenu,
+    QTabWidget, QVBoxLayout, QWidget, QCalendarWidget, QButtonGroup, QStackedWidget,
 )
 
 from .storage import Event, STATUSES, Store, minutes_between
@@ -21,6 +21,7 @@ from .mail_ui import MailPanel
 from .theme import STYLE, icon
 from .calendar_view import CalendarBoard, MONTHS, MONTHS_GEN, period_days, event_interval
 from .inspector import EventInspector, CategoryBars, plain_label
+from .status_menu import EventStatusMenu
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -258,7 +259,7 @@ class MainWindow(QMainWindow):
         note.setWordWrap(True)
         side.addWidget(note)
         side.addSpacing(10)
-        side.addWidget(plain_label("Версия 0.3.2", "Muted"))
+        side.addWidget(plain_label("Версия 0.3.3", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -510,8 +511,7 @@ class MainWindow(QMainWindow):
     def show_event_context_menu(self, event_id, global_pos):
         self.select_event(event_id)
         event = self.store.get_event(event_id)
-        menu = QMenu(self)
-        menu.setObjectName("EventContextMenu")
+        menu = EventStatusMenu(event, self)
         heading = menu.addAction("Статус события")
         heading.setEnabled(False)
         menu.addSeparator()

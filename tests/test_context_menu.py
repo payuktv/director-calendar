@@ -67,6 +67,7 @@ def choose_menu_action(app, invoke, status=None):
             actions = [action for action in menu.actions() if action.isCheckable()]
             result["statuses"] = {action.data(): action.text() for action in actions}
             result["checked"] = [action.data() for action in actions if action.isChecked()]
+            menu.grab()  # Exercise custom painting before activating a native action.
             if status is not None:
                 action = next(action for action in actions if action.data() == status)
                 QTest.mouseClick(menu, Qt.MouseButton.LeftButton, pos=menu.actionGeometry(action).center())
@@ -177,3 +178,48 @@ def test_list_context_menu_uses_clicked_row_instead_of_previous_selection(app, t
     window.show_table_context_menu(QPoint(1, window.table.viewport().height() - 2))
     assert not calls
     window.close()
+
+
+@pytest.mark.parametrize("category", ["Работа", "Встречи"])
+def test_menu_row_and_hover_colors_match_calendar_for_every_status(app, category):
+    from PySide6.QtGui import QActionGroup
+    from director_control.calendar_view import color_for
+    from director_control.status_menu import EventStatusMenu
+    from director_control.storage import Event, STATUSES
+    from director_control.theme import STYLE
+
+    item = Event(1, "Цвет меню", category, "2026-10-22T09:00:00", "2026-10-22T10:00:00",
+                 None, None, None, None, "partial", "", "manual")
+    menu = EventStatusMenu(item)
+    menu.setStyleSheet(STYLE)
+    group = QActionGroup(menu)
+    for status, label in STATUSES.items():
+        action = menu.addAction(label)
+        action.setData(status)
+        action.setCheckable(True)
+        group.addAction(action)
+        action.setChecked(status == item.status)
+    menu.show()
+    app.processEvents()
+    menu.setActiveAction(None)
+    image = menu.grab().toImage()
+    for action in menu.actions():
+        # Compare painted pixels to the actual calendar color after that change.
+        accent, fill = color_for(replace(item, status=action.data()))
+        bounds = menu.actionGeometry(action)
+        x, y = bounds.right() - 12, bounds.center().y()
+        assert image.pixelColor(x, y).rgb() == fill.rgb()
+        foreground = accent.darker(125)
+        def near_foreground(pixel):
+            # Font antialiasing blends the ink with the pastel background.
+            return max(abs(pixel.red() - foreground.red()), abs(pixel.green() - foreground.green()),
+                       abs(pixel.blue() - foreground.blue())) <= 16
+        assert any(near_foreground(image.pixelColor(px, py))
+                   for px in range(bounds.left() + 40, bounds.right() - 16)
+                   for py in range(bounds.top() + 3, bounds.bottom() - 3))
+        menu.setActiveAction(action)
+        hovered = menu.grab().toImage()
+        assert hovered.pixelColor(x, y).rgb() == fill.darker(105).rgb()
+        menu.setActiveAction(None)
+    assert [action.data() for action in menu.actions() if action.isChecked()] == ["partial"]
+    menu.close()
