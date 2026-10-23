@@ -155,7 +155,8 @@ class StatCard(QFrame):
         super().__init__()
         self.setObjectName("Metric")
         v = QVBoxLayout(self)
-        v.setContentsMargins(14, 10, 14, 10)
+        v.setContentsMargins(10, 6, 10, 6)
+        v.setSpacing(1)
         title = QLabel(name)
         title.setObjectName("CardTitle")
         self.value = QLabel("—")
@@ -221,7 +222,7 @@ class MainWindow(QMainWindow):
         self.mini.clicked.connect(lambda day: self.date_input.setDate(day))
         side.addWidget(self.mini)
         side.addStretch()
-        side.addWidget(plain_label("Версия 0.4.1", "Muted"))
+        side.addWidget(plain_label("Версия 0.4.2", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -343,13 +344,6 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.button("Зафиксировать план", self.freeze))
         toolbar.addWidget(self.button("CSV", self.export))
         v.addLayout(toolbar)
-        cards = QHBoxLayout()
-        cards.setSpacing(8)
-        self.cards = {name: StatCard(label) for name, label in (("planned", "В плане"), ("done", "Выполнено"),
-            ("pending", "Без подтверждения"), ("unplanned", "Вне плана"), ("rate", "Исполнение"), ("gaps", "Окна 07–19"))}
-        for card in self.cards.values():
-            cards.addWidget(card, 1)
-        v.addLayout(cards)
         self.freeze_info = plain_label("", "Muted")
         self.freeze_info.setWordWrap(True)
         v.addWidget(self.freeze_info)
@@ -389,6 +383,13 @@ class MainWindow(QMainWindow):
         self.inspector.done_requested.connect(self.mark_done)
         body.addWidget(self.inspector)
         v.addLayout(body, 1)
+        cards = QHBoxLayout()
+        cards.setSpacing(6)
+        self.cards = {name: StatCard(label) for name, label in (("planned", "В плане"), ("done", "Выполнено"),
+            ("pending", "Без подтверждения"), ("unplanned", "Вне плана"), ("rate", "Исполнение"), ("gaps", "Окна 07–19"))}
+        for card in self.cards.values():
+            cards.addWidget(card, 1)
+        v.addLayout(cards)
         self.tabs.addTab(page, "Календарь")
 
     def set_date(self, day):
