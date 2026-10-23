@@ -1,99 +1,213 @@
 """Shared desktop design tokens and small vector icons."""
+from string import Template
+
 from PySide6.QtCore import QByteArray, Qt
-from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QApplication
 
-ACCENT = "#6956E8"
-INK = "#202436"
-MUTED = "#85889B"
+# Shared tokens also drive custom-painted calendars, menus and charts.
+LIGHT = {
+    "text": "#202436", "background": "#F7F8FC", "surface": "#FFFFFF",
+    "border": "#ECECF4", "control_border": "#E3E4EF", "muted": "#85889B",
+    "subtle": "#9698AA", "accent": "#6956E8", "primary": "#6956E8",
+    "primary_hover": "#5B49D6", "soft_accent": "#F0EDFF", "hover": "#F6F4FF",
+    "hover_border": "#CCC5FA", "pressed": "#EBE6FF", "disabled_text": "#B3B5C4",
+    "disabled_border": "#EEEFF5", "disabled_surface": "#FAFAFD", "primary_disabled": "#C5BDF4",
+    "nav_text": "#75798E", "nav_hover": "#F6F5FC", "segment_text": "#86899C",
+    "segment_selected": "#5140BF", "segment_border": "#E5E1F7", "segments": "#EFEEF6",
+    "danger": "#C45C70", "selection": "#DDD6FF", "focus_border": "#9C8DF3",
+    "readonly_surface": "#F4F5F9", "readonly_text": "#8A8DA0", "table_alternate": "#FCFCFF",
+    "table_grid": "#F0F0F6", "selection_text": "#403280", "table_header": "#F9F9FD",
+    "header_text": "#878B9F", "scrollbar": "#DADBE7", "tooltip": "#26243B",
+    "popup_border": "#E8E5F3", "mini_hover_border": "#E4DEFC", "mini_pressed": "#E5DFFF",
+    "mini_heading": "#454B63", "mini_heading_hover": "#F3F0FF", "mini_header": "#969AAF",
+    "progress": "#EEEAFB", "card_value": "#272C44", "icon": "#8B89A3",
+    "mini_icon": "#7A7893", "calendar_text": "#373C52", "calendar_muted": "#9296AB",
+    "grid": "#EEF0F6", "half_grid": "#F7F7FB", "today": "#FDFBFF",
+    "weekend": "#FDFDFE", "month_focus": "#FAF8FF", "outside_month": "#FBFBFE",
+    "now": "#E47786", "mini_today": "#C4BAF8", "mini_disabled": "#D6D9E4",
+    "mini_outside": "#B9BDCB", "mini_weekend": "#9C7F91", "mini_text": "#535B72",
+    "plan_bar": "#B5A8F4", "actual_bar": "#57B89F", "plan_legend": "#A28DE8",
+    "actual_legend": "#43A88D",
+}
+DARK = {
+    **LIGHT,
+    "text": "#E4EAF5", "background": "#141923", "surface": "#1E2533",
+    "border": "#30394B", "control_border": "#3B465C", "muted": "#A1ADC2",
+    "subtle": "#94A0B6", "accent": "#B5A5FF", "primary": "#7662DE",
+    "primary_hover": "#8672EE", "soft_accent": "#332D50", "hover": "#2C3348",
+    "hover_border": "#736499", "pressed": "#3D355D", "disabled_text": "#78849A",
+    "disabled_border": "#343D50", "disabled_surface": "#242B39", "primary_disabled": "#4D446D",
+    "nav_text": "#B0BBD0", "nav_hover": "#262D40", "segment_text": "#A1ADC2",
+    "segment_selected": "#CEBFFF", "segment_border": "#554976", "segments": "#191F2C",
+    "danger": "#F09AAC", "selection": "#524476", "focus_border": "#B5A5FF",
+    "readonly_surface": "#252C3A", "readonly_text": "#95A1B7", "table_alternate": "#222A3A",
+    "table_grid": "#2D3648", "selection_text": "#E3D9FF", "table_header": "#252D3F",
+    "header_text": "#A5B1C7", "scrollbar": "#4D5870", "tooltip": "#39425B",
+    "popup_border": "#4C4565", "mini_hover_border": "#554976", "mini_pressed": "#473B66",
+    "mini_heading": "#D2DBEC", "mini_heading_hover": "#332D50", "mini_header": "#9AA8C1",
+    "progress": "#332D50", "card_value": "#E4EAF5", "icon": "#B3AACF",
+    "mini_icon": "#B8AFD3", "calendar_text": "#DCE4F3", "calendar_muted": "#9EACC4",
+    "grid": "#30394B", "half_grid": "#283143", "today": "#26273D",
+    "weekend": "#1B2230", "month_focus": "#2E2B46", "outside_month": "#1B212E",
+    "now": "#F18CA1", "mini_today": "#9B8AE0", "mini_disabled": "#627088",
+    "mini_outside": "#77859D", "mini_weekend": "#C2A4BC", "mini_text": "#CCD5E6",
+    "plan_bar": "#B5A5FF", "actual_bar": "#6ED2B4", "plan_legend": "#B5A5FF",
+    "actual_legend": "#6ED2B4",
+}
 
-STYLE = """
-QWidget { color: #202436; font-family: 'Segoe UI', 'Inter', sans-serif; font-size: 12px; }
-QMainWindow { background: #F7F8FC; }
-QDialog, QWidget#DialogContent { background: white; }
-QWidget#FormContent { background: #F7F8FC; }
-QWidget#Workspace, QWidget#CalendarPage { background: #F7F8FC; }
-QFrame#Sidebar { background: #FFFFFF; border-right: 1px solid #ECECF4; }
+_STYLE_TEMPLATE = """
+QWidget { color: $text; font-family: 'Segoe UI', 'Inter', sans-serif; font-size: 12px; }
+QMainWindow { background: $background; }
+QDialog, QWidget#DialogContent { background: $surface; }
+QWidget#FormContent { background: $background; }
+QWidget#Workspace, QWidget#CalendarPage { background: $background; }
+QFrame#Sidebar { background: $surface; border-right: 1px solid $border; }
 QFrame#Sidebar QCheckBox { background: transparent; }
 QLabel { background: transparent; border: none; }
 QLabel#Brand { font-size: 16px; font-weight: 750; letter-spacing: 1px; }
-QLabel#BrandSub, QLabel#Eyebrow { color: #9698AA; font-size: 10px; font-weight: 650; letter-spacing: 1px; }
-QLabel#Logo { background: #6956E8; color: white; border-radius: 12px; font-size: 21px; font-weight: 700; }
+QLabel#BrandSub, QLabel#Eyebrow { color: $subtle; font-size: 10px; font-weight: 650; letter-spacing: 1px; }
+QLabel#Logo { background: $primary; color: white; border-radius: 12px; font-size: 21px; font-weight: 700; }
 QLabel#PageTitle { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
 QLabel#PeriodTitle { font-size: 20px; font-weight: 700; }
-QLabel#Muted { color: #85889B; }
+QLabel#Muted { color: $muted; }
 QLabel#SectionTitle { font-size: 15px; font-weight: 650; }
 QLabel#EventTitle { font-size: 19px; font-weight: 700; }
-QLabel#StatusPill { color: #6956E8; background: #F0EDFF; border-radius: 7px; padding: 6px 9px; }
-QFrame#Surface, QFrame#Inspector { background: white; border: 1px solid #ECECF4; border-radius: 14px; }
-QFrame#Metric { background: white; border: 1px solid #ECECF4; border-radius: 8px; }
-QLabel#CardTitle { color: #85889B; font-size: 11px; }
-QLabel#CardValue { color: #272C44; font-size: 18px; font-weight: 700; }
-QPushButton { background: white; border: 1px solid #E3E4EF; border-radius: 8px; padding: 9px 13px; font-weight: 600; }
-QPushButton:hover { background: #F6F4FF; border-color: #CCC5FA; }
-QPushButton:pressed { background: #EBE6FF; }
-QPushButton:disabled { color: #B3B5C4; border-color: #EEEFF5; background: #FAFAFD; }
-QPushButton#Primary { background: #6956E8; border-color: #6956E8; color: white; }
-QPushButton#Primary:hover { background: #5B49D6; }
-QPushButton#Primary:disabled { background: #C5BDF4; border-color: #C5BDF4; }
-QPushButton#Nav { background: transparent; border: none; text-align: left; color: #75798E; padding: 12px 15px; }
-QPushButton#Nav:hover { background: #F6F5FC; }
-QPushButton#Nav:checked { color: #6956E8; background: #F0EDFF; font-weight: 700; }
-QPushButton#Segment { border: none; background: transparent; padding: 7px 12px; color: #86899C; }
-QPushButton#Segment:checked { background: white; color: #5140BF; border: 1px solid #E5E1F7; }
-QFrame#Segments { background: #EFEEF6; border-radius: 9px; }
+QLabel#StatusPill { color: $accent; background: $soft_accent; border-radius: 7px; padding: 6px 9px; }
+QFrame#Surface, QFrame#Inspector { background: $surface; border: 1px solid $border; border-radius: 14px; }
+QFrame#Metric { background: $surface; border: 1px solid $border; border-radius: 8px; }
+QLabel#CardTitle { color: $muted; font-size: 11px; }
+QLabel#CardValue { color: $card_value; font-size: 18px; font-weight: 700; }
+QPushButton { background: $surface; border: 1px solid $control_border; border-radius: 8px; padding: 9px 13px; font-weight: 600; }
+QPushButton:hover { background: $hover; border-color: $hover_border; }
+QPushButton:pressed { background: $pressed; }
+QPushButton:disabled { color: $disabled_text; border-color: $disabled_border; background: $disabled_surface; }
+QPushButton#Primary { background: $primary; border-color: $primary; color: white; }
+QPushButton#Primary:hover { background: $primary_hover; }
+QPushButton#Primary:disabled { background: $primary_disabled; border-color: $primary_disabled; }
+QPushButton#Nav { background: transparent; border: none; text-align: left; color: $nav_text; padding: 12px 15px; }
+QPushButton#Nav:hover { background: $nav_hover; }
+QPushButton#Nav:checked { color: $accent; background: $soft_accent; font-weight: 700; }
+QPushButton#Segment { border: none; background: transparent; padding: 7px 12px; color: $segment_text; }
+QPushButton#Segment:checked { background: $surface; color: $segment_selected; border: 1px solid $segment_border; }
+QFrame#Segments { background: $segments; border-radius: 9px; }
 QPushButton#Arrow { padding: 4px; font-size: 20px; min-width: 28px; }
-QPushButton#Danger { color: #C45C70; }
-QPushButton#Link { color: #6956E8; background: transparent; border: none; text-align: left; padding-left: 0; }
+QPushButton#Danger { color: $danger; }
+QPushButton#ThemeToggle { text-align: left; padding: 10px 12px; }
+QPushButton#Link { color: $accent; background: transparent; border: none; text-align: left; padding-left: 0; }
 QTabWidget::pane { border: none; background: transparent; }
-QLineEdit, QComboBox, QDateTimeEdit, QDateEdit, QSpinBox { background: white; border: 1px solid #E3E4EF;
-    border-radius: 8px; padding: 7px 10px; min-height: 22px; selection-background-color: #DDD6FF; }
-QLineEdit:focus, QComboBox:focus, QDateTimeEdit:focus, QDateEdit:focus, QSpinBox:focus { border: 1px solid #9C8DF3; }
-QLineEdit:disabled, QDateTimeEdit:disabled { background: #F4F5F9; color: #8A8DA0; }
-QLineEdit#Search { background: #FFFFFF; padding-left: 12px; }
+QLineEdit, QComboBox, QDateTimeEdit, QDateEdit, QSpinBox { background: $surface; border: 1px solid $control_border;
+    border-radius: 8px; padding: 7px 10px; min-height: 22px; selection-background-color: $selection; }
+QLineEdit:focus, QComboBox:focus, QDateTimeEdit:focus, QDateEdit:focus, QSpinBox:focus { border: 1px solid $focus_border; }
+QLineEdit:disabled, QDateTimeEdit:disabled { background: $readonly_surface; color: $readonly_text; }
+QLineEdit#Search { background: $surface; padding-left: 12px; }
 QComboBox::drop-down { border: none; width: 22px; }
-QComboBox QAbstractItemView { background: white; border: 1px solid #E3E4EF; selection-background-color: #F0EDFF; }
-QGroupBox { background: white; border: 1px solid #ECECF4; border-radius: 12px; margin-top: 17px; padding: 22px 16px 16px; font-weight: 650; }
+QComboBox QAbstractItemView { background: $surface; border: 1px solid $control_border; selection-background-color: $soft_accent; }
+QGroupBox { background: $surface; border: 1px solid $border; border-radius: 12px; margin-top: 17px; padding: 22px 16px 16px; font-weight: 650; }
 QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 5px; }
-QTableWidget { background: white; alternate-background-color: #FCFCFF; border: 1px solid #ECECF4; border-radius: 10px;
-    gridline-color: #F0F0F6; selection-background-color: #F0EDFF; selection-color: #403280; outline: none; }
-QTableWidget::item { padding: 7px; border-bottom: 1px solid #F0F0F6; }
-QHeaderView::section { background: #F9F9FD; color: #878B9F; border: none; border-bottom: 1px solid #ECECF4; padding: 12px 8px; font-size: 11px; font-weight: 600; }
+QTableWidget { background: $surface; alternate-background-color: $table_alternate; border: 1px solid $border; border-radius: 10px;
+    gridline-color: $table_grid; selection-background-color: $soft_accent; selection-color: $selection_text; outline: none; }
+QTableWidget::item { padding: 7px; border-bottom: 1px solid $table_grid; }
+QHeaderView::section { background: $table_header; color: $header_text; border: none; border-bottom: 1px solid $border; padding: 12px 8px; font-size: 11px; font-weight: 600; }
 QScrollArea { border: none; background: transparent; }
 QScrollBar:vertical { background: transparent; width: 7px; margin: 2px; }
-QScrollBar::handle:vertical { background: #DADBE7; border-radius: 3px; min-height: 30px; }
+QScrollBar::handle:vertical { background: $scrollbar; border-radius: 3px; min-height: 30px; }
 QScrollBar:horizontal { background: transparent; height: 7px; }
-QScrollBar::handle:horizontal { background: #DADBE7; border-radius: 3px; min-width: 30px; }
+QScrollBar::handle:horizontal { background: $scrollbar; border-radius: 3px; min-width: 30px; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QCheckBox { spacing: 9px; font-weight: 400; }
 QCheckBox::indicator { width: 15px; height: 15px; }
-QToolTip { background: #26243B; color: #FFFFFF; border: none; padding: 8px; font-size: 12px; }
-QMenu#EventContextMenu { background: white; border: 1px solid #E3E4EF; border-radius: 9px; padding: 6px; }
+QToolTip { background: $tooltip; color: #FFFFFF; border: none; padding: 8px; font-size: 12px; }
+QMenu { background: $surface; border: 1px solid $control_border; color: $text; }
+QMenu::item:selected { background: $soft_accent; }
+QMenu#EventContextMenu { background: $surface; border: 1px solid $control_border; border-radius: 9px; padding: 6px; }
 QMenu#EventContextMenu::item { padding: 9px 20px 9px 28px; border-radius: 6px; }
-QMenu#EventContextMenu::item:disabled { color: #85889B; }
-QMenu#EventContextMenu::separator { height: 1px; background: #ECECF4; margin: 4px 10px; }
-QCalendarWidget#MiniCalendar, QWidget#MiniCalendarHeader { background: white; }
+QMenu#EventContextMenu::item:disabled { color: $muted; }
+QMenu#EventContextMenu::separator { height: 1px; background: $border; margin: 4px 10px; }
+QCalendarWidget#MiniCalendar, QWidget#MiniCalendarHeader { background: $surface; }
 QWidget#DatePickerPopup { background: transparent; border: none; }
-QCalendarWidget#MiniCalendar[datePopup="true"] { border: 1px solid #E8E5F3; border-radius: 12px; background: white; }
-QCalendarWidget#MiniCalendar QWidget { alternate-background-color: white; }
+QCalendarWidget#MiniCalendar[datePopup="true"] { border: 1px solid $popup_border; border-radius: 12px; background: $surface; }
+QCalendarWidget#MiniCalendar QWidget { alternate-background-color: $surface; }
 QToolButton#MiniArrow { background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 0; }
-QToolButton#MiniArrow:hover, QToolButton#MiniArrow:focus { background: #F0EDFF; border-color: #E4DEFC; }
-QToolButton#MiniArrow:pressed { background: #E5DFFF; }
-QToolButton#MiniMonth { color: #454B63; background: transparent; border: none; border-radius: 7px;
+QToolButton#MiniArrow:hover, QToolButton#MiniArrow:focus { background: $soft_accent; border-color: $mini_hover_border; }
+QToolButton#MiniArrow:pressed { background: $mini_pressed; }
+QToolButton#MiniMonth { color: $mini_heading; background: transparent; border: none; border-radius: 7px;
     font-size: 11px; font-weight: 650; padding: 5px 2px; }
-QToolButton#MiniMonth:hover, QToolButton#MiniMonth:focus { color: #6956E8; background: #F3F0FF; }
-QCalendarWidget#MiniCalendar QAbstractItemView { background: white; alternate-background-color: white;
-    color: #969AAF; border: none; outline: none; font-size: 10px; selection-background-color: transparent; }
-QMenu#MiniCalendarMenu { background: white; border: 1px solid #E3E4EF; border-radius: 9px; padding: 6px; }
+QToolButton#MiniMonth:hover, QToolButton#MiniMonth:focus { color: $accent; background: $mini_heading_hover; }
+QCalendarWidget#MiniCalendar QAbstractItemView { background: $surface; alternate-background-color: $surface;
+    color: $mini_header; border: none; outline: none; font-size: 10px; selection-background-color: transparent; }
+QMenu#MiniCalendarMenu { background: $surface; border: 1px solid $control_border; border-radius: 9px; padding: 6px; }
 QMenu#MiniCalendarMenu::item { padding: 7px 20px 7px 25px; border-radius: 5px; }
-QMenu#MiniCalendarMenu::item:selected { background: #F0EDFF; color: #5140BF; }
-QMenu#MiniCalendarMenu::separator { height: 1px; background: #ECECF4; margin: 4px 8px; }
-QProgressBar { background: #EEEAFB; border: none; border-radius: 3px; height: 5px; text-align: center; }
-QProgressBar::chunk { background: #6956E8; border-radius: 3px; }
+QMenu#MiniCalendarMenu::item:selected { background: $soft_accent; color: $segment_selected; }
+QMenu#MiniCalendarMenu::separator { height: 1px; background: $border; margin: 4px 8px; }
+QLabel#PlanLegend { color: $plan_legend; }
+QLabel#ActualLegend { color: $actual_legend; }
+QProgressBar { background: $progress; border: none; border-radius: 3px; height: 5px; text-align: center; }
+QProgressBar::chunk { background: $accent; border-radius: 3px; }
 """
 
+def current_theme():
+    app = QApplication.instance()
+    return "dark" if app and app.property("ui_theme") == "dark" else "light"
+
+
+def is_dark():
+    return current_theme() == "dark"
+
+
+def color(token):
+    return QColor((DARK if is_dark() else LIGHT)[token])
+
+
+def stylesheet(name="light"):
+    return Template(_STYLE_TEMPLATE).substitute(DARK if name == "dark" else LIGHT)
+
+
+# Retain the light stylesheet for callers that explicitly request it.
+STYLE = stylesheet("light")
+
+
+def apply_theme(name):
+    """Apply to native controls and repaint existing custom widgets immediately."""
+    name = "dark" if name == "dark" else "light"
+    app = QApplication.instance()
+    if app is None:
+        return name
+    sheet = stylesheet(name)
+    if app.property("ui_theme") == name and app.styleSheet() == sheet:
+        return name
+    app.setProperty("ui_theme", name)
+    tokens = DARK if name == "dark" else LIGHT
+    palette = QPalette()
+    roles = {
+        QPalette.ColorRole.Window: "background", QPalette.ColorRole.WindowText: "text",
+        QPalette.ColorRole.Base: "surface", QPalette.ColorRole.AlternateBase: "table_alternate",
+        QPalette.ColorRole.Text: "text", QPalette.ColorRole.Button: "surface",
+        QPalette.ColorRole.ButtonText: "text", QPalette.ColorRole.Highlight: "selection",
+        QPalette.ColorRole.HighlightedText: "text", QPalette.ColorRole.ToolTipBase: "tooltip",
+        QPalette.ColorRole.Link: "accent", QPalette.ColorRole.PlaceholderText: "muted",
+        QPalette.ColorRole.Light: "control_border", QPalette.ColorRole.Mid: "border",
+        QPalette.ColorRole.Dark: "background", QPalette.ColorRole.Shadow: "background",
+    }
+    for role, token in roles.items():
+        palette.setColor(role, QColor(tokens[token]))
+    palette.setColor(QPalette.ColorRole.ToolTipText, QColor("white"))
+    palette.setColor(QPalette.ColorRole.BrightText, QColor("white"))
+    for role in (QPalette.ColorRole.Text, QPalette.ColorRole.WindowText, QPalette.ColorRole.ButtonText):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(tokens["disabled_text"]))
+    app.setPalette(palette)
+    # Qt delivers palette/style changes and repaints existing widgets itself.
+    # Avoid enumerating native popup widgets while Qt may be destroying them.
+    app.setStyleSheet(sheet)
+    return name
+
+
+
 _PATHS = {
+    "moon": '<path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13z"/>',
+    "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
     "calendar": '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18M7 14h2m4 0h2m-8 4h2"/>',
     "chart": '<path d="M4 3v17h17M8 16v-5m5 5V7m5 9v-8"/>',
     "history": '<path d="M3 11a9 9 0 1 1 2 7M3 5v6h6m3-4v6l4 2"/>',
@@ -106,7 +220,8 @@ _PATHS = {
 }
 
 
-def icon(name, color=ACCENT):
+def icon(name, color=None):
+    color = color or (DARK if is_dark() else LIGHT)["accent"]
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="{color}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{_PATHS[name]}</g></svg>'
     pixmap = QPixmap(48, 48)
     pixmap.fill(Qt.GlobalColor.transparent)

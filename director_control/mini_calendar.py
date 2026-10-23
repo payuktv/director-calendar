@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
-from .theme import icon
+from .theme import icon, color as theme_color, is_dark
 
 
 class MiniDateGrid(QCalendarWidget):
@@ -23,7 +23,7 @@ class MiniDateGrid(QCalendarWidget):
         self.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
         self.setGridVisible(False)
         header = QTextCharFormat()
-        header.setForeground(QColor("#969AAF"))
+        header.setForeground(theme_color("mini_header"))
         for day in Qt.DayOfWeek:
             self.setWeekdayTextFormat(day, header)
         self._view = self.findChild(QAbstractItemView)
@@ -31,6 +31,22 @@ class MiniDateGrid(QCalendarWidget):
         self._view.viewport().setMouseTracking(True)
         self._view.viewport().installEventFilter(self)
         self.currentPageChanged.connect(self._page_changed)
+
+    def refresh_theme(self):
+        header = QTextCharFormat()
+        header.setForeground(theme_color("mini_header"))
+        for day in Qt.DayOfWeek:
+            self.setWeekdayTextFormat(day, header)
+        shadow = self.graphicsEffect()
+        if shadow is not None:
+            shadow.setColor(QColor(0, 0, 0, 110) if is_dark() else QColor(32, 36, 54, 35))
+        self.updateCells()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.ApplicationPaletteChange, QEvent.Type.PaletteChange,
+                            QEvent.Type.StyleChange) and hasattr(self, "_view"):
+            self.refresh_theme()
 
     def _page_changed(self, year, month):
         self._cell_rects.clear()
@@ -69,7 +85,7 @@ class MiniDateGrid(QCalendarWidget):
         self._cell_rects[QDate(day)] = QRect(rect)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(rect, QColor("white"))
+        painter.fillRect(rect, theme_color("surface"))
         selected = day == self.selectedDate()
         today = day == QDate.currentDate()
         current = day.month() == self.monthShown() and day.year() == self.yearShown()
@@ -78,22 +94,24 @@ class MiniDateGrid(QCalendarWidget):
         circle = QRectF(rect.center().x() - size / 2, rect.center().y() - size / 2, size, size)
         painter.setPen(Qt.PenStyle.NoPen)
         if selected:
-            painter.setBrush(QColor("#6956E8"))
+            painter.setBrush(theme_color("primary"))
             painter.drawEllipse(circle)
         elif day == self._hovered and enabled:
-            painter.setBrush(QColor("#F0EDFF"))
+            painter.setBrush(theme_color("soft_accent"))
             painter.drawEllipse(circle)
         if today and not selected:
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor("#C4BAF8"), 1))
+            painter.setPen(QPen(theme_color("mini_today"), 1))
             painter.drawEllipse(circle)
-        color = ("#FFFFFF" if selected else "#D6D9E4" if not enabled else "#B9BDCB" if not current
-                 else "#6956E8" if today or day == self._hovered else "#9C7F91" if day.dayOfWeek() >= 6 else "#535B72")
+        color = (QColor("white") if selected else theme_color("mini_disabled") if not enabled
+                 else theme_color("mini_outside") if not current else theme_color("accent")
+                 if today or day == self._hovered else theme_color("mini_weekend")
+                 if day.dayOfWeek() >= 6 else theme_color("mini_text"))
         face = QFont(self.font())
         face.setPixelSize(11)
         face.setWeight(QFont.Weight.DemiBold if selected or today else QFont.Weight.Normal)
         painter.setFont(face)
-        painter.setPen(QColor(color))
+        painter.setPen(color)
         painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, str(day.day()))
         painter.restore()
 
@@ -130,11 +148,17 @@ class MiniCalendar(MiniDateGrid):
         self.currentPageChanged.connect(self._update_header)
         self._update_header(self.yearShown(), self.monthShown())
 
+    def refresh_theme(self):
+        super().refresh_theme()
+        if hasattr(self, "previous"):
+            for button, name in ((self.previous, "chevron_left"), (self.next, "chevron_right")):
+                button.setIcon(icon(name, theme_color("mini_icon").name()))
+
     def _arrow(self, name, label):
         button = QToolButton()
         button.setObjectName("MiniArrow")
         button.setFixedSize(25, 27)
-        button.setIcon(icon(name, "#7A7893"))
+        button.setIcon(icon(name, theme_color("mini_icon").name()))
         button.setIconSize(QSize(14, 14))
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setToolTip(label)

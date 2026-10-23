@@ -42,6 +42,7 @@ class DatePicker(QObject):
         shadow.setOffset(0, 4)
         shadow.setColor(QColor(32, 36, 54, 35))
         self.calendar.setGraphicsEffect(shadow)
+        self.calendar.refresh_theme()
         self.control.installEventFilter(self)
         self.control.lineEdit().installEventFilter(self)
         self.popup.installEventFilter(self)

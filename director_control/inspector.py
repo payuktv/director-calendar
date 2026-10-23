@@ -1,10 +1,11 @@
 """Selected event details and compact analytics bars."""
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QFont, QPainter
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .calendar_view import text
 from .storage import STATUSES
+from .theme import color as theme_color
 
 
 def plain_label(value="", object_name=None):
@@ -108,19 +109,19 @@ class CategoryBars(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor("white"))
+        p.fillRect(self.rect(), theme_color("surface"))
         text(p, QRectF(18, 7, self.width() - 36, 25), "Распределение времени · минуты", 13, weight=QFont.Weight.DemiBold)
         if not self.values:
-            text(p, QRectF(18, 80, self.width() - 36, 25), "Здесь появится сравнение плана и подтверждённого факта", 12, QColor("#9296AB"))
+            text(p, QRectF(18, 80, self.width() - 36, 25), "Здесь появится сравнение плана и подтверждённого факта", 12, theme_color("calendar_muted"))
         maximum = max((max(planned, actual) for _, planned, actual in self.values), default=1) or 1
         for i, (name, planned, actual) in enumerate(self.values):
             y = 44 + i * 60
             text(p, QRectF(18, y, 155, 20), name, 12)
             available = max(50, self.width() - 245)
-            for offset, value, color in ((0, planned, "#B5A8F4"), (17, actual, "#57B89F")):
+            for offset, value, color in ((0, planned, "plan_bar"), (17, actual, "actual_bar")):
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor(color))
+                p.setBrush(theme_color(color))
                 if value:
                     p.drawRoundedRect(QRectF(180, y + offset + 2, available * value / maximum, 11), 4, 4)
-                text(p, QRectF(185 + available * value / maximum, y + offset - 2, 55, 20), str(value), 11, QColor("#85889B"))
+                text(p, QRectF(185 + available * value / maximum, y + offset - 2, 55, 20), str(value), 11, theme_color("muted"))
         p.end()
