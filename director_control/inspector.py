@@ -23,8 +23,7 @@ class EventInspector(QFrame):
     def __init__(self):
         super().__init__()
         self.setObjectName("Inspector")
-        self.setMinimumWidth(235)
-        self.setMaximumWidth(280)
+        self.setFixedWidth(280)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 23, 20, 20)
         layout.setSpacing(14)

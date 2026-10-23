@@ -259,7 +259,7 @@ class MainWindow(QMainWindow):
         note.setWordWrap(True)
         side.addWidget(note)
         side.addSpacing(10)
-        side.addWidget(plain_label("Версия 0.3.4", "Muted"))
+        side.addWidget(plain_label("Версия 0.3.5", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
