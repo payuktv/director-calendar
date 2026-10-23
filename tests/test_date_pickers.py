@@ -235,6 +235,56 @@ def test_whole_field_clicks_toggle_through_window_events_without_changing_date(a
     control.close()
 
 
+@pytest.mark.parametrize("text_area", [False, True])
+def test_one_close_click_does_not_reopen_when_focus_change_dismisses_popup(app, monkeypatch, text_area):
+    from PySide6.QtCore import QDate, QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    control = date_control(app)
+    calendar = open_popup(app, control)
+    native_focus = control.setFocus
+
+    def focus_dismisses_popup(reason):
+        # Model native focus dismissal occurring synchronously before setFocus returns.
+        if calendar.isVisible():
+            calendar.window().hide()
+        native_focus(reason)
+
+    monkeypatch.setattr(control, "setFocus", focus_dismisses_popup)
+    target = control.lineEdit() if text_area else control
+    for visible in (False, True, False, True, False):
+        QTest.mouseClick(target, Qt.MouseButton.LeftButton, pos=QPoint(20, target.height() // 2))
+        app.processEvents()
+        app.processEvents()
+        assert calendar.isVisible() == visible
+        assert control.date() == QDate(2026, 10, 23)
+    control.close()
+
+
+@pytest.mark.parametrize("arrow", [False, True])
+def test_one_close_click_when_mouse_is_grabbed_by_popup(app, arrow):
+    from PySide6.QtCore import QDate, QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    control = date_control(app)
+    calendar = open_popup(app, control)
+    popup = calendar.window()
+    point = QPoint(control.width() - 10 if arrow else 25, control.height() // 2)
+    for _ in range(2):
+        # Real popup grabs route the outside click through its window, not the input's window.
+        QTest.mouseClick(popup.windowHandle(), Qt.MouseButton.LeftButton,
+                         pos=popup.mapFromGlobal(control.mapToGlobal(point)))
+        app.processEvents()
+        assert not calendar.isVisible()
+        QTest.mouseClick(control.windowHandle(), Qt.MouseButton.LeftButton, pos=point)
+        app.processEvents()
+        app.processEvents()
+        assert calendar.isVisible()
+        assert control.date() == QDate(2026, 10, 23)
+    popup.hide()
+    control.close()
+
+
 @pytest.mark.parametrize("above", [False, True])
 def test_popup_card_has_gap_and_stays_on_screen(app, above):
     from PySide6.QtCore import QPoint, QRect
