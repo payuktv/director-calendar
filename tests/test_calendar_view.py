@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from director_control.calendar_view import Block, layout_overlaps, period_days, split_blocks
 from director_control.storage import Event, Store
 
@@ -143,4 +145,97 @@ def test_month_overflow_opens_accessible_day_list():
     rect, _ = board.month.more[0]
     QTest.mouseClick(board.month, Qt.MouseButton.LeftButton, pos=rect.center().toPoint())
     assert chosen == [date(2026, 10, 22)] and opened == [True]
+    board.close()
+
+
+def test_wrapped_title_uses_full_height_and_elides_the_last_complete_line():
+    from PySide6.QtGui import QFontMetricsF
+    from PySide6.QtWidgets import QApplication
+    from director_control.calendar_view import fit_wrapped_text, font
+
+    _app = QApplication.instance() or QApplication([])
+    face = font(12)
+    title = "Обсуждение графика поставок и согласование бюджета нового проекта"
+    short = fit_wrapped_text(title, face, 85, 34)
+    tall = fit_wrapped_text(title, face, 85, 180)
+    assert short.truncated and short.lines[-1].endswith("…")
+    assert len(short.lines) * short.line_height <= 34
+    assert not tall.truncated and len(tall.lines) > 3
+    assert "".join(tall.lines).replace(" ", "") == title.replace(" ", "")
+    metrics = QFontMetricsF(face)
+    assert all(metrics.horizontalAdvance(line) <= 85 for line in short.lines + tall.lines)
+
+
+def test_long_words_and_emoji_wrap_without_losing_characters():
+    from PySide6.QtGui import QFontMetricsF
+    from PySide6.QtWidgets import QApplication
+    from director_control.calendar_view import fit_wrapped_text, font
+
+    _app = QApplication.instance() or QApplication([])
+    face = font(12)
+    title = "Сверхдлинноеназваниемероприятия📅Согласованиепоставки"
+    fitted = fit_wrapped_text(title, face, 48, 500)
+    assert not fitted.truncated and "".join(fitted.lines) == title
+    assert all(QFontMetricsF(face).horizontalAdvance(line) <= 48 for line in fitted.lines)
+
+
+@pytest.mark.parametrize("width,height", [(90, 24), (90, 51), (42, 100), (90, 180), (9, 1)])
+def test_event_text_stays_inside_short_narrow_and_tall_cards(width, height, monkeypatch):
+    from PySide6.QtCore import QRectF, Qt
+    from PySide6.QtGui import QImage, QPainter
+    from PySide6.QtWidgets import QApplication
+    from director_control import calendar_view
+
+    _app = QApplication.instance() or QApplication([])
+    board = calendar_view.CalendarBoard()
+    item = meeting(title="Согласование технического задания и графика поставок оборудования")
+    image = QImage(160, 240, QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.white)
+    painter = QPainter(image)
+    card = QRectF(20, 20, width, height)
+    drawn = []
+    real_text = calendar_view.text
+
+    def record(painter, rect, value, *args, **kwargs):
+        used = real_text(painter, rect, value, *args, **kwargs)
+        drawn.append((QRectF(rect), value, used))
+        return used
+
+    monkeypatch.setattr(calendar_view, "text", record)
+    board.grid.draw_chip(painter, card, item)
+    painter.end()
+    visible = [(rect, value, used) for rect, value, used in drawn if used]
+    assert all(card.contains(QRectF(rect.x(), rect.y(), rect.width(), used)) for rect, _, used in visible)
+    for (rect, _, used), (following, _, _) in zip(visible, visible[1:]):
+        assert rect.y() + used <= following.y()
+    if height == 24:
+        assert [value for _, value, _ in visible] == [item.title]
+    if height == 180:
+        title_rect = next(rect for rect, value, _ in visible if value == item.title)
+        assert title_rect.height() > 40
+    for y in range(image.height()):
+        for x in range(image.width()):
+            if x < 20 or x >= 20 + width or y < 20 or y >= 20 + height:
+                assert image.pixelColor(x, y) == Qt.GlobalColor.white
+    board.close()
+
+
+def test_full_event_title_remains_available_in_hover_tooltip():
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QHelpEvent
+    from PySide6.QtWidgets import QApplication, QToolTip
+    from director_control.calendar_view import CalendarBoard
+
+    app = QApplication.instance() or QApplication([])
+    board = CalendarBoard()
+    title = "Согласование графика поставок и бюджета проекта — полное название"
+    item = meeting(title=title, end="2026-10-22T09:15:00")
+    board.resize(700, 600)
+    board.set_data(date(2026, 10, 22), "week", "current", [item], {})
+    board.show()
+    app.processEvents()
+    point = board.grid.hits[0][0].center().toPoint()
+    QApplication.sendEvent(board.grid, QHelpEvent(QEvent.Type.ToolTip, point, board.grid.mapToGlobal(point)))
+    assert title in QToolTip.text() and "09:00" in QToolTip.text() and "09:15" in QToolTip.text()
+    QToolTip.hideText()
     board.close()
