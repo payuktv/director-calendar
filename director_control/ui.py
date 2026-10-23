@@ -19,7 +19,7 @@ from .mail_ui import MailPanel
 
 
 from .theme import STYLE, icon
-from .calendar_view import CalendarBoard, MONTHS, MONTHS_GEN, period_days, event_interval
+from .calendar_view import CalendarBoard, MONTHS, MONTHS_GEN, period_days, event_interval, color_for
 from .inspector import EventInspector, CategoryBars, plain_label
 from .status_menu import EventStatusMenu
 
@@ -259,7 +259,7 @@ class MainWindow(QMainWindow):
         note.setWordWrap(True)
         side.addWidget(note)
         side.addSpacing(10)
-        side.addWidget(plain_label("Версия 0.3.3", "Muted"))
+        side.addWidget(plain_label("Версия 0.3.4", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -710,8 +710,7 @@ class MainWindow(QMainWindow):
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if col == 5:
-                    item.setForeground(QBrush(QColor({"done": "#369A83", "partial": "#BA8A49", "cancelled": "#BE7186",
-                                                     "moved": "#7865D9", "pending": "#85889B"}[ev.status])))
+                    item.setForeground(QBrush(QColor("#85889B") if ev.status == "pending" else color_for(ev)[0]))
                 item.setToolTip(ev.note or "Двойной щелчок — открыть карточку")
                 self.table.setItem(row, col, item)
         if self._selected_id in self.row_ids:

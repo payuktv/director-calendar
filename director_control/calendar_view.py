@@ -23,6 +23,12 @@ TEXT = QColor("#373C52")
 MUTED = QColor("#9296AB")
 GUTTER = 52
 HOUR = 66
+STATUS_COLORS = {
+    "cancelled": ("#BE7186", "#FCF0F3"),
+    "done": ("#369A83", "#EDF8F4"),
+    "partial": ("#A87900", "#FFF4C2"),
+    "moved": ("#397ED8", "#EAF2FF"),
+}
 
 
 def period_days(focus: date, mode: str) -> list[date]:
@@ -101,10 +107,8 @@ def split_blocks(events, days, layer, metadata):
 
 def color_for(event, status=None):
     status = event.status if status is None else status
-    if status == "cancelled":
-        return QColor("#BE7186"), QColor("#FCF0F3")
-    if status == "done":
-        return QColor("#369A83"), QColor("#EDF8F4")
+    if status in STATUS_COLORS:
+        return tuple(QColor(color) for color in STATUS_COLORS[status])
     palette = (("#7865D9", "#F1EEFF"), ("#508BD5", "#ECF4FF"), ("#C58C42", "#FFF6E8"),
                ("#B374B8", "#F9EEFA"), ("#489B9F", "#EAF7F7"))
     index = hashlib.blake2b(event.category.encode(), digest_size=1).digest()[0] % len(palette)
