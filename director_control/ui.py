@@ -23,6 +23,7 @@ from .calendar_view import CalendarBoard, MONTHS, MONTHS_GEN, period_days, event
 from .inspector import EventInspector, CategoryBars, plain_label
 from .status_menu import EventStatusMenu
 from .mini_calendar import MiniCalendar
+from .date_picker import install_date_picker
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -88,8 +89,7 @@ class EventDialog(QDialog):
         def date_edit(value: str) -> QDateTimeEdit:
             control = QDateTimeEdit()
             control.setDisplayFormat("dd.MM.yyyy HH:mm")
-            control.setCalendarPopup(True)
-            control.setCalendarWidget(MiniCalendar(control))
+            install_date_picker(control)
             control.setDateTime(qt_datetime(value))
             return control
 
@@ -225,7 +225,7 @@ class MainWindow(QMainWindow):
         self.mini.activated.connect(lambda day: self.date_input.setDate(day))
         side.addWidget(self.mini)
         side.addStretch()
-        side.addWidget(plain_label("Версия 0.4.3", "Muted"))
+        side.addWidget(plain_label("Версия 0.4.4", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -333,8 +333,7 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.button("Сегодня", lambda: self.set_date(self.calendar.today())))
         self.date_input = QDateEdit(QDate.currentDate())
         self.date_input.setLocale(QLocale(QLocale.Language.Russian))
-        self.date_input.setCalendarPopup(True)
-        self.date_input.setCalendarWidget(MiniCalendar(self.date_input))
+        install_date_picker(self.date_input)
         self.date_input.setDisplayFormat("dd.MM.yyyy")
         self.date_input.setFixedWidth(126)
         self.date_input.dateChanged.connect(self.reload)

@@ -108,12 +108,11 @@ def test_event_pickers_preserve_time_and_save_only_local_fact(app, tmp_path, fie
 def date_control(app):
     from PySide6.QtCore import QDate
     from PySide6.QtWidgets import QDateEdit
-    from director_control.mini_calendar import MiniCalendar
+    from director_control.date_picker import install_date_picker
 
     control = QDateEdit(QDate(2026, 10, 23))
     control.setDisplayFormat("dd.MM.yyyy")
-    control.setCalendarPopup(True)
-    control.setCalendarWidget(MiniCalendar(control))
+    install_date_picker(control)
     control.resize(180, 40)
     control.show()
     app.processEvents()
@@ -146,15 +145,19 @@ def test_keyboard_escape_enter_and_date_limits(app):
 
 @pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
 def test_date_edit_can_be_destroyed_with_popup_open(app):
-    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtCore import QCoreApplication, QEvent, QPoint
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
     from shiboken6 import isValid
 
     control = date_control(app)
     calendar = open_popup(app, control)
+    QTest.mouseMove(calendar._view.viewport(), QPoint(-30, -30))
     control.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     app.processEvents()
     assert not isValid(control) and not isValid(calendar)
+    assert QApplication.overrideCursor() is None
 
 
 def test_custom_month_menu_navigates_without_changing_date_until_day_is_chosen(app):
@@ -209,4 +212,107 @@ def test_year_dialog_restores_popup_for_day_selection(app, accept):
     assert control.date() == QDate(2026, 10, 23)
     click_day(app, calendar, QDate(year, 10, 25))
     assert control.date() == QDate(year, 10, 25) and not calendar.isVisible()
+    control.close()
+
+
+def test_whole_field_clicks_toggle_through_window_events_without_changing_date(app):
+    from PySide6.QtCore import QDate, QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    control = date_control(app)
+    calendar = control.calendarWidget()
+    for visible in (True, False, True, False):
+        QTest.mouseClick(control.windowHandle(), Qt.MouseButton.LeftButton, pos=QPoint(25, control.height() // 2))
+        app.processEvents()
+        app.processEvents()
+        assert calendar.isVisible() == visible
+        assert control.date() == QDate(2026, 10, 23)
+    edit = control.lineEdit()
+    for visible in (True, False):
+        QTest.mouseClick(edit, Qt.MouseButton.LeftButton, pos=QPoint(20, edit.height() // 2))
+        app.processEvents()
+        assert calendar.isVisible() == visible
+    control.close()
+
+
+@pytest.mark.parametrize("above", [False, True])
+def test_popup_card_has_gap_and_stays_on_screen(app, above):
+    from PySide6.QtCore import QPoint, QRect
+
+    control = date_control(app)
+    screen = control.screen().availableGeometry()
+    control.move(screen.left() + 100, screen.bottom() - control.height() - 20 if above else screen.top() + 80)
+    app.processEvents()
+    calendar = open_popup(app, control)
+    app.processEvents()
+    field = QRect(control.mapToGlobal(QPoint()), control.size())
+    card = QRect(calendar.mapToGlobal(QPoint()), calendar.size())
+    gap = field.top() - card.bottom() - 1 if above else card.top() - field.bottom() - 1
+    assert gap == 8 and card.left() == field.left()
+    assert screen.contains(card)
+    control.calendarWidget().window().hide()
+    control.close()
+
+
+def test_outside_pointer_is_arrow_and_outside_click_closes_popup(app):
+    from PySide6.QtCore import QDate, QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QLineEdit, QVBoxLayout, QWidget
+    from director_control.date_picker import install_date_picker
+    from PySide6.QtWidgets import QDateEdit
+
+    window = QWidget()
+    layout = QVBoxLayout(window)
+    control = QDateEdit(QDate(2026, 10, 23))
+    install_date_picker(control)
+    outside = QLineEdit("Другое поле")
+    layout.addWidget(control)
+    layout.addWidget(outside)
+    window.resize(480, 120)
+    window.show()
+    app.processEvents()
+    calendar = open_popup(app, control)
+    QTest.mouseMove(calendar._view.viewport(), calendar._cell_rects[QDate(2026, 10, 26)].center())
+    assert calendar._view.viewport().cursor().shape() == Qt.CursorShape.PointingHandCursor
+    QTest.mouseMove(outside, QPoint(outside.width() - 10, outside.height() // 2))
+    app.processEvents()
+    assert calendar._hovered is None
+    assert QApplication.overrideCursor().shape() == Qt.CursorShape.ArrowCursor
+    QTest.mouseMove(calendar._view.viewport(), calendar._cell_rects[QDate(2026, 10, 26)].center())
+    app.processEvents()
+    assert QApplication.overrideCursor() is None
+    QTest.mouseMove(outside, QPoint(outside.width() - 10, outside.height() // 2))
+    QTest.mouseClick(outside, Qt.MouseButton.LeftButton, pos=QPoint(outside.width() - 10, outside.height() // 2))
+    app.processEvents()
+    assert not calendar.isVisible() and QApplication.overrideCursor() is None
+    window.close()
+
+
+def test_date_time_field_opens_on_date_click_and_keeps_time_editable(app):
+    from PySide6.QtCore import QDate, QDateTime, QPoint, QTime, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QDateTimeEdit
+    from director_control.date_picker import install_date_picker
+
+    control = QDateTimeEdit(QDateTime(QDate(2026, 10, 23), QTime(9, 10, 15)))
+    control.setDisplayFormat("dd.MM.yyyy HH:mm")
+    install_date_picker(control)
+    control.resize(250, 40)
+    control.show()
+    app.processEvents()
+    edit = control.lineEdit()
+    hour_x = edit.fontMetrics().horizontalAdvance("23.10.2026 ") + 3
+    QTest.mouseClick(edit, Qt.MouseButton.LeftButton, pos=QPoint(hour_x, edit.height() // 2))
+    assert not control.calendarWidget().isVisible()
+    assert control.currentSection() == QDateTimeEdit.Section.HourSection
+    QTest.keyClick(control, Qt.Key.Key_Up)
+    assert control.time() == QTime(10, 10, 15)
+    for visible in (True, False):
+        QTest.mouseClick(edit, Qt.MouseButton.LeftButton, pos=QPoint(15, edit.height() // 2))
+        app.processEvents()
+        assert control.calendarWidget().isVisible() == visible
+        assert control.time() == QTime(10, 10, 15)
+    control.setEnabled(False)
+    QTest.mouseClick(control, Qt.MouseButton.LeftButton, pos=QPoint(25, control.height() // 2))
+    assert not control.calendarWidget().isVisible()
     control.close()

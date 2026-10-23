@@ -35,7 +35,7 @@ class MiniDateGrid(QCalendarWidget):
     def _page_changed(self, year, month):
         self._cell_rects.clear()
         self._hovered = None
-        self._view.viewport().unsetCursor()
+        self._view.viewport().setCursor(Qt.CursorShape.ArrowCursor)
 
     def eventFilter(self, watched, event):
         view = getattr(self, "_view", None)
@@ -48,7 +48,7 @@ class MiniDateGrid(QCalendarWidget):
                 watched.setCursor(Qt.CursorShape.PointingHandCursor if day else Qt.CursorShape.ArrowCursor)
             elif event.type() == QEvent.Type.Leave:
                 self._set_hovered(None)
-                watched.unsetCursor()
+                watched.setCursor(Qt.CursorShape.ArrowCursor)
         return super().eventFilter(watched, event)
 
     def _set_hovered(self, day):
@@ -155,7 +155,7 @@ class MiniCalendar(MiniDateGrid):
     def _show_month_menu(self):
         menu = QMenu(self)
         menu.setObjectName("MiniCalendarMenu")
-        menu.setCursor(Qt.CursorShape.PointingHandCursor)
+        menu.setCursor(Qt.CursorShape.ArrowCursor)
         for month in range(1, 13):
             action = menu.addAction(self.locale().standaloneMonthName(month, QLocale.FormatType.LongFormat).capitalize())
             action.setData(month)
