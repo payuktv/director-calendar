@@ -1,3 +1,4 @@
+from tests.helpers import seed_event, source_update
 from datetime import date
 
 import pytest
@@ -9,7 +10,7 @@ from director_control.storage import Event, Store
 def meeting(index=1, start="2026-10-22T09:00:00", end="2026-10-22T10:00:00", **fields):
     data = dict(id=index, title="Событие", category="Работа", current_start=start, current_end=end,
                 baseline_start=None, baseline_end=None, actual_start=None, actual_end=None,
-                status="pending", note="", source="manual")
+                status="pending", note="", source="caldav")
     data.update(fields)
     return Event(**data)
 
@@ -62,9 +63,9 @@ def test_missing_fact_does_not_create_a_calendar_block():
 
 def test_period_query_includes_actual_time_outside_both_plans(tmp_path):
     store = Store(tmp_path / "events.db")
-    eid = store.create_event("Перенос", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
+    eid = seed_event(store, "Перенос", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
     store.freeze_day("2026-10-22")
-    store.update_event(eid, current_start="2026-10-23T09:00:00", current_end="2026-10-23T10:00:00",
+    source_update(store, eid, current_start="2026-10-23T09:00:00", current_end="2026-10-23T10:00:00",
                        actual_start="2026-10-24T11:00:00", actual_end="2026-10-24T12:00:00")
     assert [e.id for e in store.events_between("2026-10-24T00:00:00", "2026-10-25T00:00:00")] == [eid]
     assert store.events_between("2026-10-24T12:00:00", "2026-10-25T00:00:00") == []
@@ -82,17 +83,16 @@ def test_timeline_selection_activation_and_empty_slot():
     board.set_data(date(2026, 10, 22), "day", "current", [meeting()], {})
     board.show()
     app.processEvents()
-    selected, opened, slots = [], [], []
+    selected, opened = [], []
     board.selected.connect(selected.append)
     board.activated.connect(opened.append)
-    board.slot_requested.connect(lambda day, minute: slots.append((day, minute)))
     rect, _ = board.grid.hits[0]
     QTest.mouseClick(board.grid, Qt.MouseButton.LeftButton, pos=rect.center().toPoint())
     QTest.mouseDClick(board.grid, Qt.MouseButton.LeftButton, pos=rect.center().toPoint())
     QTest.mouseDClick(board.grid, Qt.MouseButton.LeftButton,
                      pos=QPoint(GUTTER + 100, int(11.25 * board.hour_height)))
     assert selected == [1] and opened == [1]
-    assert slots == [(date(2026, 10, 22), 660)]
+    assert not hasattr(board, "slot_requested")
     board.close()
 
 

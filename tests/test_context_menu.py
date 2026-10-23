@@ -1,4 +1,5 @@
 """Calendar context menu interaction and preservation of schedule data."""
+from tests.helpers import seed_event
 import json
 import os
 from dataclasses import replace
@@ -25,7 +26,7 @@ def test_context_request_targets_the_clicked_event_and_day(app, mode, all_day):
     from director_control.storage import Event
 
     item = Event(1, "Двухдневное событие", "Работа", "2026-10-22T00:00:00", "2026-10-24T00:00:00",
-                 None, None, None, None, "pending", "", "manual")
+                 None, None, None, None, "pending", "", "caldav")
     board = CalendarBoard()
     board.resize(450 if mode == "week" else 900, 650)
     board.set_data(date(2026, 10, 22), mode, "current", [item], {1: {"all_day": all_day}})
@@ -83,25 +84,21 @@ def choose_menu_action(app, invoke, status=None):
     return result
 
 
-@pytest.mark.parametrize("source", ["manual", "caldav"])
 @pytest.mark.parametrize("has_fact", [False, True])
-def test_menu_changes_only_target_status_and_refreshes_ui_and_audit(app, tmp_path, source, has_fact):
+def test_menu_changes_only_target_status_and_refreshes_ui_and_audit(app, tmp_path, has_fact):
     from PySide6.QtCore import QDate, QPoint
     from director_control.mail_calendar import CalendarConfig, parse_calendars
     from director_control.storage import Store, STATUSES
     from director_control.ui import MainWindow
 
     store = Store(tmp_path / "menu.db")
-    if source == "caldav":
-        config = CalendarConfig("https://calendar.mail.ru/principals/test/calendars/context/", "test@example.test")
-        snapshot = parse_calendars(["BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:context-test\r\n"
-            "DTSTART:20261022T090000\r\nDTEND:20261022T100000\r\nSUMMARY:Mail event\r\n"
-            "END:VEVENT\r\nEND:VCALENDAR\r\n"], config, date(2026, 10, 22), date(2026, 10, 24))
-        store.apply_calendar_snapshot(snapshot)
-        target = store.daily_events("2026-10-22")[0].id
-    else:
-        target = store.create_event("Ручное событие", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
-    other = store.create_event("Другое событие", "Работа", "2026-10-22T11:00:00", "2026-10-22T12:00:00")
+    config = CalendarConfig("https://calendar.mail.ru/principals/test/calendars/context/", "test@example.test")
+    snapshot = parse_calendars(["BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:context-test\r\n"
+        "DTSTART:20261022T090000\r\nDTEND:20261022T100000\r\nSUMMARY:Mail event\r\n"
+        "END:VEVENT\r\nEND:VCALENDAR\r\n"], config, date(2026, 10, 22), date(2026, 10, 24))
+    store.apply_calendar_snapshot(snapshot)
+    target = store.daily_events("2026-10-22")[0].id
+    other = seed_event(store, "Другое событие", "Работа", "2026-10-22T11:00:00", "2026-10-22T12:00:00")
     store.freeze_day("2026-10-22")
     store.update_event(target, note="Локальный комментарий", category="Работа", **(
         {"actual_start": "2026-10-22T09:05:00", "actual_end": "2026-10-22T10:15:00"} if has_fact else {}))
@@ -128,11 +125,10 @@ def test_menu_changes_only_target_status_and_refreshes_ui_and_audit(app, tmp_pat
         last = store.audit_log()[0]
         assert last["event_id"] == target and set(json.loads(last["details"])) == {"status"}
         previous = status
-    if source == "caldav":
-        assert store.calendar_info()[target]["local_status"] == 1
-        cancelled = replace(snapshot, events=tuple(replace(item, cancelled=True) for item in snapshot.events))
-        store.apply_calendar_snapshot(cancelled)
-        assert store.get_event(target).status == "pending"
+    assert store.calendar_info()[target]["local_status"] == 1
+    cancelled = replace(snapshot, events=tuple(replace(item, cancelled=True) for item in snapshot.events))
+    store.apply_calendar_snapshot(cancelled)
+    assert store.get_event(target).status == "pending"
     window.close()
 
 
@@ -142,7 +138,7 @@ def test_dismissal_and_choosing_current_status_do_not_create_changes(app, tmp_pa
     from director_control.ui import MainWindow
 
     store = Store(tmp_path / "unchanged.db")
-    target = store.create_event("Событие", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
+    target = seed_event(store, "Событие", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
     before = store.get_event(target)
     count = len(store.audit_log())
     window = MainWindow(store)
@@ -161,8 +157,8 @@ def test_list_context_menu_uses_clicked_row_instead_of_previous_selection(app, t
     from director_control.ui import MainWindow
 
     store = Store(tmp_path / "list-menu.db")
-    first = store.create_event("Первое", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
-    second = store.create_event("Второе", "Работа", "2026-10-22T11:00:00", "2026-10-22T12:00:00")
+    first = seed_event(store, "Первое", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
+    second = seed_event(store, "Второе", "Работа", "2026-10-22T11:00:00", "2026-10-22T12:00:00")
     window = MainWindow(store)
     window.date_input.setDate(QDate(2026, 10, 22))
     window.set_view("agenda")
@@ -189,7 +185,7 @@ def test_menu_row_and_hover_colors_match_calendar_for_every_status(app, category
     from director_control.theme import STYLE
 
     item = Event(1, "Цвет меню", category, "2026-10-22T09:00:00", "2026-10-22T10:00:00",
-                 None, None, None, None, "partial", "", "manual")
+                 None, None, None, None, "partial", "", "caldav")
     menu = EventStatusMenu(item)
     menu.setStyleSheet(STYLE)
     group = QActionGroup(menu)

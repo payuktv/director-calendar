@@ -347,9 +347,6 @@ class TimeGrid(HitCanvas):
         hit = self.hit(event.position())
         if hit:
             self.board.activated.emit(hit.id)
-        elif event.position().x() >= GUTTER:
-            day, minute = self.slot(event.position())
-            self.board.slot_requested.emit(day, minute)
 
 
 class DayHeader(HitCanvas):
@@ -491,16 +488,12 @@ class MonthGrid(HitCanvas):
         hit = self.hit(event.position())
         if hit:
             self.board.activated.emit(hit.id)
-        else:
-            day = period_days(self.board.focus, "month")[self.cell(event.position())]
-            self.board.slot_requested.emit(day, 9 * 60)
 
 
 class CalendarBoard(QWidget):
     selected = Signal(int)
     activated = Signal(int)
     context_requested = Signal(int, QPoint)
-    slot_requested = Signal(object, int)
     date_selected = Signal(object)
     agenda_requested = Signal()
 
