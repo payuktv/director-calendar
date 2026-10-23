@@ -1,10 +1,11 @@
 """Compact date picker with a custom header and softly highlighted day cells."""
-from PySide6.QtCore import QDate, QEvent, QLocale, QPoint, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QDate, QEvent, QLocale, QPoint, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QTextCharFormat
 from PySide6.QtWidgets import (
     QAbstractItemView, QCalendarWidget, QDialog, QHBoxLayout, QInputDialog,
-    QMenu, QToolButton, QVBoxLayout, QWidget,
+    QMenu, QToolButton, QWidget,
 )
+from shiboken6 import isValid
 
 from .theme import icon
 
@@ -38,7 +39,7 @@ class MiniDateGrid(QCalendarWidget):
 
     def eventFilter(self, watched, event):
         view = getattr(self, "_view", None)
-        if view is not None and watched is view.viewport():
+        if view is not None and isValid(view) and watched is view.viewport():
             if event.type() == QEvent.Type.MouseMove:
                 day = next((day for day, rect in self._cell_rects.items()
                             if rect.contains(event.position().toPoint())
@@ -97,16 +98,13 @@ class MiniDateGrid(QCalendarWidget):
         painter.restore()
 
 
-class MiniCalendar(QWidget):
-    clicked = Signal(QDate)
-
+class MiniCalendar(MiniDateGrid):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MiniCalendar")
-        self.setLocale(QLocale(QLocale.Language.Russian))
         self.setMinimumWidth(165)
-        self.setFixedHeight(216)
-        layout = QVBoxLayout(self)
+        self.setMinimumHeight(216)
+        layout = self.layout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)
         header = QWidget()
@@ -125,16 +123,12 @@ class MiniCalendar(QWidget):
         row.addWidget(self.previous)
         row.addWidget(self.month_button, 1)
         row.addWidget(self.next)
-        layout.addWidget(header)
-        self.grid = MiniDateGrid(self)
-        layout.addWidget(self.grid, 1)
-        self.previous.clicked.connect(self.grid.showPreviousMonth)
-        self.next.clicked.connect(self.grid.showNextMonth)
+        layout.insertWidget(0, header)
+        self.previous.clicked.connect(self.showPreviousMonth)
+        self.next.clicked.connect(self.showNextMonth)
         self.month_button.clicked.connect(self._show_month_menu)
-        self.grid.currentPageChanged.connect(self._update_header)
-        self.grid.clicked.connect(self.clicked.emit)
-        self.grid.activated.connect(self.clicked.emit)
-        self._update_header(self.grid.yearShown(), self.grid.monthShown())
+        self.currentPageChanged.connect(self._update_header)
+        self._update_header(self.yearShown(), self.monthShown())
 
     def _arrow(self, name, label):
         button = QToolButton()
@@ -151,11 +145,12 @@ class MiniCalendar(QWidget):
         name = self.locale().standaloneMonthName(month, QLocale.FormatType.LongFormat).capitalize()
         self.month_button.setText(f"{name} {year}")
         first = QDate(year, month, 1)
-        self.previous.setEnabled(first > QDate(self.grid.minimumDate().year(), self.grid.minimumDate().month(), 1))
-        self.next.setEnabled(first < QDate(self.grid.maximumDate().year(), self.grid.maximumDate().month(), 1))
+        self.previous.setEnabled(first > QDate(self.minimumDate().year(), self.minimumDate().month(), 1))
+        self.next.setEnabled(first < QDate(self.maximumDate().year(), self.maximumDate().month(), 1))
 
-    def setSelectedDate(self, day):
-        self.grid.setSelectedDate(day)
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._update_header(self.yearShown(), self.monthShown())
 
     def _show_month_menu(self):
         menu = QMenu(self)
@@ -165,8 +160,11 @@ class MiniCalendar(QWidget):
             action = menu.addAction(self.locale().standaloneMonthName(month, QLocale.FormatType.LongFormat).capitalize())
             action.setData(month)
             action.setCheckable(True)
-            action.setChecked(month == self.grid.monthShown())
-            action.triggered.connect(lambda checked, month=month: self.grid.setCurrentPage(self.grid.yearShown(), month))
+            action.setChecked(month == self.monthShown())
+            first = QDate(self.yearShown(), month, 1)
+            last = QDate(first.year(), month, first.daysInMonth())
+            action.setEnabled(first <= self.maximumDate() and last >= self.minimumDate())
+            action.triggered.connect(lambda checked, month=month: self.setCurrentPage(self.yearShown(), month))
         menu.addSeparator()
         menu.addAction("Выбрать год…", self._choose_year)
         try:
@@ -175,14 +173,23 @@ class MiniCalendar(QWidget):
             menu.deleteLater()
 
     def _choose_year(self):
+        popup = self.window()
+        restore_popup = popup.windowType() == Qt.WindowType.Popup and popup.isVisible()
+        year, month = self.yearShown(), self.monthShown()
         dialog = QInputDialog(self.window())
         dialog.setWindowTitle("Год календаря")
         dialog.setLabelText("Выбери год")
         dialog.setInputMode(QInputDialog.InputMode.IntInput)
-        dialog.setIntRange(max(1, self.grid.minimumDate().year()), self.grid.maximumDate().year())
-        dialog.setIntValue(self.grid.yearShown())
+        dialog.setIntRange(max(1, self.minimumDate().year()), self.maximumDate().year())
+        dialog.setIntValue(year)
         dialog.setOkButtonText("Выбрать")
         dialog.setCancelButtonText("Отмена")
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.grid.setCurrentPage(dialog.intValue(), self.grid.monthShown())
+            year = dialog.intValue()
         dialog.deleteLater()
+        # A modal year dialog dismisses Qt's date-edit popup; restore it for day selection.
+        if restore_popup:
+            popup.show()
+            self.setFocus()
+        page = max(self.minimumDate(), min(self.maximumDate(), QDate(year, month, 1)))
+        self.setCurrentPage(page.year(), page.month())

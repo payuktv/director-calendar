@@ -73,19 +73,15 @@ QMenu#EventContextMenu { background: white; border: 1px solid #E3E4EF; border-ra
 QMenu#EventContextMenu::item { padding: 9px 20px 9px 28px; border-radius: 6px; }
 QMenu#EventContextMenu::item:disabled { color: #85889B; }
 QMenu#EventContextMenu::separator { height: 1px; background: #ECECF4; margin: 4px 10px; }
-QCalendarWidget { background: white; }
-QCalendarWidget QWidget { alternate-background-color: white; }
-QCalendarWidget QToolButton { color: #55596E; background: white; border: none; font-size: 11px; padding: 3px; }
-QCalendarWidget QMenu { background: white; }
-QCalendarWidget QAbstractItemView { background: white; color: #61667C; font-size: 11px; selection-background-color: #6956E8; selection-color: white; outline: none; }
-QWidget#MiniCalendar, QWidget#MiniCalendarHeader { background: white; }
+QCalendarWidget#MiniCalendar, QWidget#MiniCalendarHeader { background: white; }
+QCalendarWidget#MiniCalendar QWidget { alternate-background-color: white; }
 QToolButton#MiniArrow { background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 0; }
 QToolButton#MiniArrow:hover, QToolButton#MiniArrow:focus { background: #F0EDFF; border-color: #E4DEFC; }
 QToolButton#MiniArrow:pressed { background: #E5DFFF; }
 QToolButton#MiniMonth { color: #454B63; background: transparent; border: none; border-radius: 7px;
     font-size: 11px; font-weight: 650; padding: 5px 2px; }
 QToolButton#MiniMonth:hover, QToolButton#MiniMonth:focus { color: #6956E8; background: #F3F0FF; }
-QCalendarWidget#MiniDateGrid QAbstractItemView { background: white; alternate-background-color: white;
+QCalendarWidget#MiniCalendar QAbstractItemView { background: white; alternate-background-color: white;
     color: #969AAF; border: none; outline: none; font-size: 10px; selection-background-color: transparent; }
 QMenu#MiniCalendarMenu { background: white; border: 1px solid #E3E4EF; border-radius: 9px; padding: 6px; }
 QMenu#MiniCalendarMenu::item { padding: 7px 20px 7px 25px; border-radius: 5px; }
