@@ -78,6 +78,19 @@ QCalendarWidget QWidget { alternate-background-color: white; }
 QCalendarWidget QToolButton { color: #55596E; background: white; border: none; font-size: 11px; padding: 3px; }
 QCalendarWidget QMenu { background: white; }
 QCalendarWidget QAbstractItemView { background: white; color: #61667C; font-size: 11px; selection-background-color: #6956E8; selection-color: white; outline: none; }
+QWidget#MiniCalendar, QWidget#MiniCalendarHeader { background: white; }
+QToolButton#MiniArrow { background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 0; }
+QToolButton#MiniArrow:hover, QToolButton#MiniArrow:focus { background: #F0EDFF; border-color: #E4DEFC; }
+QToolButton#MiniArrow:pressed { background: #E5DFFF; }
+QToolButton#MiniMonth { color: #454B63; background: transparent; border: none; border-radius: 7px;
+    font-size: 11px; font-weight: 650; padding: 5px 2px; }
+QToolButton#MiniMonth:hover, QToolButton#MiniMonth:focus { color: #6956E8; background: #F3F0FF; }
+QCalendarWidget#MiniDateGrid QAbstractItemView { background: white; alternate-background-color: white;
+    color: #969AAF; border: none; outline: none; font-size: 10px; selection-background-color: transparent; }
+QMenu#MiniCalendarMenu { background: white; border: 1px solid #E3E4EF; border-radius: 9px; padding: 6px; }
+QMenu#MiniCalendarMenu::item { padding: 7px 20px 7px 25px; border-radius: 5px; }
+QMenu#MiniCalendarMenu::item:selected { background: #F0EDFF; color: #5140BF; }
+QMenu#MiniCalendarMenu::separator { height: 1px; background: #ECECF4; margin: 4px 8px; }
 QProgressBar { background: #EEEAFB; border: none; border-radius: 3px; height: 5px; text-align: center; }
 QProgressBar::chunk { background: #6956E8; border-radius: 3px; }
 """
@@ -90,6 +103,8 @@ _PATHS = {
     "sync": '<path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5m-4 8a8 8 0 0 0 14 3l3-3m0 5v-5h-5"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     "check": '<path d="m5 12 4 4L19 6"/>',
+    "chevron_left": '<path d="m14 6-6 6 6 6"/>',
+    "chevron_right": '<path d="m10 6 6 6-6 6"/>',
 }
 
 
