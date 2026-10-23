@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
     QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
-    QTabWidget, QVBoxLayout, QWidget, QCalendarWidget, QButtonGroup, QStackedWidget,
+    QTabWidget, QVBoxLayout, QWidget, QButtonGroup, QStackedWidget,
 )
 
 from .storage import Event, STATUSES, Store, minutes_between
@@ -22,6 +22,7 @@ from .theme import STYLE, icon
 from .calendar_view import CalendarBoard, MONTHS, MONTHS_GEN, period_days, event_interval, color_for
 from .inspector import EventInspector, CategoryBars, plain_label
 from .status_menu import EventStatusMenu
+from .mini_calendar import MiniCalendar
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -235,14 +236,7 @@ class MainWindow(QMainWindow):
             self.nav_buttons.append(button)
             side.addWidget(button)
         side.addSpacing(23)
-        self.mini = QCalendarWidget()
-        self.mini.setLocale(QLocale(QLocale.Language.Russian))
-        self.mini.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
-        self.mini.setHorizontalHeaderFormat(QCalendarWidget.HorizontalHeaderFormat.SingleLetterDayNames)
-        self.mini.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
-        self.mini.setGridVisible(False)
-        self.mini.setFixedHeight(204)
-        self.mini.setMinimumWidth(165)
+        self.mini = MiniCalendar()
         self.mini.clicked.connect(lambda day: self.date_input.setDate(day))
         side.addWidget(self.mini)
         side.addSpacing(14)
@@ -259,7 +253,7 @@ class MainWindow(QMainWindow):
         note.setWordWrap(True)
         side.addWidget(note)
         side.addSpacing(10)
-        side.addWidget(plain_label("Версия 0.3.5", "Muted"))
+        side.addWidget(plain_label("Версия 0.3.6", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
