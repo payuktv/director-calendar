@@ -220,16 +220,8 @@ class MainWindow(QMainWindow):
         self.mini = MiniCalendar()
         self.mini.clicked.connect(lambda day: self.date_input.setDate(day))
         side.addWidget(self.mini)
-        side.addSpacing(14)
-        side.addWidget(plain_label("ИСТОЧНИК", "Eyebrow"))
-        side.addWidget(plain_label("Mail.ru"))
         side.addStretch()
-        side.addWidget(plain_label("ПЛАН / ФАКТ", "Eyebrow"))
-        note = plain_label("Всё расписание. Один рабочий фокус.", "Muted")
-        note.setWordWrap(True)
-        side.addWidget(note)
-        side.addSpacing(10)
-        side.addWidget(plain_label("Версия 0.4.0", "Muted"))
+        side.addWidget(plain_label("Версия 0.4.1", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -256,12 +248,13 @@ class MainWindow(QMainWindow):
         self.mail_refresh.setIcon(icon("sync", "white"))
         head.addWidget(self.mail_refresh)
         layout.addLayout(head)
+        self.mail_status = plain_label("", "Muted")
+        self.mail_status.setWordWrap(True)
+        self.mail_status.hide()
+        layout.addWidget(self.mail_status)
         self.tabs = QTabWidget()
         self.tabs.tabBar().hide()
         layout.addWidget(self.tabs, 1)
-        self.mail_status = plain_label("Mail.ru: подключение в настройках", "Muted")
-        self.mail_status.setWordWrap(True)
-        layout.addWidget(self.mail_status)
         shell.addWidget(workspace, 1)
         self._build_day_tab()
         self._build_analytics_tab()
@@ -396,12 +389,6 @@ class MainWindow(QMainWindow):
         self.inspector.done_requested.connect(self.mark_done)
         body.addWidget(self.inspector)
         v.addLayout(body, 1)
-        footer = QHBoxLayout()
-        footer.addWidget(plain_label("Правый клик — статус · Двойной щелчок — карточка", "Muted"))
-        footer.addStretch()
-        self.open_selected_button = self.button("Открыть карточку", self.edit_event)
-        footer.addWidget(self.open_selected_button)
-        v.addLayout(footer)
         self.tabs.addTab(page, "Календарь")
 
     def set_date(self, day):
@@ -445,7 +432,6 @@ class MainWindow(QMainWindow):
             self._selected_id = self.row_ids[row]
             selected = self.store.get_event(self._selected_id)
             self.inspector.set_event(selected, self.store.calendar_info().get(self._selected_id))
-            self.open_selected_button.setEnabled(True)
 
     def open_event(self, event_id):
         if self.store.get_event(event_id).source != "caldav":
@@ -553,6 +539,7 @@ class MainWindow(QMainWindow):
         self.mail_panel = MailPanel(self.store, self.selected_day)
         self.mail_panel.changed.connect(self.reload)
         self.mail_panel.message.connect(self.mail_status.setText)
+        self.mail_panel.message.connect(self.mail_status.show)
         v.addWidget(self.mail_panel)
         options = QGroupBox("Контроль времени")
         f = QFormLayout(options)
@@ -637,7 +624,6 @@ class MainWindow(QMainWindow):
         self.calendar_stack.setCurrentIndex(1 if self.mode == "agenda" else 0)
         selected = self.store.get_event(self._selected_id) if self._selected_id is not None else None
         self.inspector.set_event(selected, source_info.get(self._selected_id))
-        self.open_selected_button.setEnabled(selected is not None)
         day_start = datetime.combine(focus, time.min)
         day_end = day_start + timedelta(days=1)
         table_events = [event for event in events if any(
