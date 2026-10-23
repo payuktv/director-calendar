@@ -26,9 +26,9 @@ QLabel#SectionTitle { font-size: 15px; font-weight: 650; }
 QLabel#EventTitle { font-size: 19px; font-weight: 700; }
 QLabel#StatusPill { color: #6956E8; background: #F0EDFF; border-radius: 7px; padding: 6px 9px; }
 QFrame#Surface, QFrame#Inspector { background: white; border: 1px solid #ECECF4; border-radius: 14px; }
-QFrame#Metric { background: white; border: 1px solid #ECECF4; border-radius: 11px; }
+QFrame#Metric { background: white; border: 1px solid #ECECF4; border-radius: 8px; }
 QLabel#CardTitle { color: #85889B; font-size: 11px; }
-QLabel#CardValue { color: #272C44; font-size: 22px; font-weight: 700; }
+QLabel#CardValue { color: #272C44; font-size: 18px; font-weight: 700; }
 QPushButton { background: white; border: 1px solid #E3E4EF; border-radius: 8px; padding: 9px 13px; font-weight: 600; }
 QPushButton:hover { background: #F6F4FF; border-color: #CCC5FA; }
 QPushButton:pressed { background: #EBE6FF; }
