@@ -13,14 +13,11 @@ from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QTextLay
 from PySide6.QtWidgets import QScrollArea, QStackedWidget, QToolTip, QVBoxLayout, QWidget
 
 from .storage import STATUSES
+from .theme import color as theme_color, is_dark
 
 MONTHS = ("январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь")
 MONTHS_GEN = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
 WEEKDAYS = ("ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС")
-ACCENT = QColor("#6956E8")
-GRID = QColor("#EEF0F6")
-TEXT = QColor("#373C52")
-MUTED = QColor("#9296AB")
 GUTTER = 52
 HOUR = 66
 STATUS_COLORS = {
@@ -29,6 +26,19 @@ STATUS_COLORS = {
     "partial": ("#A87900", "#FFF4C2"),
     "moved": ("#397ED8", "#EAF2FF"),
 }
+
+DARK_STATUS_COLORS = {
+    "done": ("#6ED2B4", "#1A3B36"), "cancelled": ("#ED9AB0", "#402735"),
+    "partial": ("#F0CE65", "#433B23"), "moved": ("#8ABAF6", "#253B59"),
+}
+
+
+def event_foreground(accent):
+    return accent if is_dark() else accent.darker(125)
+
+
+def event_hover(fill):
+    return fill.lighter(118) if is_dark() else fill.darker(105)
 
 
 def period_days(focus: date, mode: str) -> list[date]:
@@ -107,10 +117,14 @@ def split_blocks(events, days, layer, metadata):
 
 def color_for(event, status=None):
     status = event.status if status is None else status
-    if status in STATUS_COLORS:
-        return tuple(QColor(color) for color in STATUS_COLORS[status])
+    statuses = DARK_STATUS_COLORS if is_dark() else STATUS_COLORS
+    if status in statuses:
+        return tuple(QColor(color) for color in statuses[status])
     palette = (("#7865D9", "#F1EEFF"), ("#508BD5", "#ECF4FF"), ("#C58C42", "#FFF6E8"),
                ("#B374B8", "#F9EEFA"), ("#489B9F", "#EAF7F7"))
+    if is_dark():
+        palette = (("#B4A5FF", "#302B4E"), ("#99C3FF", "#24394F"), ("#EAC188", "#42372A"),
+                   ("#DAA4DF", "#3D2D45"), ("#7DCECF", "#213C40"))
     index = hashlib.blake2b(event.category.encode(), digest_size=1).digest()[0] % len(palette)
     return tuple(QColor(c) for c in palette[index])
 
@@ -164,9 +178,9 @@ def fit_wrapped_text(value, face, width, height):
     return WrappedText(tuple(lines), line_height, truncated)
 
 
-def text(painter, rect, value, size=12, color=TEXT, weight=QFont.Weight.Normal, wrap=False):
+def text(painter, rect, value, size=12, color=None, weight=QFont.Weight.Normal, wrap=False):
     painter.setFont(font(size, weight))
-    painter.setPen(color)
+    painter.setPen(color if color is not None else theme_color("calendar_text"))
     flags = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
     painter.save()
     painter.setClipRect(rect, Qt.ClipOperation.IntersectClip)
@@ -238,7 +252,7 @@ class HitCanvas(QWidget):
         painter.setClipRect(rect, Qt.ClipOperation.IntersectClip)
         accent, fill = color_for(event)
         selected = event.id == self.board.selected_id
-        painter.setPen(QPen(ACCENT if selected else fill, 1.5 if selected else 1))
+        painter.setPen(QPen(theme_color("accent") if selected else fill, 1.5 if selected else 1))
         painter.setBrush(fill)
         painter.drawRoundedRect(rect, 7, 7)
         painter.setPen(Qt.PenStyle.NoPen)
@@ -267,7 +281,7 @@ class HitCanvas(QWidget):
                 if meta_metrics.horizontalAdvance(time_label) <= content.width():
                     text(painter, QRectF(content.x(), content.y(), content.width(), meta_height), time_label, 10, accent)
                     title_rect.setTop(content.y() + meta_height + 3)
-            used = text(painter, title_rect, event.title, 12, accent.darker(125), QFont.Weight.DemiBold, wrap=True)
+            used = text(painter, title_rect, event.title, 12, event_foreground(accent), QFont.Weight.DemiBold, wrap=True)
             status_top = title_rect.y() + used + 4
             if used and content.bottom() - status_top >= meta_height:
                 text(painter, QRectF(content.x(), status_top, content.width(), meta_height), STATUSES[event.status], 10, accent)
@@ -283,26 +297,26 @@ class TimeGrid(HitCanvas):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor("white"))
+        p.fillRect(self.rect(), theme_color("surface"))
         self.hits = []
         days = self.board.days
         width = (self.width() - GUTTER) / len(days)
         for col, day in enumerate(days):
             x = GUTTER + col * width
             if day == self.board.today():
-                p.fillRect(QRectF(x, 0, width, self.height()), QColor("#FDFBFF"))
+                p.fillRect(QRectF(x, 0, width, self.height()), theme_color("today"))
             elif day.weekday() >= 5:
-                p.fillRect(QRectF(x, 0, width, self.height()), QColor("#FDFDFE"))
-            p.setPen(QPen(GRID, 1))
+                p.fillRect(QRectF(x, 0, width, self.height()), theme_color("weekend"))
+            p.setPen(QPen(theme_color("grid"), 1))
             p.drawLine(QPoint(int(x), 0), QPoint(int(x), self.height()))
         for hour in range(24):
             y = hour * self.board.hour_height
-            p.setPen(QPen(GRID, 1))
+            p.setPen(QPen(theme_color("grid"), 1))
             p.drawLine(QPoint(GUTTER, y), QPoint(self.width(), y))
-            p.setPen(QPen(QColor("#F7F7FB"), 1, Qt.PenStyle.DashLine))
+            p.setPen(QPen(theme_color("half_grid"), 1, Qt.PenStyle.DashLine))
             p.drawLine(QPoint(GUTTER, y + self.board.hour_height // 2), QPoint(self.width(), y + self.board.hour_height // 2))
             if hour:
-                text(p, QRectF(3, y - 8, GUTTER - 10, 16), f"{hour:02}:00", 10, MUTED)
+                text(p, QRectF(3, y - 8, GUTTER - 10, 16), f"{hour:02}:00", 10, theme_color("calendar_muted"))
         for col, day in enumerate(days):
             for block in self.board.timed.get(day, []):
                 lane_width = (width - 10) / block.lanes
@@ -316,9 +330,9 @@ class TimeGrid(HitCanvas):
             col = days.index(now.date())
             y = (now.hour + now.minute / 60) * self.board.hour_height
             x = GUTTER + col * width
-            p.setPen(QPen(QColor("#E47786"), 1.4))
+            p.setPen(QPen(theme_color("now"), 1.4))
             p.drawLine(QPoint(int(x), int(y)), QPoint(int(x + width), int(y)))
-            p.setBrush(QColor("#E47786"))
+            p.setBrush(theme_color("now"))
             p.drawEllipse(QRectF(x - 3, y - 3, 6, 6))
         p.end()
 
@@ -361,30 +375,30 @@ class DayHeader(HitCanvas):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor("white"))
+        p.fillRect(self.rect(), theme_color("surface"))
         p.translate(-self.board.scroll.horizontalScrollBar().value(), 0)
         self.hits = []
         width = (self.board.grid.width() - GUTTER) / len(self.board.days)
         for col, day in enumerate(self.board.days):
             x = GUTTER + col * width
-            text(p, QRectF(x + 12, 7, width - 16, 17), WEEKDAYS[day.weekday()], 10, MUTED, QFont.Weight.DemiBold)
+            text(p, QRectF(x + 12, 7, width - 16, 17), WEEKDAYS[day.weekday()], 10, theme_color("calendar_muted"), QFont.Weight.DemiBold)
             if day == self.board.today():
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(ACCENT)
+                p.setBrush(theme_color("primary"))
                 p.drawEllipse(QRectF(x + 9, 27, 27, 27))
                 p.setFont(font(16, QFont.Weight.DemiBold))
                 p.setPen(QColor("white"))
                 p.drawText(QRectF(x + 9, 27, 27, 27), Qt.AlignmentFlag.AlignCenter, str(day.day))
             else:
-                text(p, QRectF(x + 12, 28, width - 20, 25), str(day.day), 17, TEXT, QFont.Weight.DemiBold)
+                text(p, QRectF(x + 12, 28, width - 20, 25), str(day.day), 17, theme_color("calendar_text"), QFont.Weight.DemiBold)
             for row, item in enumerate(self.board.all_day.get(day, [])[:2]):
                 self.draw_chip(p, QRectF(x + 5, 63 + row * 25, width - 10, 22), item, compact=True)
             if len(self.board.all_day.get(day, [])) > 2:
-                text(p, QRectF(x + 9, 113, width - 12, 18), f"Ещё {len(self.board.all_day[day]) - 2} · список", 10, MUTED)
-        p.setPen(QPen(GRID, 1))
+                text(p, QRectF(x + 9, 113, width - 12, 18), f"Ещё {len(self.board.all_day[day]) - 2} · список", 10, theme_color("calendar_muted"))
+        p.setPen(QPen(theme_color("grid"), 1))
         p.drawLine(QPoint(0, self.height() - 1), QPoint(self.board.grid.width(), self.height() - 1))
         if any(self.board.all_day.values()):
-            text(p, QRectF(2, 65, GUTTER - 5, 20), "Весь день", 9, MUTED)
+            text(p, QRectF(2, 65, GUTTER - 5, 20), "Весь день", 9, theme_color("calendar_muted"))
         p.end()
 
     def mousePressEvent(self, event):
@@ -424,36 +438,36 @@ class MonthGrid(HitCanvas):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor("white"))
+        p.fillRect(self.rect(), theme_color("surface"))
         self.hits, self.more = [], []
         width, height = self.width() / 7, (self.height() - 28) / 6
         days = period_days(self.board.focus, "month")
         for col in range(7):
-            text(p, QRectF(col * width + 12, 0, width - 16, 25), WEEKDAYS[col], 10, MUTED, QFont.Weight.DemiBold)
+            text(p, QRectF(col * width + 12, 0, width - 16, 25), WEEKDAYS[col], 10, theme_color("calendar_muted"), QFont.Weight.DemiBold)
         for index, day in enumerate(days):
             x, y = index % 7 * width, 28 + index // 7 * height
             if day == self.board.focus:
-                p.fillRect(QRectF(x, y, width, height), QColor("#FAF8FF"))
+                p.fillRect(QRectF(x, y, width, height), theme_color("month_focus"))
             elif day.month != self.board.focus.month:
-                p.fillRect(QRectF(x, y, width, height), QColor("#FBFBFE"))
-            p.setPen(QPen(GRID, 1))
+                p.fillRect(QRectF(x, y, width, height), theme_color("outside_month"))
+            p.setPen(QPen(theme_color("grid"), 1))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRect(QRectF(x, y, width, height))
             if day == self.board.today():
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(ACCENT)
+                p.setBrush(theme_color("primary"))
                 p.drawEllipse(QRectF(x + 7, y + 5, 24, 24))
                 p.setPen(QColor("white"))
                 p.setFont(font(12, QFont.Weight.DemiBold))
                 p.drawText(QRectF(x + 7, y + 5, 24, 24), Qt.AlignmentFlag.AlignCenter, str(day.day))
             else:
                 text(p, QRectF(x + 12, y + 5, width - 16, 24), str(day.day), 12,
-                     MUTED if day.month != self.board.focus.month else TEXT, QFont.Weight.DemiBold)
+                     theme_color("calendar_muted") if day.month != self.board.focus.month else theme_color("calendar_text"), QFont.Weight.DemiBold)
             items = list(self.board.all_day.get(day, [])) + [b.event for b in self.board.timed.get(day, [])]
             if height < 58:
                 if items:
                     rect = QRectF(x + 34, y + 7, width - 38, 20)
-                    text(p, rect, f"+{len(items)}", 10, MUTED)
+                    text(p, rect, f"+{len(items)}", 10, theme_color("calendar_muted"))
                     self.more.append((rect, day))
                 continue
             capacity = max(1, int((height - 36) / 23))
@@ -463,7 +477,7 @@ class MonthGrid(HitCanvas):
                 self.draw_chip(p, rect, item, compact=True)
             if len(items) > shown:
                 rect = QRectF(x + 10, y + 34 + shown * 23, width - 16, 20)
-                text(p, rect, f"+{len(items) - shown} событий", 10, MUTED)
+                text(p, rect, f"+{len(items) - shown} событий", 10, theme_color("calendar_muted"))
                 self.more.append((rect, day))
         p.end()
 

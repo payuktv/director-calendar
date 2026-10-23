@@ -1,9 +1,10 @@
 """Status-colored menu rows with native QMenu interaction and keyboard support."""
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QPainter, QPen
 from PySide6.QtWidgets import QMenu
 
-from .calendar_view import color_for
+from .calendar_view import color_for, event_foreground, event_hover
+from .theme import color as theme_color
 from .storage import STATUSES
 
 
@@ -25,11 +26,11 @@ class EventStatusMenu(QMenu):
             accent, fill = color_for(self._calendar_event, status=action.data())
             active = action == self.activeAction()
             # Cover the native selection so hover retains the status color too.
-            painter.fillRect(bounds, QColor("white"))
+            painter.fillRect(bounds, theme_color("surface"))
             painter.setPen(QPen(accent, 1) if active else QPen(Qt.PenStyle.NoPen))
-            painter.setBrush(fill.darker(105) if active else fill)
+            painter.setBrush(event_hover(fill) if active else fill)
             painter.drawRoundedRect(bounds.adjusted(3, 1, -3, -1), 6, 6)
-            painter.setPen(accent.darker(125))
+            painter.setPen(event_foreground(accent))
             painter.drawText(bounds.adjusted(40, 0, -16, 0),
                              Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, action.text())
             if action.isChecked():

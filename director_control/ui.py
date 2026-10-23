@@ -5,7 +5,7 @@ import json
 from datetime import date, datetime, time, timedelta
 
 from PySide6.QtCore import QDate, QDateTime, QTime, Qt, QLocale, QSize
-from PySide6.QtGui import QColor, QBrush, QActionGroup
+from PySide6.QtGui import QBrush, QActionGroup
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDateTimeEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
@@ -18,7 +18,7 @@ from .storage import Event, STATUSES, Store, minutes_between
 from .mail_ui import MailPanel
 
 
-from .theme import STYLE, icon
+from .theme import apply_theme, current_theme, color as theme_color, icon
 from .calendar_view import CalendarBoard, MONTHS, MONTHS_GEN, period_days, event_interval, color_for
 from .inspector import EventInspector, CategoryBars, plain_label
 from .status_menu import EventStatusMenu
@@ -174,6 +174,7 @@ class MainWindow(QMainWindow):
     def __init__(self, store: Store):
         super().__init__()
         self.store = store
+        apply_theme(store.get_setting("ui_theme", "light"))
         self._selected_id = None
         self.mode = store.get_setting("ui_calendar_view", "week")
         if self.mode not in {"day", "week", "month", "agenda"}:
@@ -211,7 +212,7 @@ class MainWindow(QMainWindow):
         for i, (label, name) in enumerate((("Календарь", "calendar"), ("Аналитика", "chart"),
                                           ("История", "history"), ("Настройки", "settings"))):
             button = QPushButton(label)
-            button.setIcon(icon(name, "#8B89A3"))
+            button.setIcon(icon(name, theme_color("icon").name()))
             button.setIconSize(QSize(18, 18))
             button.setObjectName("Nav")
             button.setCheckable(True)
@@ -226,7 +227,13 @@ class MainWindow(QMainWindow):
         self.mini.activated.connect(lambda day: self.date_input.setDate(day))
         side.addWidget(self.mini)
         side.addStretch()
-        side.addWidget(plain_label("Версия 0.4.6", "Muted"))
+        self.theme_toggle = self.button("", self.toggle_theme)
+        self.theme_toggle.setObjectName("ThemeToggle")
+        self.theme_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_toggle.setIconSize(QSize(18, 18))
+        self._update_theme_controls()
+        side.addWidget(self.theme_toggle)
+        side.addWidget(plain_label("Версия 0.5.0", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -267,6 +274,22 @@ class MainWindow(QMainWindow):
         self._build_settings_tab()
         self.tabs.currentChanged.connect(self.navigate)
         self.navigate(0)
+        self.reload()
+
+    def _update_theme_controls(self):
+        dark = current_theme() == "dark"
+        self.theme_toggle.setText("Светлая тема" if dark else "Тёмная тема")
+        self.theme_toggle.setIcon(icon("sun" if dark else "moon"))
+        self.theme_toggle.setToolTip("Переключить на светлую тему" if dark else "Переключить на тёмную тему")
+        for button, name in zip(self.nav_buttons, ("calendar", "chart", "history", "settings")):
+            button.setIcon(icon(name, theme_color("icon").name()))
+
+    def toggle_theme(self):
+        name = "light" if current_theme() == "dark" else "dark"
+        self.store.set_setting("ui_theme", name)
+        apply_theme(name)
+        self._update_theme_controls()
+        # Rebuild table foreground brushes; painted calendars use tokens directly.
         self.reload()
 
     def navigate(self, index):
@@ -496,9 +519,8 @@ class MainWindow(QMainWindow):
         self.analytics_description.setWordWrap(True)
         v.addWidget(self.analytics_description)
         legend = QHBoxLayout()
-        for label, color in (("Исходный план", "#A28DE8"), ("Подтверждённый факт", "#43A88D")):
-            item = plain_label("●  " + label)
-            item.setStyleSheet(f"color: {color};")
+        for label, name in (("Исходный план", "PlanLegend"), ("Подтверждённый факт", "ActualLegend")):
+            item = plain_label("●  " + label, name)
             legend.addWidget(item)
         legend.addStretch()
         v.addLayout(legend)
@@ -656,7 +678,7 @@ class MainWindow(QMainWindow):
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if col == 5:
-                    item.setForeground(QBrush(QColor("#85889B") if ev.status == "pending" else color_for(ev)[0]))
+                    item.setForeground(QBrush(theme_color("muted") if ev.status == "pending" else color_for(ev)[0]))
                 item.setToolTip(ev.note or "Двойной щелчок — открыть карточку")
                 self.table.setItem(row, col, item)
         if self._selected_id in self.row_ids:
@@ -801,7 +823,6 @@ def run_app() -> int:
     app = QApplication(sys.argv)
     install_input_wheel_guard(app)
     app.setStyle("Fusion")
-    app.setStyleSheet(STYLE)
     window = MainWindow(Store())
     window.show()
     return app.exec()
