@@ -1,4 +1,5 @@
 """GUI smoke test runs with the offscreen Qt platform on CI."""
+from tests.helpers import seed_event
 import os
 
 import pytest
@@ -11,7 +12,7 @@ def test_main_window_can_be_created(tmp_path, monkeypatch):
     from director_control.storage import Store
     from director_control.ui import MainWindow
 
-    app = QApplication.instance() or QApplication([])
+    _app = QApplication.instance() or QApplication([])
     window = MainWindow(Store(tmp_path / "gui.db"))
     assert window.tabs.count() == 4
     assert window.table.rowCount() == 0
@@ -70,7 +71,7 @@ def test_partial_mail_result_is_not_presented_as_complete_success(tmp_path):
     from director_control.storage import Store
     from director_control.ui import MainWindow
 
-    app = QApplication.instance() or QApplication([])
+    _app = QApplication.instance() or QApplication([])
     store = Store(tmp_path / "partial.db")
     store.set_setting("mail_last_sync", "2026-10-21T10:00:00")
     window = MainWindow(store)
@@ -84,17 +85,18 @@ def test_partial_mail_result_is_not_presented_as_complete_success(tmp_path):
     window.close()
 
 
-def test_calendar_modes_search_source_filters_and_period_navigation(tmp_path):
+def test_calendar_modes_search_mail_only_and_period_navigation(tmp_path):
     from PySide6.QtCore import QDate
     from PySide6.QtWidgets import QApplication
     from director_control.storage import Store
     from director_control.ui import MainWindow
 
-    app = QApplication.instance() or QApplication([])
+    _app = QApplication.instance() or QApplication([])
     store = Store(tmp_path / "modern.db")
-    first = store.create_event("Встреча команды", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
-    second = store.create_event("Mail event", "Работа", "2026-10-22T12:00:00", "2026-10-22T13:00:00",
+    first = seed_event(store, "Встреча команды", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
+    second = seed_event(store, "Mail event", "Работа", "2026-10-22T12:00:00", "2026-10-22T13:00:00",
                                 source="caldav", external_key="mail-modern-test")
+    legacy = seed_event(store, "Старая ручная запись", "Работа", "2026-10-22T14:00:00", "2026-10-22T15:00:00", source="manual")
     window = MainWindow(store)
     window.date_input.setDate(QDate(2026, 10, 22))
     for mode, count in (("day", 1), ("week", 7), ("month", 42)):
@@ -105,11 +107,8 @@ def test_calendar_modes_search_source_filters_and_period_navigation(tmp_path):
     window.search.setText("КОМАНДЫ")
     assert window.row_ids == [first]
     window.search.clear()
-    window.show_manual.setChecked(False)
-    assert window.row_ids == [second]
-    window.show_manual.setChecked(True)
-    window.show_mail.setChecked(False)
-    assert window.row_ids == [first]
+    assert not hasattr(window, "show_manual") and not hasattr(window, "show_mail")
+    assert legacy not in window.row_ids and set(window.row_ids) == {first, second}
     window.set_view("week")
     window.shift_period(1)
     assert window.selected_day() == "2026-10-29"
@@ -127,7 +126,7 @@ def test_event_inspector_and_quick_completion_preserve_plan_and_do_not_invent_fa
 
     app = QApplication.instance() or QApplication([])
     store = Store(tmp_path / "inspector.db")
-    eid = store.create_event("Meeting", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
+    eid = seed_event(store, "Meeting", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
     store.freeze_day("2026-10-22")
     window = MainWindow(store)
     window.date_input.setDate(QDate(2026, 10, 22))
@@ -146,23 +145,20 @@ def test_event_inspector_and_quick_completion_preserve_plan_and_do_not_invent_fa
 
 
 def test_redesigned_dialog_preserves_mail_plan_and_accepts_local_comment(tmp_path):
-    from datetime import datetime
     from PySide6.QtWidgets import QApplication
     from director_control.storage import Store
     from director_control.ui import EventDialog
 
-    app = QApplication.instance() or QApplication([])
+    _app = QApplication.instance() or QApplication([])
     store = Store(tmp_path / "dialog.db")
-    eid = store.create_event("Mail title", "Работа", "2026-10-22T09:00:15", "2026-10-22T10:00:15",
+    eid = seed_event(store, "Mail title", "Работа", "2026-10-22T09:00:15", "2026-10-22T10:00:15",
                              source="caldav", external_key="dialog-test")
-    dialog = EventDialog(store, "2026-10-22", event=store.get_event(eid))
+    dialog = EventDialog(store, store.get_event(eid))
     assert not dialog.title_input.isEnabled() and not dialog.start_input.isEnabled()
     dialog.note_input.setText("Local comment")
     dialog.save()
     assert store.get_event(eid).current_start == "2026-10-22T09:00:15"
     assert store.get_event(eid).note == "Local comment"
-    fresh = EventDialog(store, "2026-10-23", initial_start=datetime(2026, 10, 23, 11, 30))
-    assert fresh.start_input.dateTime().toString("HH:mm") == "11:30"
-    assert fresh.end_input.dateTime().toString("HH:mm") == "12:30"
+    with pytest.raises(TypeError):
+        EventDialog(store)
     dialog.close()
-    fresh.close()

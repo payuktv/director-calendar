@@ -1,8 +1,8 @@
-from datetime import date
+from tests.helpers import seed_event, source_update
 
 import pytest
 
-from director_control.storage import Store, STATUSES
+from director_control.storage import Store
 
 
 @pytest.fixture
@@ -11,10 +11,10 @@ def store(tmp_path):
 
 
 def make(store, day="2026-10-22", title="Плановое совещание", start="09:00", end="10:00"):
-    return store.create_event(title, "Совещания", f"{day}T{start}:00", f"{day}T{end}:00")
+    return seed_event(store, title, "Совещания", f"{day}T{start}:00", f"{day}T{end}:00")
 
 
-def test_create_persists_and_is_initially_unplanned(store):
+def test_imported_fixture_persists_and_is_initially_unplanned(store):
     event_id = make(store)
     assert store.get_event(event_id).title == "Плановое совещание"
     assert store.daily_events("2026-10-22")[0].id == event_id
@@ -25,7 +25,7 @@ def test_create_persists_and_is_initially_unplanned(store):
 def test_snapshot_is_immutable_after_reschedule(store):
     eid = make(store)
     assert store.freeze_day("2026-10-22") == 1
-    store.update_event(eid, current_start="2026-10-22T11:00:00", current_end="2026-10-22T12:00:00")
+    source_update(store, eid, current_start="2026-10-22T11:00:00", current_end="2026-10-22T12:00:00")
     ev = store.get_event(eid)
     assert ev.baseline_start == "2026-10-22T09:00:00"
     assert ev.current_start == "2026-10-22T11:00:00"
@@ -60,18 +60,16 @@ def test_planned_executed_and_unplanned_summary(store):
 def test_moved_across_days_is_visible_in_both(store):
     eid = make(store)
     store.freeze_day("2026-10-22")
-    store.update_event(eid, current_start="2026-10-23T09:00:00", current_end="2026-10-23T10:00:00", status="moved")
+    source_update(store, eid, current_start="2026-10-23T09:00:00", current_end="2026-10-23T10:00:00", status="moved")
     assert len(store.daily_events("2026-10-22")) == 1
     assert len(store.daily_events("2026-10-23")) == 1
     assert store.day_summary("2026-10-22")["planned"] == 1
     assert store.day_summary("2026-10-23")["unplanned"] == 1
 
 
-def test_frozen_event_cannot_be_deleted(store):
-    eid = make(store)
-    store.freeze_day("2026-10-22")
-    with pytest.raises(ValueError, match="Отменено"):
-        store.delete_event(eid)
+def test_events_cannot_be_created_or_deleted_locally(store):
+    assert not hasattr(store, "create_event")
+    assert not hasattr(store, "delete_event")
 
 
 def test_invalid_time_and_incomplete_fact_are_rejected(store):
@@ -85,7 +83,7 @@ def test_invalid_time_and_incomplete_fact_are_rejected(store):
 
 
 def test_tracking_categories_can_be_configured(store):
-    road = store.create_event("Дорога", "Дорога", "2026-10-22T08:00:00", "2026-10-22T09:00:00")
+    road = seed_event(store, "Дорога", "Дорога", "2026-10-22T08:00:00", "2026-10-22T09:00:00")
     store.freeze_day("2026-10-22")
     assert store.day_summary("2026-10-22")["planned"] == 0
     store.set_category_tracking("Дорога", True)
@@ -123,7 +121,7 @@ def test_history_audit_and_persistence(store):
 
 def test_coverage_detects_gaps_overlaps_and_cancellations(store):
     day = "2026-10-22"
-    a = make(store, start="07:00", end="09:00")
+    make(store, start="07:00", end="09:00")
     make(store, title="Overlap", start="08:30", end="10:00")
     c = make(store, title="Cancelled", start="10:00", end="11:00")
     store.update_event(c, status="cancelled")

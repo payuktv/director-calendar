@@ -3,7 +3,7 @@ import sqlite3
 
 import pytest
 
-from director_control.storage import Store
+from tests.helpers import LegacyStoreFixture as Store
 
 
 def old_example(store, day="2026-10-22"):

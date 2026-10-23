@@ -17,7 +17,6 @@ def plain_label(value="", object_name=None):
 
 class EventInspector(QFrame):
     edit_requested = Signal()
-    delete_requested = Signal()
     done_requested = Signal()
 
     def __init__(self):
@@ -55,27 +54,22 @@ class EventInspector(QFrame):
         self.done_button = QPushButton("Отметить выполненным")
         self.done_button.clicked.connect(self.done_requested)
         layout.addWidget(self.done_button)
-        self.delete_button = QPushButton("Удалить событие")
-        self.delete_button.setObjectName("Danger")
-        self.delete_button.clicked.connect(self.delete_requested)
-        layout.addWidget(self.delete_button)
         self.set_event(None)
 
     def set_event(self, event, info=None):
         from datetime import datetime, timedelta
         self.edit_button.setEnabled(event is not None)
         self.done_button.setEnabled(event is not None and event.status != "done")
-        self.delete_button.setEnabled(event is not None and event.source != "caldav" and not event.baseline_start)
         if event is None:
             self.title.setText("Выбери событие")
             self.category.setText("Нажми на встречу, чтобы увидеть план и факт")
             self.status.hide()
-            self.note.setText("Двойной щелчок по свободному времени — новое событие.")
+            self.note.setText("События создаются и изменяются в Mail.ru.")
             for label in self.time_labels.values():
                 label.setText("—")
             return
         self.title.setText(event.title)
-        self.category.setText(event.category + ("  ·  Mail.ru" if event.source == "caldav" else "  ·  Вручную"))
+        self.category.setText(event.category + "  ·  Mail.ru")
         status = STATUSES[event.status]
         if info and info.get("missing"):
             status += " · проверить Mail.ru"

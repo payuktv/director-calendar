@@ -1,3 +1,4 @@
+from tests.helpers import seed_event, LegacyStoreFixture
 from datetime import date
 from dataclasses import replace
 from xml.sax.saxutils import escape
@@ -113,7 +114,7 @@ def test_source_cancellation_and_restoration_without_local_override(tmp_path):
 
 def test_absence_is_not_deletion_manual_data_and_outside_window_survive(tmp_path):
     store = Store(tmp_path / "db.sqlite")
-    store.create_event("Manual", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
+    seed_event(store, "Manual", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00", source="manual")
     store.apply_calendar_snapshot(parse(event()))
     remote = next(e for e in store.daily_events("2026-10-22") if e.source == "caldav")
     empty = parse_calendars([], CONFIG, START, END)
@@ -121,7 +122,7 @@ def test_absence_is_not_deletion_manual_data_and_outside_window_survive(tmp_path
     assert store.apply_calendar_snapshot(outside)["missing"] == 0
     assert store.apply_calendar_snapshot(empty)["missing"] == 1
     assert store.get_event(remote.id).status == "pending"
-    assert len(store.daily_events("2026-10-22")) == 2
+    assert len(store.daily_events("2026-10-22")) == 1
     assert store.calendar_info()[remote.id]["missing"]
     store.apply_calendar_snapshot(parse(event()))
     assert not store.calendar_info()[remote.id]["missing"]
@@ -131,10 +132,12 @@ def test_transaction_rolls_back_on_conflicting_key(tmp_path):
     store = Store(tmp_path / "db.sqlite")
     snapshot = parse(event("a"), event("b"))
     second = snapshot.events[1]
-    store.create_event("Manual", "Работа", second.start, second.end, external_key=second.key)
+    seed_event(store, "Manual", "Работа", second.start, second.end, source="manual", external_key=second.key)
     with pytest.raises(ValueError):
         store.apply_calendar_snapshot(snapshot)
-    assert len(store.daily_events("2026-10-22")) == 1
+    assert store.daily_events("2026-10-22") == []
+    with store._connect() as con:
+        assert con.execute("SELECT count(*) FROM events").fetchone()[0] == 1
     assert not store.get_setting("mail_last_sync")
 
 
@@ -202,7 +205,7 @@ def test_partial_response_aborts_instead_of_marking_everything_missing(monkeypat
 
 def test_existing_database_migrates_without_losing_events(tmp_path):
     import sqlite3
-    store = Store(tmp_path / "db.sqlite")
+    store = LegacyStoreFixture(tmp_path / "db.sqlite")
     eid = store.create_event("Existing", "Работа", "2026-10-22T09:00:00", "2026-10-22T10:00:00")
     store.freeze_day("2026-10-22")
     with sqlite3.connect(store.path) as con:
@@ -242,8 +245,7 @@ def test_source_plan_fields_cannot_be_overwritten_locally(tmp_path):
     ev = store.daily_events("2026-10-22")[0]
     with pytest.raises(ValueError):
         store.update_event(ev.id, title="Local change")
-    with pytest.raises(ValueError):
-        store.delete_event(ev.id)
+    assert not hasattr(store, "delete_event")
 
 
 def test_xml_entities_are_rejected(monkeypatch):

@@ -1,4 +1,4 @@
-"""Qt Widgets interface with optional read-only Mail.ru synchronization."""
+"""Qt Widgets account of events read from one Mail.ru calendar."""
 from __future__ import annotations
 
 import json
@@ -49,19 +49,21 @@ def error_box(parent: QWidget, exc: Exception) -> None:
 
 
 class EventDialog(QDialog):
-    def __init__(self, store: Store, day: str, parent: QWidget | None = None, event: Event | None = None, initial_start: datetime | None = None):
+    def __init__(self, store: Store, event: Event, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Редактирование мероприятия" if event else "Новое мероприятие")
+        if event is None or event.source != "caldav":
+            raise ValueError("Учёт доступен только для событий Mail.ru.")
+        self.setWindowTitle("Учёт события Mail.ru")
         self.setMinimumWidth(600)
         self.resize(680, 720)
         if QApplication.primaryScreen():
             self.setMaximumHeight(max(550, QApplication.primaryScreen().availableGeometry().height() - 40))
-        self.event = event
+        self._event = event
         self.store = store
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 22, 24, 22)
         outer.setSpacing(18)
-        heading = plain_label("Карточка события" if event else "Новое событие", "EventTitle")
+        heading = plain_label("Карточка события", "EventTitle")
         outer.addWidget(heading)
         content = QWidget()
         content.setObjectName("DialogContent")
@@ -75,14 +77,12 @@ class EventDialog(QDialog):
         outer.addWidget(scroll)
 
 
-        self.title_input = QLineEdit(event.title if event else "")
-        self.title_input.setPlaceholderText("Например: совещание с руководителями")
+        self.title_input = QLineEdit(event.title)
         form.addRow("Название", self.title_input)
 
         self.category_input = QComboBox()
         self.category_input.addItems([r["name"] for r in store.categories()])
-        if event:
-            self.category_input.setCurrentText(event.category)
+        self.category_input.setCurrentText(event.category)
         form.addRow("Категория", self.category_input)
 
         def date_edit(value: str) -> QDateTimeEdit:
@@ -92,32 +92,28 @@ class EventDialog(QDialog):
             control.setDateTime(qt_datetime(value))
             return control
 
-        default_start = initial_start or datetime.fromisoformat(f"{day}T09:00:00")
-        start = event.current_start if event else default_start.isoformat(timespec="seconds")
-        end = event.current_end if event else (default_start + timedelta(hours=1)).isoformat(timespec="seconds")
+        start, end = event.current_start, event.current_end
         self.start_input = date_edit(start)
         self.end_input = date_edit(end)
         form.addRow("Актуальный план: начало", self.start_input)
         form.addRow("Актуальный план: конец", self.end_input)
-        if event and event.source == "caldav":
-            for control in (self.title_input, self.start_input, self.end_input):
-                control.setEnabled(False)
-            info = QLabel("Название и актуальное время обновляются из Mail.ru. Категория, факт и комментарий сохраняются локально.")
-            info.setWordWrap(True)
-            form.addRow("", info)
+        for control in (self.title_input, self.start_input, self.end_input):
+            control.setEnabled(False)
+        info = QLabel("Название и актуальное время обновляются из Mail.ru. Категория, факт и комментарий сохраняются локально.")
+        info.setWordWrap(True)
+        form.addRow("", info)
 
         self.status_input = QComboBox()
         for key, label in STATUSES.items():
             self.status_input.addItem(label, key)
-        if event:
-            self.status_input.setCurrentIndex(self.status_input.findData(event.status))
+        self.status_input.setCurrentIndex(self.status_input.findData(event.status))
         form.addRow("Статус", self.status_input)
 
         self.fact_checkbox = QCheckBox("Указать фактическое время")
-        self.fact_checkbox.setChecked(bool(event and event.actual_start))
+        self.fact_checkbox.setChecked(bool(event.actual_start))
         form.addRow("", self.fact_checkbox)
-        self.fact_start = date_edit(event.actual_start if event and event.actual_start else start)
-        self.fact_end = date_edit(event.actual_end if event and event.actual_end else end)
+        self.fact_start = date_edit(event.actual_start or start)
+        self.fact_end = date_edit(event.actual_end or end)
         self.fact_start.setEnabled(self.fact_checkbox.isChecked())
         self.fact_end.setEnabled(self.fact_checkbox.isChecked())
         self.fact_checkbox.toggled.connect(self.fact_start.setEnabled)
@@ -125,10 +121,10 @@ class EventDialog(QDialog):
         form.addRow("Факт: начало", self.fact_start)
         form.addRow("Факт: конец", self.fact_end)
 
-        self.note_input = QLineEdit(event.note if event else "")
+        self.note_input = QLineEdit(event.note)
         self.note_input.setPlaceholderText("Причина переноса, итог встречи и т. д.")
         form.addRow("Комментарий", self.note_input)
-        if event and event.baseline_start:
+        if event.baseline_start:
             info = QLabel(f"🔒 Исходный план: {interval(event.baseline_start, event.baseline_end)} — не изменяется")
             info.setWordWrap(True)
             form.addRow("", info)
@@ -143,27 +139,12 @@ class EventDialog(QDialog):
 
     def save(self) -> None:
         try:
-            title = self.title_input.text().strip()
-            category = self.category_input.currentText()
-            start = as_iso(self.start_input)
-            end = as_iso(self.end_input)
-            if self.event:
-                updates = dict(category=category, status=self.status_input.currentData(),
-                               actual_start=as_iso(self.fact_start) if self.fact_checkbox.isChecked() else None,
-                               actual_end=as_iso(self.fact_end) if self.fact_checkbox.isChecked() else None,
-                               note=self.note_input.text().strip())
-                if self.event.source != "caldav":
-                    updates.update(title=title, current_start=start, current_end=end)
-                self.store.update_event(self.event.id, **updates)
-            else:
-                eid = self.store.create_event(title, category, start, end)
-                if self.status_input.currentData() != "pending" or self.fact_checkbox.isChecked() or self.note_input.text():
-                    self.store.update_event(
-                        eid, status=self.status_input.currentData(),
-                        actual_start=as_iso(self.fact_start) if self.fact_checkbox.isChecked() else None,
-                        actual_end=as_iso(self.fact_end) if self.fact_checkbox.isChecked() else None,
-                        note=self.note_input.text().strip(),
-                    )
+            self.store.update_event(
+                self._event.id, category=self.category_input.currentText(), status=self.status_input.currentData(),
+                actual_start=as_iso(self.fact_start) if self.fact_checkbox.isChecked() else None,
+                actual_end=as_iso(self.fact_end) if self.fact_checkbox.isChecked() else None,
+                note=self.note_input.text().strip(),
+            )
             self.accept()
         except Exception as exc:
             error_box(self, exc)
@@ -240,20 +221,15 @@ class MainWindow(QMainWindow):
         self.mini.clicked.connect(lambda day: self.date_input.setDate(day))
         side.addWidget(self.mini)
         side.addSpacing(14)
-        side.addWidget(plain_label("ИСТОЧНИКИ", "Eyebrow"))
-        self.show_mail = QCheckBox("Mail.ru")
-        self.show_manual = QCheckBox("Ручные записи")
-        for control in (self.show_mail, self.show_manual):
-            control.setChecked(True)
-            control.toggled.connect(self.reload)
-            side.addWidget(control)
+        side.addWidget(plain_label("ИСТОЧНИК", "Eyebrow"))
+        side.addWidget(plain_label("Mail.ru"))
         side.addStretch()
         side.addWidget(plain_label("ПЛАН / ФАКТ", "Eyebrow"))
         note = plain_label("Всё расписание. Один рабочий фокус.", "Muted")
         note.setWordWrap(True)
         side.addWidget(note)
         side.addSpacing(10)
-        side.addWidget(plain_label("Версия 0.3.6", "Muted"))
+        side.addWidget(plain_label("Версия 0.4.0", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -276,12 +252,9 @@ class MainWindow(QMainWindow):
         self.search.setFixedWidth(210)
         self.search.textChanged.connect(self.reload)
         head.addWidget(self.search)
-        self.mail_refresh = self.button("Обновить", lambda: self.mail_panel.sync())
-        self.mail_refresh.setIcon(icon("sync", "#85859D"))
+        self.mail_refresh = self.button("Обновить Mail.ru", lambda: self.mail_panel.sync(), primary=True)
+        self.mail_refresh.setIcon(icon("sync", "white"))
         head.addWidget(self.mail_refresh)
-        create = self.button("Событие", self.add_event, primary=True)
-        create.setIcon(icon("plus", "white"))
-        head.addWidget(create)
         layout.addLayout(head)
         self.tabs = QTabWidget()
         self.tabs.tabBar().hide()
@@ -399,7 +372,6 @@ class MainWindow(QMainWindow):
         self.calendar.activated.connect(self.open_event)
         self.calendar.context_requested.connect(self.show_event_context_menu)
         self.calendar.date_selected.connect(self.set_date)
-        self.calendar.slot_requested.connect(self.add_at_time)
         self.calendar.agenda_requested.connect(lambda: self.set_view("agenda"))
         self.calendar_stack.addWidget(self.calendar)
         self.table = QTableWidget(0, 7)
@@ -421,18 +393,14 @@ class MainWindow(QMainWindow):
         body.addWidget(surface, 1)
         self.inspector = EventInspector()
         self.inspector.edit_requested.connect(self.edit_event)
-        self.inspector.delete_requested.connect(self.delete_event)
         self.inspector.done_requested.connect(self.mark_done)
         body.addWidget(self.inspector)
         v.addLayout(body, 1)
         footer = QHBoxLayout()
-        footer.addWidget(plain_label("Правый клик — статус · Двойной — открыть или создать", "Muted"))
+        footer.addWidget(plain_label("Правый клик — статус · Двойной щелчок — карточка", "Muted"))
         footer.addStretch()
         self.open_selected_button = self.button("Открыть карточку", self.edit_event)
-        self.delete_selected_button = self.button("Удалить", self.delete_event)
-        self.delete_selected_button.setObjectName("Danger")
         footer.addWidget(self.open_selected_button)
-        footer.addWidget(self.delete_selected_button)
         v.addLayout(footer)
         self.tabs.addTab(page, "Календарь")
 
@@ -460,8 +428,10 @@ class MainWindow(QMainWindow):
         self.date_input.setDate(current)
 
     def select_event(self, event_id):
-        self._selected_id = event_id
         event = self.store.get_event(event_id)
+        if event.source != "caldav":
+            return
+        self._selected_id = event_id
         interval = event_interval(event, self.layer.currentData())
         day = self.calendar.clicked_day or (interval[0].date() if interval else date.fromisoformat(self.selected_day()))
         if day.isoformat() != self.selected_day() and day in period_days(date.fromisoformat(self.selected_day()), self.mode):
@@ -476,18 +446,12 @@ class MainWindow(QMainWindow):
             selected = self.store.get_event(self._selected_id)
             self.inspector.set_event(selected, self.store.calendar_info().get(self._selected_id))
             self.open_selected_button.setEnabled(True)
-            self.delete_selected_button.setEnabled(selected.source != "caldav" and not selected.baseline_start)
 
     def open_event(self, event_id):
+        if self.store.get_event(event_id).source != "caldav":
+            return
         self._selected_id = event_id
         self.edit_event()
-
-    def add_at_time(self, day, minute):
-        self.set_date(day)
-        start = datetime.combine(day, time.min) + timedelta(minutes=minute)
-        dialog = EventDialog(self.store, day.isoformat(), self, initial_start=start)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.reload()
 
     def mark_done(self):
         event_id = self.selected_event_id()
@@ -503,6 +467,8 @@ class MainWindow(QMainWindow):
             error_box(self, exc)
 
     def show_event_context_menu(self, event_id, global_pos):
+        if self.store.get_event(event_id).source != "caldav":
+            return
         self.select_event(event_id)
         event = self.store.get_event(event_id)
         menu = EventStatusMenu(event, self)
@@ -660,10 +626,6 @@ class MainWindow(QMainWindow):
         query = self.search.text().strip().casefold()
         events = []
         for event in self.store.events_between(lower, upper):
-            if event.source == "caldav" and not self.show_mail.isChecked():
-                continue
-            if event.source != "caldav" and not self.show_manual.isChecked():
-                continue
             if query and query not in " ".join((event.title, event.category, event.note)).casefold():
                 continue
             events.append(event)
@@ -676,7 +638,6 @@ class MainWindow(QMainWindow):
         selected = self.store.get_event(self._selected_id) if self._selected_id is not None else None
         self.inspector.set_event(selected, source_info.get(self._selected_id))
         self.open_selected_button.setEnabled(selected is not None)
-        self.delete_selected_button.setEnabled(selected is not None and selected.source != "caldav" and not selected.baseline_start)
         day_start = datetime.combine(focus, time.min)
         day_end = day_start + timedelta(days=1)
         table_events = [event for event in events if any(
@@ -700,7 +661,7 @@ class MainWindow(QMainWindow):
                     status_label += " · отменено в Mail.ru"
             values = [ev.title, ev.category, interval(ev.baseline_start, ev.baseline_end),
                       interval(ev.current_start, ev.current_end), interval(ev.actual_start, ev.actual_end),
-                      status_label, ("Mail.ru" if ev.source == "caldav" else "Вручную") + (" · весь день" if remote and remote["all_day"] else "")]
+                      status_label, "Mail.ru" + (" · весь день" if remote and remote["all_day"] else "")]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if col == 5:
@@ -766,32 +727,14 @@ class MainWindow(QMainWindow):
     def selected_event_id(self) -> int | None:
         return self._selected_id
 
-    def add_event(self):
-        dialog = EventDialog(self.store, self.selected_day(), self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.reload()
-
     def edit_event(self, *_):
         event_id = self.selected_event_id()
         if event_id is None:
             QMessageBox.information(self, "Выбери мероприятие", "Выбери событие в календаре или списке.")
             return
-        dialog = EventDialog(self.store, self.selected_day(), self, self.store.get_event(event_id))
+        dialog = EventDialog(self.store, self.store.get_event(event_id), self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.reload()
-
-    def delete_event(self):
-        event_id = self.selected_event_id()
-        if event_id is None:
-            return
-        if QMessageBox.question(self, "Удаление", "Удалить выбранное мероприятие? Действие попадёт в журнал.") != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            self.store.delete_event(event_id)
-            self._selected_id = None
-            self.reload()
-        except Exception as exc:
-            error_box(self, exc)
 
     def freeze(self):
         day = self.selected_day()
