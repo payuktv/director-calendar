@@ -69,6 +69,11 @@ QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QCheckBox { spacing: 9px; font-weight: 400; }
 QCheckBox::indicator { width: 15px; height: 15px; }
 QToolTip { background: #26243B; color: #FFFFFF; border: none; padding: 8px; font-size: 12px; }
+QMenu#EventContextMenu { background: white; border: 1px solid #E3E4EF; border-radius: 9px; padding: 6px; }
+QMenu#EventContextMenu::item { padding: 9px 20px 9px 28px; border-radius: 6px; }
+QMenu#EventContextMenu::item:selected { background: #F0EDFF; color: #5140BF; }
+QMenu#EventContextMenu::item:disabled { color: #85889B; }
+QMenu#EventContextMenu::separator { height: 1px; background: #ECECF4; margin: 4px 10px; }
 QCalendarWidget { background: white; }
 QCalendarWidget QWidget { alternate-background-color: white; }
 QCalendarWidget QToolButton { color: #55596E; background: white; border: none; font-size: 11px; padding: 3px; }
