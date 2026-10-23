@@ -64,13 +64,19 @@ class DatePicker(QObject):
         if popup is None or not isValid(popup) or self.control is None or not isValid(self.control):
             return False
         kind = event.type()
-        if watched in (self.control, self.control.lineEdit()) and self.control.isEnabled():
-            if kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
-                if event.button() == Qt.MouseButton.LeftButton and not self.control.isReadOnly() and self._date_clicked(event):
-                    self.control.setFocus(Qt.FocusReason.MouseFocusReason)
+        if kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
+            if event.button() == Qt.MouseButton.LeftButton and self.control.isEnabled() and not self.control.isReadOnly():
+                field = QRect(self.control.mapToGlobal(QPoint()), self.control.size())
+                field_clicked = watched in (self.control, self.control.lineEdit()) or (
+                    self.popup.isVisible() and QApplication.activePopupWidget() in (None, self.popup)
+                    and field.contains(event.globalPosition().toPoint()))
+                if field_clicked and self._date_clicked(event):
+                    # A popup grab may deliver this input click to its QWindow first.
+                    # Consume it before Qt can dismiss the popup and replay the click.
                     if self.popup.isVisible():
                         self.popup.hide()
                     else:
+                        self.control.setFocus(Qt.FocusReason.MouseFocusReason)
                         self._open()
                     return True
         if watched is self.popup:

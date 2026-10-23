@@ -225,7 +225,7 @@ class MainWindow(QMainWindow):
         self.mini.activated.connect(lambda day: self.date_input.setDate(day))
         side.addWidget(self.mini)
         side.addStretch()
-        side.addWidget(plain_label("Версия 0.4.4", "Muted"))
+        side.addWidget(plain_label("Версия 0.4.5", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
