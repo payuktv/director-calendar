@@ -194,6 +194,22 @@ class HitCanvas(QWidget):
     def mouseMoveEvent(self, event):
         self.setCursor(Qt.CursorShape.PointingHandCursor if self.hit(event.position()) else Qt.CursorShape.ArrowCursor)
 
+    def context_position(self, point):
+        return point
+
+    def context_day(self, point):
+        return self.board.focus
+
+    def contextMenuEvent(self, event):
+        point = self.context_position(event.pos())
+        hit = self.hit(point)
+        if hit is None:
+            event.ignore()
+            return
+        self.board.clicked_day = self.context_day(point)
+        self.board.context_requested.emit(hit.id, event.globalPos())
+        event.accept()
+
     def event(self, event):
         if event.type() == QEvent.Type.ToolTip:
             hit = self.hit(event.pos())
@@ -307,6 +323,9 @@ class TimeGrid(HitCanvas):
         minute = min(1410, max(0, int(point.y() / self.board.hour_height * 60) // 30 * 30))
         return self.board.days[col], minute
 
+    def context_day(self, point):
+        return self.slot(point)[0]
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             hit = self.hit(event.position())
@@ -329,6 +348,14 @@ class TimeGrid(HitCanvas):
 
 
 class DayHeader(HitCanvas):
+    def context_position(self, point):
+        return point + QPoint(self.board.scroll.horizontalScrollBar().value(), 0)
+
+    def context_day(self, point):
+        width = (self.board.grid.width() - GUTTER) / len(self.board.days)
+        col = max(0, min(len(self.board.days) - 1, int((point.x() - GUTTER) / width)))
+        return self.board.days[col]
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -384,6 +411,9 @@ class DayHeader(HitCanvas):
 
 
 class MonthGrid(HitCanvas):
+    def context_day(self, point):
+        return period_days(self.board.focus, "month")[self.cell(point)]
+
     def cell(self, point):
         col = max(0, min(6, int(point.x() / (self.width() / 7))))
         row = max(0, min(5, int((point.y() - 28) / ((self.height() - 28) / 6))))
@@ -464,6 +494,7 @@ class MonthGrid(HitCanvas):
 class CalendarBoard(QWidget):
     selected = Signal(int)
     activated = Signal(int)
+    context_requested = Signal(int, QPoint)
     slot_requested = Signal(object, int)
     date_selected = Signal(object)
     agenda_requested = Signal()

@@ -5,13 +5,13 @@ import json
 from datetime import date, datetime, time, timedelta
 
 from PySide6.QtCore import QDate, QDateTime, QTime, Qt, QLocale, QSize
-from PySide6.QtGui import QColor, QBrush
+from PySide6.QtGui import QColor, QBrush, QActionGroup
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDateTimeEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
     QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
-    QTabWidget, QVBoxLayout, QWidget, QCalendarWidget, QButtonGroup, QStackedWidget,
+    QTabWidget, QVBoxLayout, QWidget, QCalendarWidget, QButtonGroup, QStackedWidget, QMenu,
 )
 
 from .storage import Event, STATUSES, Store, minutes_between
@@ -258,7 +258,7 @@ class MainWindow(QMainWindow):
         note.setWordWrap(True)
         side.addWidget(note)
         side.addSpacing(10)
-        side.addWidget(plain_label("Версия 0.3.1", "Muted"))
+        side.addWidget(plain_label("Версия 0.3.2", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -402,6 +402,7 @@ class MainWindow(QMainWindow):
         self.calendar = CalendarBoard()
         self.calendar.selected.connect(self.select_event)
         self.calendar.activated.connect(self.open_event)
+        self.calendar.context_requested.connect(self.show_event_context_menu)
         self.calendar.date_selected.connect(self.set_date)
         self.calendar.slot_requested.connect(self.add_at_time)
         self.calendar.agenda_requested.connect(lambda: self.set_view("agenda"))
@@ -418,6 +419,8 @@ class MainWindow(QMainWindow):
             self.table.setColumnWidth(column, width)
         self.table.doubleClicked.connect(self.edit_event)
         self.table.itemSelectionChanged.connect(self.select_table_event)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_table_context_menu)
         self.calendar_stack.addWidget(self.table)
         content.addWidget(self.calendar_stack)
         body.addWidget(surface, 1)
@@ -428,7 +431,7 @@ class MainWindow(QMainWindow):
         body.addWidget(self.inspector)
         v.addLayout(body, 1)
         footer = QHBoxLayout()
-        footer.addWidget(plain_label("Двойной щелчок — открыть событие или создать новое", "Muted"))
+        footer.addWidget(plain_label("Правый клик — статус · Двойной — открыть или создать", "Muted"))
         footer.addStretch()
         self.open_selected_button = self.button("Открыть карточку", self.edit_event)
         self.delete_selected_button = self.button("Удалить", self.delete_event)
@@ -494,11 +497,42 @@ class MainWindow(QMainWindow):
     def mark_done(self):
         event_id = self.selected_event_id()
         if event_id is not None:
-            try:
-                self.store.update_event(event_id, status="done")
-                self.reload()
-            except Exception as exc:
-                error_box(self, exc)
+            self.set_event_status(event_id, "done")
+
+    def set_event_status(self, event_id, status):
+        try:
+            self.store.update_event(event_id, status=status)
+            self._selected_id = event_id
+            self.reload()
+        except Exception as exc:
+            error_box(self, exc)
+
+    def show_event_context_menu(self, event_id, global_pos):
+        self.select_event(event_id)
+        event = self.store.get_event(event_id)
+        menu = QMenu(self)
+        menu.setObjectName("EventContextMenu")
+        heading = menu.addAction("Статус события")
+        heading.setEnabled(False)
+        menu.addSeparator()
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        for status, label in STATUSES.items():
+            action = menu.addAction(label)
+            action.setData(status)
+            action.setCheckable(True)
+            group.addAction(action)
+            action.setChecked(status == event.status)
+            action.triggered.connect(lambda checked, status=status: self.set_event_status(event_id, status))
+        try:
+            menu.exec(global_pos)
+        finally:
+            menu.deleteLater()
+
+    def show_table_context_menu(self, point):
+        index = self.table.indexAt(point)
+        if index.isValid() and 0 <= index.row() < len(self.row_ids):
+            self.show_event_context_menu(self.row_ids[index.row()], self.table.viewport().mapToGlobal(point))
 
     def _build_analytics_tab(self):
         page = QWidget()
