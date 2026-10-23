@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from html import escape
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QTextLayout, QTextOption
 from PySide6.QtWidgets import QScrollArea, QStackedWidget, QToolTip, QVBoxLayout, QWidget
 
 from .storage import STATUSES
@@ -116,15 +117,67 @@ def font(size, weight=QFont.Weight.Normal):
     return f
 
 
+@dataclass(frozen=True)
+class WrappedText:
+    lines: tuple[str, ...]
+    line_height: int
+    truncated: bool
+
+
+def fit_wrapped_text(value, face, width, height):
+    """Fit complete lines, breaking long words and marking any omitted text."""
+    metrics = QFontMetricsF(face)
+    line_height = math.ceil(metrics.height())
+    capacity = max(0, int(height // line_height))
+    value = " ".join(value.split())
+    if width <= 0 or not capacity or not value:
+        return WrappedText((), line_height, bool(value))
+    layout = QTextLayout(value, face)
+    option = QTextOption()
+    option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+    layout.setTextOption(option)
+    # QTextLine offsets count UTF-16 units, including two units for emoji.
+    encoded = value.encode("utf-16-le")
+    lines, truncated = [], False
+    layout.beginLayout()
+    for row in range(capacity + 1):
+        line = layout.createLine()
+        if not line.isValid():
+            break
+        line.setLineWidth(width)
+        if row == capacity:
+            truncated = True
+            break
+        start, end = line.textStart(), line.textStart() + line.textLength()
+        segment = encoded[start * 2:end * 2].decode("utf-16-le").rstrip()
+        fitted = metrics.elidedText(segment, Qt.TextElideMode.ElideRight, width)
+        truncated |= fitted != segment
+        lines.append(fitted)
+    layout.endLayout()
+    if truncated and lines:
+        lines[-1] = metrics.elidedText(lines[-1] + "…", Qt.TextElideMode.ElideRight, width)
+    return WrappedText(tuple(lines), line_height, truncated)
+
+
 def text(painter, rect, value, size=12, color=TEXT, weight=QFont.Weight.Normal, wrap=False):
     painter.setFont(font(size, weight))
     painter.setPen(color)
     flags = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+    painter.save()
+    painter.setClipRect(rect, Qt.ClipOperation.IntersectClip)
+    used = 0
     if wrap:
-        flags |= Qt.TextFlag.TextWordWrap
-    else:
+        fitted = fit_wrapped_text(value, painter.font(), rect.width(), rect.height())
+        for row, line in enumerate(fitted.lines):
+            painter.drawText(QRectF(rect.x(), rect.y() + row * fitted.line_height,
+                                    rect.width(), fitted.line_height), flags, line)
+        used = len(fitted.lines) * fitted.line_height
+    elif rect.width() > 0 and rect.height() >= math.ceil(painter.fontMetrics().height()):
         value = painter.fontMetrics().elidedText(value, Qt.TextElideMode.ElideRight, int(rect.width()))
-    painter.drawText(rect, flags, value)
+        painter.drawText(rect, flags, value)
+        used = rect.height()
+    painter.restore()
+    return used
 
 
 class HitCanvas(QWidget):
@@ -160,6 +213,8 @@ class HitCanvas(QWidget):
             super().keyPressEvent(event)
 
     def draw_chip(self, painter, rect, event, compact=False):
+        painter.save()
+        painter.setClipRect(rect, Qt.ClipOperation.IntersectClip)
         accent, fill = color_for(event)
         selected = event.id == self.board.selected_id
         painter.setPen(QPen(ACCENT if selected else fill, 1.5 if selected else 1))
@@ -167,24 +222,35 @@ class HitCanvas(QWidget):
         painter.drawRoundedRect(rect, 7, 7)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(accent)
-        painter.drawRoundedRect(QRectF(rect.x() + 1, rect.y() + 6, 3, max(3, rect.height() - 12)), 1.5, 1.5)
-        content = rect.adjusted(10, 3, -7, -3)
+        stripe_margin = min(6, rect.height() / 4)
+        painter.drawRoundedRect(QRectF(rect.x() + 1, rect.y() + stripe_margin, 3,
+                                      rect.height() - stripe_margin * 2), 1.5, 1.5)
+        left = min(10, max(3, rect.width() / 5))
+        right = min(7, max(2, rect.width() / 7))
+        content = rect.adjusted(left, 3, -right, -3)
         interval = event_interval(event, self.board.layer)
         if compact:
             title = event.title
             if self.board.mode == "month" and not self.board.is_all_day(event):
                 title = f"{interval[0]:%H:%M} {title}" if interval else title
             text(painter, content, title, 11, accent, QFont.Weight.DemiBold)
-        elif rect.height() < 39:
-            label = f"{interval[0]:%H:%M}  {event.title}" if interval else event.title
-            text(painter, content, label, 11, accent, QFont.Weight.DemiBold)
         else:
-            text(painter, QRectF(content.x(), content.y(), content.width(), 17),
-                 f"{interval[0]:%H:%M} – {interval[1]:%H:%M}", 10, accent)
-            title_rect = QRectF(content.x(), content.y() + 19, content.width(), min(40, content.height() - 20))
-            text(painter, title_rect, event.title, 12, accent.darker(125), QFont.Weight.DemiBold, wrap=True)
-            if rect.height() > 93:
-                text(painter, QRectF(content.x(), rect.bottom() - 25, content.width(), 17), STATUSES[event.status], 10, accent)
+            title_height = math.ceil(QFontMetricsF(font(12, QFont.Weight.DemiBold)).height())
+            meta_metrics = QFontMetricsF(font(10))
+            meta_height = math.ceil(meta_metrics.height())
+            title_rect = QRectF(content)
+            # Keep at least one complete title line; metadata uses only spare room.
+            if interval and content.height() >= meta_height + 3 + title_height:
+                full_time = f"{interval[0]:%H:%M} – {interval[1]:%H:%M}"
+                time_label = full_time if meta_metrics.horizontalAdvance(full_time) <= content.width() else f"{interval[0]:%H:%M}"
+                if meta_metrics.horizontalAdvance(time_label) <= content.width():
+                    text(painter, QRectF(content.x(), content.y(), content.width(), meta_height), time_label, 10, accent)
+                    title_rect.setTop(content.y() + meta_height + 3)
+            used = text(painter, title_rect, event.title, 12, accent.darker(125), QFont.Weight.DemiBold, wrap=True)
+            status_top = title_rect.y() + used + 4
+            if used and content.bottom() - status_top >= meta_height:
+                text(painter, QRectF(content.x(), status_top, content.width(), meta_height), STATUSES[event.status], 10, accent)
+        painter.restore()
         self.hits.append((rect, event))
 
 
