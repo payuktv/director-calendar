@@ -74,6 +74,8 @@ QMenu#EventContextMenu::item { padding: 9px 20px 9px 28px; border-radius: 6px; }
 QMenu#EventContextMenu::item:disabled { color: #85889B; }
 QMenu#EventContextMenu::separator { height: 1px; background: #ECECF4; margin: 4px 10px; }
 QCalendarWidget#MiniCalendar, QWidget#MiniCalendarHeader { background: white; }
+QWidget#DatePickerPopup { background: transparent; border: none; }
+QCalendarWidget#MiniCalendar[datePopup="true"] { border: 1px solid #E8E5F3; border-radius: 12px; background: white; }
 QCalendarWidget#MiniCalendar QWidget { alternate-background-color: white; }
 QToolButton#MiniArrow { background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 0; }
 QToolButton#MiniArrow:hover, QToolButton#MiniArrow:focus { background: #F0EDFF; border-color: #E4DEFC; }
