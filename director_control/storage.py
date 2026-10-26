@@ -56,6 +56,10 @@ def minutes_between(start: str, end: str) -> int:
     return round((datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds() / 60)
 
 
+class EventConflictError(ValueError):
+    """The editor's snapshot is no longer the current record."""
+
+
 @dataclass(frozen=True)
 class Event:
     id: int
@@ -70,6 +74,7 @@ class Event:
     status: str
     note: str
     source: str
+    revision: int = 0
 
     @property
     def is_postfactum(self) -> bool:
@@ -104,7 +109,7 @@ class Store:
 
     def _initialize(self) -> None:
         with self._connect() as con:
-            if con.execute("PRAGMA user_version").fetchone()[0] > 3:
+            if con.execute("PRAGMA user_version").fetchone()[0] > 4:
                 raise ValueError("База создана более новой версией программы. Обнови приложение.")
             con.executescript("""
                 CREATE TABLE IF NOT EXISTS categories (
@@ -163,16 +168,42 @@ class Store:
                 con.execute("INSERT OR IGNORE INTO categories VALUES (?, ?, ?)", (name, color, track))
             con.execute("INSERT OR IGNORE INTO settings VALUES ('tolerance_minutes', '10')")
 
-        self._migrate_local_events()
+        copied = self._migrate_local_events()
+        self._migrate_reliability(copied)
+
+    def _migrate_reliability(self, copied):
+        with self._connect() as con:
+            version = con.execute('PRAGMA user_version').fetchone()[0]
+        if version == 4:
+            return
+        with self._connect() as con:
+            has_data = con.execute('SELECT 1 FROM events LIMIT 1').fetchone() is not None
+        if (version > 0 or has_data) and not copied:
+            self.backup()
+        with self._connect() as con:
+            con.execute('BEGIN IMMEDIATE')
+            con.execute('''CREATE TABLE IF NOT EXISTS baseline_rules (
+                event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+                category TEXT NOT NULL, track INTEGER NOT NULL CHECK(track IN (0,1)),
+                tolerance_minutes INTEGER NOT NULL)''')
+            con.execute('''CREATE TABLE IF NOT EXISTS calendar_syncs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, calendar_key TEXT NOT NULL,
+                start TEXT NOT NULL, end TEXT NOT NULL, status TEXT NOT NULL, finished_at TEXT NOT NULL)''')
+            if 'revision' not in {row['name'] for row in con.execute('PRAGMA table_info(events)')}:
+                con.execute('ALTER TABLE events ADD COLUMN revision INTEGER NOT NULL DEFAULT 0')
+            tolerance = int(con.execute("SELECT value FROM settings WHERE key='tolerance_minutes'").fetchone()[0])
+            con.execute('''INSERT OR IGNORE INTO baseline_rules SELECT e.id,e.category,c.track,? FROM events e
+                JOIN categories c ON c.name=e.category WHERE e.baseline_start IS NOT NULL''', (tolerance,))
+            if con.execute('PRAGMA foreign_key_check').fetchall():
+                raise ValueError('Не удалось обновить формат базы: нарушены связи записей.')
+            con.execute('PRAGMA user_version=4')
 
     def _migrate_local_events(self):
         with self._connect() as con:
             needs_rebuild = any(row["name"] in {"current_start", "current_end"} and row["notnull"]
                                 for row in con.execute("PRAGMA table_info(events)"))
         if not needs_rebuild:
-            with self._connect() as con:
-                con.execute("PRAGMA user_version=3")
-            return
+            return False
         # Save the old database before changing its format. A failed copy stops migration.
         self.backup()
         with self._connect() as con:
@@ -209,6 +240,7 @@ class Store:
                 raise
             finally:
                 con.execute("PRAGMA foreign_keys=ON")
+        return True
 
     @staticmethod
     def _as_event(row: sqlite3.Row) -> Event:
@@ -224,10 +256,18 @@ class Store:
             raise ValueError("Название категории должно содержать 1–60 символов")
         with self._connect() as con:
             con.execute("INSERT INTO categories VALUES (?, ?, ?)", (name, "#6A8DB8", int(track)))
+            self._audit(con, None, name, 'Создание категории', {'контролировать': bool(track)})
 
     def set_category_tracking(self, name: str, track: bool) -> None:
         with self._connect() as con:
+            con.execute('BEGIN IMMEDIATE')
+            old = con.execute('SELECT track FROM categories WHERE name=?', (name,)).fetchone()
+            if old is None:
+                raise ValueError('Категория не найдена')
+            if old['track'] == int(track):
+                return
             con.execute("UPDATE categories SET track=? WHERE name=?", (int(track), name))
+            self._audit(con, None, name, 'Контроль категории', {'было': bool(old['track']), 'стало': bool(track)})
 
     def get_setting(self, key: str, default: str = "") -> str:
         with self._connect() as con:
@@ -236,6 +276,14 @@ class Store:
 
     def set_setting(self, key: str, value: str) -> None:
         with self._connect() as con:
+            if key == 'tolerance_minutes':
+                if not 0 <= int(value) <= 180:
+                    raise ValueError('Допустимое отклонение: от 0 до 180 минут')
+                con.execute('BEGIN IMMEDIATE')
+                old = con.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+                if old is None or old['value'] != value:
+                    self._audit(con, None, 'Допустимое отклонение', 'Настройка контроля времени',
+                                {'было': old['value'] if old else None, 'стало': value})
             con.execute("INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
     @staticmethod
@@ -296,8 +344,24 @@ class Store:
             self._audit(con, event_id, data["title"], "Создание локального события", data)
             return event_id
 
-    def update_event(self, event_id: int, **updates: str | None) -> None:
-        old = self.get_event(event_id)
+    def _checked_event(self, con, event_id, expected_revision):
+        row = con.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
+        if row is None:
+            if expected_revision is not None:
+                raise EventConflictError('Событие уже удалено. Закрой карточку и обнови календарь.')
+            raise KeyError('Событие не найдено')
+        event = self._as_event(row)
+        if expected_revision is not None and event.revision != expected_revision:
+            raise EventConflictError('Событие изменилось после открытия карточки. Изменения не сохранены. Закрой карточку и открой её снова.')
+        return event
+
+    def update_event(self, event_id: int, *, expected_revision=None, **updates: str | None) -> None:
+        with self._connect() as con:
+            con.execute('BEGIN IMMEDIATE')
+            self._update_event(con, event_id, expected_revision, updates)
+
+    def _update_event(self, con, event_id, expected_revision, updates):
+        old = self._checked_event(con, event_id, expected_revision)
         if old.source not in {"caldav", "local"}:
             raise ValueError("Учёт доступен для событий Mail.ru и новых локальных событий.")
         source_fields = {"title", "current_start", "current_end"}
@@ -320,21 +384,17 @@ class Store:
         changes = {k: {"было": getattr(old, k), "стало": data[k]} for k in updates if getattr(old, k) != data[k]}
         if not changes:
             return
-        with self._connect() as con:
-            columns = [f"{k}=?" for k in changes]
-            con.execute(f"UPDATE events SET {', '.join(columns)}, updated_at=? WHERE id=?",
-                        [data[k] for k in changes] + [now_iso(), event_id])
-            if "status" in changes or "actual_start" in changes or "actual_end" in changes:
-                con.execute("UPDATE calendar_events SET local_status=1 WHERE event_id=?", (event_id,))
-            self._audit(con, event_id, str(data["title"]), "Изменение", changes)
+        columns = [f"{k}=?" for k in changes]
+        con.execute(f"UPDATE events SET {', '.join(columns)}, revision=revision+1, updated_at=? WHERE id=?",
+                    [data[k] for k in changes] + [now_iso(), event_id])
+        if "status" in changes or "actual_start" in changes or "actual_end" in changes:
+            con.execute("UPDATE calendar_events SET local_status=1 WHERE event_id=?", (event_id,))
+        self._audit(con, event_id, str(data["title"]), "Изменение", changes)
 
-    def delete_event(self, event_id: int) -> None:
+    def delete_event(self, event_id: int, *, expected_revision=None) -> None:
         with self._connect() as con:
             con.execute("BEGIN IMMEDIATE")
-            row = con.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
-            if row is None:
-                raise KeyError("Событие не найдено")
-            event = self._as_event(row)
+            event = self._checked_event(con, event_id, expected_revision)
             if event.source != "local":
                 raise ValueError("Удалять можно только локальные события. События Mail.ru меняются в Mail.ru.")
             if event.baseline_start:
@@ -345,14 +405,19 @@ class Store:
     def freeze_day(self, day: str) -> int:
         date.fromisoformat(day)
         with self._connect() as con:
+            con.execute('BEGIN IMMEDIATE')
             if con.execute("SELECT 1 FROM day_freezes WHERE day=?", (day,)).fetchone():
                 raise ValueError("Первоначальный план на эту дату уже зафиксирован")
             con.execute("INSERT INTO day_freezes VALUES (?, ?)", (day, now_iso()))
             ids = con.execute("SELECT id, title FROM events WHERE source IN ('caldav','local') AND substr(current_start,1,10)=? AND baseline_start IS NULL", (day,)).fetchall()
-            con.execute("""UPDATE events SET baseline_start=current_start, baseline_end=current_end
+            con.execute("""UPDATE events SET baseline_start=current_start, baseline_end=current_end, revision=revision+1
                         WHERE source IN ('caldav','local') AND substr(current_start,1,10)=? AND baseline_start IS NULL""", (day,))
             for row in ids:
                 con.execute("UPDATE calendar_events SET baseline_all_day=all_day WHERE event_id=?", (row["id"],))
+                con.execute('''INSERT INTO baseline_rules
+                    SELECT e.id,e.category,c.track,CAST(s.value AS INTEGER) FROM events e
+                    JOIN categories c ON c.name=e.category JOIN settings s ON s.key='tolerance_minutes'
+                    WHERE e.id=?''', (row['id'],))
             for row in ids:
                 self._audit(con, row["id"], row["title"], "Фиксация плана", {"day": day})
             return len(ids)
@@ -360,6 +425,10 @@ class Store:
     def is_frozen(self, day: str) -> bool:
         with self._connect() as con:
             return con.execute("SELECT 1 FROM day_freezes WHERE day=?", (day,)).fetchone() is not None
+
+    def baseline_rules(self):
+        with self._connect() as con:
+            return {row['event_id']: dict(row) for row in con.execute('SELECT * FROM baseline_rules')}
 
     def daily_events(self, day: str) -> list[Event]:
         date.fromisoformat(day)
@@ -411,11 +480,12 @@ class Store:
         end = (date.fromisoformat(day) + timedelta(days=1)).isoformat() + "T00:00:00"
         with self._connect() as con:
             rows = con.execute("""
-                SELECT e.*, c.track FROM events e JOIN categories c ON e.category=c.name
+                SELECT e.*, c.track, coalesce(b.track,c.track) AS baseline_track FROM events e
+                JOIN categories c ON e.category=c.name LEFT JOIN baseline_rules b ON b.event_id=e.id
                 WHERE e.source IN ('caldav','local') AND ((e.current_start<? AND e.current_end>?) OR (e.baseline_start<? AND e.baseline_end>?) OR (e.actual_start<? AND e.actual_end>?))
             """, (end, start, end, start, end, start)).fetchall()
-        planned = [r for r in rows if r["baseline_start"] and r["baseline_start"][:10] == day and r["track"]]
-        uncontrolled = [r for r in rows if r["track"] == 0]
+        planned = [r for r in rows if r["baseline_start"] and r["baseline_start"][:10] == day and r["baseline_track"]]
+        uncontrolled = [r for r in rows if (r['baseline_track'] if r['baseline_start'] and r['baseline_start'][:10] == day else r['track']) == 0]
         unscheduled = [r for r in rows if r["track"] and (not r["baseline_start"] or r["baseline_start"][:10] != day)
                        and ((r["current_start"] and r["current_start"][:10] == day)
                             or (not r["current_start"] and r["actual_start"] < end and r["actual_end"] > start))]
@@ -433,15 +503,16 @@ class Store:
     def category_totals(self, day: str) -> list[tuple[str, int, int]]:
         totals: dict[str, list[int]] = {}
         metadata = self.calendar_info()
+        rules = self.baseline_rules()
         start = f"{day}T00:00:00"
         end = (date.fromisoformat(day) + timedelta(days=1)).isoformat() + "T00:00:00"
         for ev in self.daily_events(day):
-            planned, fact = totals.setdefault(ev.category, [0, 0])
+            totals.setdefault(ev.category, [0, 0])
             if ev.baseline_start and not metadata.get(ev.id, {}).get("baseline_all_day"):
-                planned += max(0, minutes_between(max(start, ev.baseline_start), min(end, ev.baseline_end)))
+                category = rules.get(ev.id, {}).get('category', ev.category)
+                totals.setdefault(category, [0, 0])[0] += max(0, minutes_between(max(start, ev.baseline_start), min(end, ev.baseline_end)))
             if ev.actual_start and ev.status in {"done", "partial"}:
-                fact += max(0, minutes_between(max(start, ev.actual_start), min(end, ev.actual_end)))
-            totals[ev.category] = [planned, fact]
+                totals[ev.category][1] += max(0, minutes_between(max(start, ev.actual_start), min(end, ev.actual_end)))
         return sorted(((name, pair[0], pair[1]) for name, pair in totals.items()), key=lambda x: -x[1])
 
     def audit_log(self, limit: int = 300) -> list[dict]:
@@ -467,16 +538,37 @@ class Store:
                 writer.writerow([excel_safe(values[f]) for f in fields])
 
     def backup(self) -> Path:
-        folder = self.path.parent / "backups"
-        folder.mkdir(exist_ok=True)
-        dest = folder / f"backup-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.db"
-        with sqlite3.connect(self.path) as src, sqlite3.connect(dest) as dst:
-            src.backup(dst)
-        return dest
+        from .backups import create_backup
+        return create_backup(self)
 
     def calendar_info(self) -> dict[int, dict]:
         with self._connect() as con:
             return {r["event_id"]: dict(r) for r in con.execute("SELECT * FROM calendar_events")}
+
+    def record_sync_failure(self, calendar_key, start, end):
+        def stamp(value):
+            value = value.isoformat() if isinstance(value, date) else value
+            return value + 'T00:00:00' if len(value) == 10 else value
+        with self._connect() as con:
+            con.execute("INSERT INTO calendar_syncs(calendar_key,start,end,status,finished_at) VALUES (?,?,?,'failed',?)",
+                        (calendar_key, stamp(start), stamp(end), now_iso()))
+
+    def sync_warning(self, day, calendar_key):
+        start = day + 'T00:00:00'
+        end = (date.fromisoformat(day) + timedelta(days=1)).isoformat() + 'T00:00:00'
+        with self._connect() as con:
+            row = con.execute("""SELECT * FROM calendar_syncs WHERE calendar_key=?
+                AND start<=? AND end>=? ORDER BY id DESC LIMIT 1""",
+                (calendar_key, start, end)).fetchone()
+        if row is None:
+            return 'Нет подтверждённого полного обновления Mail.ru за выбранный день.'
+        if row['status'] != 'complete':
+            return ('Последнее обновление Mail.ru за этот день было частичным.' if row['status'] == 'partial'
+                    else 'Последняя попытка обновить Mail.ru за этот день завершилась ошибкой.')
+        age = datetime.now() - datetime.fromisoformat(row['finished_at'])
+        if age < timedelta(0) or age > timedelta(minutes=30):
+            return 'Данные Mail.ru за этот день обновлялись более 30 минут назад. Расписание могло измениться.'
+        return ''
 
     def has_schedule_events(self) -> bool:
         with self._connect() as con:
@@ -524,7 +616,7 @@ class Store:
                     if meta["missing"] or meta["cancelled"] != int(event.cancelled) or meta["all_day"] != int(event.all_day):
                         changes["источник"] = {"missing": False, "cancelled": event.cancelled, "all_day": event.all_day}
                     if changes:
-                        con.execute("""UPDATE events SET title=?, current_start=?, current_end=?, status=?, updated_at=?
+                        con.execute("""UPDATE events SET title=?, current_start=?, current_end=?, status=?, revision=revision+1, updated_at=?
                             WHERE id=?""", (event.title, event.start, event.end, status, now_iso(), event_id))
                         self._audit(con, event_id, event.title, "Обновление Mail.ru", changes)
                         stats["updated"] += 1
@@ -538,9 +630,13 @@ class Store:
             for row in rows:
                 if row["external_key"] not in seen:
                     con.execute("UPDATE calendar_events SET missing=1 WHERE event_id=?", (row["id"],))
+                    con.execute('UPDATE events SET revision=revision+1 WHERE id=?', (row['id'],))
                     self._audit(con, row["id"], row["title"], "Нет в ответе Mail.ru", {"требует проверки": True})
                     stats["missing"] += 1
             sync_key = "mail_last_sync" if snapshot.complete else "mail_last_partial"
+            con.execute("INSERT INTO calendar_syncs(calendar_key,start,end,status,finished_at) VALUES (?,?,?,?,?)",
+                        (snapshot.calendar_key, snapshot.start, snapshot.end,
+                         'complete' if snapshot.complete else 'partial', now_iso()))
             con.execute("INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                         (sync_key, now_iso()))
             stats["missing"] = con.execute("SELECT count(*) FROM calendar_events WHERE calendar_key=? AND missing=1",

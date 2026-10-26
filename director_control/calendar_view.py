@@ -13,6 +13,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QTextLay
 from PySide6.QtWidgets import QApplication, QScrollArea, QStackedWidget, QToolTip, QVBoxLayout, QWidget
 
 from .storage import STATUSES
+from .schedule import event_interval
 from .theme import color as theme_color, is_dark
 
 MONTHS = ("январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь")
@@ -83,15 +84,6 @@ def layout_overlaps(blocks: list[Block]) -> list[Block]:
     if group:
         flush()
     return result
-
-
-def event_interval(event, layer):
-    fields = {"current": ("current_start", "current_end"), "baseline": ("baseline_start", "baseline_end"),
-              "actual": ("actual_start", "actual_end")}[layer]
-    start, end = (getattr(event, field) for field in fields)
-    if layer == "current" and event.source == "local" and not start:
-        start, end = event.actual_start, event.actual_end
-    return (datetime.fromisoformat(start), datetime.fromisoformat(end)) if start and end else None
 
 
 def split_blocks(events, days, layer, metadata):

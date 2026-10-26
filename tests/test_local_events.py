@@ -198,11 +198,11 @@ def test_v2_migration_keeps_data_links_indexes_sequence_and_a_restorable_backup(
         audit = list(con.execute('SELECT * FROM audit'))
     store = Store(path)
     with sqlite3.connect(path) as con:
-        assert list(con.execute('SELECT * FROM events ORDER BY id')) == before
+        assert [row[:15] for row in con.execute('SELECT * FROM events ORDER BY id')] == before
         assert list(con.execute('SELECT * FROM calendar_events')) == meta
         assert list(con.execute('SELECT * FROM audit')) == audit
         assert con.execute('PRAGMA foreign_key_check').fetchall() == []
-        assert con.execute('PRAGMA user_version').fetchone()[0] == 3
+        assert con.execute('PRAGMA user_version').fetchone()[0] == 4
         assert con.execute("SELECT 1 FROM sqlite_master WHERE name='custom_status_index'").fetchone()
         assert not next(r[3] for r in con.execute('PRAGMA table_info(events)') if r[1] == 'current_start')
     assert store.get_setting('ui_theme') == 'dark' and store.is_frozen(DAY)
