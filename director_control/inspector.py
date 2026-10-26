@@ -126,5 +126,5 @@ class CategoryBars(QWidget):
                 p.setBrush(theme_color(color))
                 if value:
                     p.drawRoundedRect(QRectF(180, y + offset + 2, available * value / maximum, 11), 4, 4)
-                text(p, QRectF(185 + available * value / maximum, y + offset - 2, 55, 20), str(value), 11, theme_color("muted"))
+                text(p, QRectF(185 + available * value / maximum, y + offset - 2, 55, 20), f"{value:.1f}".rstrip("0").rstrip(".").replace(".", ","), 11, theme_color("muted"))
         p.end()
