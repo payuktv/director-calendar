@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QElapsedTimer, QEvent, QPoint, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QTextLayout, QTextOption
-from PySide6.QtWidgets import QScrollArea, QStackedWidget, QToolTip, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QScrollArea, QStackedWidget, QToolTip, QVBoxLayout, QWidget
 
 from .storage import STATUSES
 from .theme import color as theme_color, is_dark
@@ -204,11 +204,29 @@ class HitCanvas(QWidget):
         super().__init__()
         self.board = board
         self.hits = []
+        self._press_target = None
+        self._press_clock = QElapsedTimer()
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def hit(self, point):
         return next((event for rect, event in reversed(self.hits) if rect.contains(point)), None)
+
+    def press_hit(self, point):
+        hit = self.hit(point)
+        self._press_target = (hit.id, QPointF(point)) if hit else None
+        self._press_clock.start()
+        return hit
+
+    def activation_id(self, point):
+        # The first click can widen a column and move overlapping event lanes.
+        # A double click still belongs to the event selected by that first click.
+        if self._press_target is not None and self._press_clock.elapsed() <= QApplication.doubleClickInterval():
+            event_id, pressed = self._press_target
+            if (QPointF(point) - pressed).manhattanLength() <= QApplication.styleHints().mouseDoubleClickDistance():
+                return event_id
+        hit = self.hit(point)
+        return hit.id if hit else None
 
     def mouseMoveEvent(self, event):
         self.setCursor(Qt.CursorShape.PointingHandCursor if self.hit(event.position()) else Qt.CursorShape.ArrowCursor)
@@ -300,9 +318,8 @@ class TimeGrid(HitCanvas):
         p.fillRect(self.rect(), theme_color("surface"))
         self.hits = []
         days = self.board.days
-        width = (self.width() - GUTTER) / len(days)
-        for col, day in enumerate(days):
-            x = GUTTER + col * width
+        columns = self.board.time_columns()
+        for day, x, width in columns:
             if day == self.board.today():
                 p.fillRect(QRectF(x, 0, width, self.height()), theme_color("today"))
             elif day.weekday() >= 5:
@@ -317,19 +334,18 @@ class TimeGrid(HitCanvas):
             p.drawLine(QPoint(GUTTER, y + self.board.hour_height // 2), QPoint(self.width(), y + self.board.hour_height // 2))
             if hour:
                 text(p, QRectF(3, y - 8, GUTTER - 10, 16), f"{hour:02}:00", 10, theme_color("calendar_muted"))
-        for col, day in enumerate(days):
+        for day, x, width in columns:
             for block in self.board.timed.get(day, []):
                 lane_width = (width - 10) / block.lanes
                 top = min(self.height() - 4, block.start / 60 * self.board.hour_height + 2)
                 height = min(self.height() - top - 1, max(23, (block.end - block.start) / 60 * self.board.hour_height - 4))
-                rect = QRectF(GUTTER + col * width + 5 + block.lane * lane_width,
+                rect = QRectF(x + 5 + block.lane * lane_width,
                               top, max(9, lane_width - 3), max(1, height))
                 self.draw_chip(p, rect, block.event)
         now = self.board.now()
         if now.date() in days:
-            col = days.index(now.date())
+            _, x, width = columns[days.index(now.date())]
             y = (now.hour + now.minute / 60) * self.board.hour_height
-            x = GUTTER + col * width
             p.setPen(QPen(theme_color("now"), 1.4))
             p.drawLine(QPoint(int(x), int(y)), QPoint(int(x + width), int(y)))
             p.setBrush(theme_color("now"))
@@ -337,17 +353,15 @@ class TimeGrid(HitCanvas):
         p.end()
 
     def slot(self, point):
-        col_width = (self.width() - GUTTER) / len(self.board.days)
-        col = max(0, min(len(self.board.days) - 1, int((point.x() - GUTTER) / col_width)))
         minute = min(1410, max(0, int(point.y() / self.board.hour_height * 60) // 30 * 30))
-        return self.board.days[col], minute
+        return self.board.day_at_x(point.x()), minute
 
     def context_day(self, point):
         return self.slot(point)[0]
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            hit = self.hit(event.position())
+            hit = self.press_hit(event.position())
             if hit:
                 self.board.clicked_day = self.slot(event.position())[0]
                 self.board.selected.emit(hit.id)
@@ -358,9 +372,9 @@ class TimeGrid(HitCanvas):
     def mouseDoubleClickEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        hit = self.hit(event.position())
-        if hit:
-            self.board.activated.emit(hit.id)
+        event_id = self.activation_id(event.position())
+        if event_id is not None:
+            self.board.activated.emit(event_id)
 
 
 class DayHeader(HitCanvas):
@@ -368,9 +382,7 @@ class DayHeader(HitCanvas):
         return point + QPoint(self.board.scroll.horizontalScrollBar().value(), 0)
 
     def context_day(self, point):
-        width = (self.board.grid.width() - GUTTER) / len(self.board.days)
-        col = max(0, min(len(self.board.days) - 1, int((point.x() - GUTTER) / width)))
-        return self.board.days[col]
+        return self.board.day_at_x(point.x())
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -378,9 +390,7 @@ class DayHeader(HitCanvas):
         p.fillRect(self.rect(), theme_color("surface"))
         p.translate(-self.board.scroll.horizontalScrollBar().value(), 0)
         self.hits = []
-        width = (self.board.grid.width() - GUTTER) / len(self.board.days)
-        for col, day in enumerate(self.board.days):
-            x = GUTTER + col * width
+        for day, x, width in self.board.time_columns():
             text(p, QRectF(x + 12, 7, width - 16, 17), WEEKDAYS[day.weekday()], 10, theme_color("calendar_muted"), QFont.Weight.DemiBold)
             if day == self.board.today():
                 p.setPen(Qt.PenStyle.NoPen)
@@ -405,15 +415,12 @@ class DayHeader(HitCanvas):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         point = event.position() + QPoint(self.board.scroll.horizontalScrollBar().value(), 0)
-        hit = self.hit(point)
+        hit = self.press_hit(point)
         if hit:
-            width = (self.board.grid.width() - GUTTER) / len(self.board.days)
-            self.board.clicked_day = self.board.days[min(len(self.board.days) - 1, int((point.x() - GUTTER) / width))]
+            self.board.clicked_day = self.board.day_at_x(point.x())
             self.board.selected.emit(hit.id)
         elif point.x() >= GUTTER:
-            width = (self.board.grid.width() - GUTTER) / len(self.board.days)
-            col = min(len(self.board.days) - 1, int((point.x() - GUTTER) / width))
-            self.board.date_selected.emit(self.board.days[col])
+            self.board.date_selected.emit(self.board.day_at_x(point.x()))
             if point.y() > 110:
                 self.board.agenda_requested.emit()
 
@@ -421,9 +428,9 @@ class DayHeader(HitCanvas):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         point = event.position() + QPoint(self.board.scroll.horizontalScrollBar().value(), 0)
-        hit = self.hit(point)
-        if hit:
-            self.board.activated.emit(hit.id)
+        event_id = self.activation_id(point)
+        if event_id is not None:
+            self.board.activated.emit(event_id)
 
 
 class MonthGrid(HitCanvas):
@@ -484,7 +491,7 @@ class MonthGrid(HitCanvas):
     def mousePressEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton or event.position().y() < 28:
             return
-        hit = self.hit(event.position())
+        hit = self.press_hit(event.position())
         if hit:
             self.board.clicked_day = period_days(self.board.focus, "month")[self.cell(event.position())]
             self.board.selected.emit(hit.id)
@@ -499,9 +506,9 @@ class MonthGrid(HitCanvas):
     def mouseDoubleClickEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton or event.position().y() < 28:
             return
-        hit = self.hit(event.position())
-        if hit:
-            self.board.activated.emit(hit.id)
+        event_id = self.activation_id(event.position())
+        if event_id is not None:
+            self.board.activated.emit(event_id)
 
 
 class CalendarBoard(QWidget):
@@ -562,6 +569,23 @@ class CalendarBoard(QWidget):
 
     def today(self):
         return self.now().date()
+
+    def time_columns(self):
+        """Shared geometry for the timeline, its header and pointer hit testing."""
+        weights = [1.5 if self.mode == "week" and day == self.focus else 1 for day in self.days]
+        unit = max(0, self.grid.width() - GUTTER) / sum(weights)
+        columns, x = [], float(GUTTER)
+        for day, weight in zip(self.days, weights):
+            width = unit * weight
+            columns.append((day, x, width))
+            x += width
+        return columns
+
+    def day_at_x(self, x):
+        for day, left, width in self.time_columns():
+            if x < left + width:
+                return day
+        return self.days[-1]
 
     def is_all_day(self, event):
         if self.layer == "actual":
