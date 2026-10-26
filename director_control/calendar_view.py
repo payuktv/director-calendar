@@ -23,13 +23,13 @@ HOUR = 66
 STATUS_COLORS = {
     "cancelled": ("#BE7186", "#FCF0F3"),
     "done": ("#369A83", "#EDF8F4"),
-    "partial": ("#A87900", "#FFF4C2"),
+    "partial": ("#8E743F", "#F3EFE3"),
     "moved": ("#397ED8", "#EAF2FF"),
 }
 
 DARK_STATUS_COLORS = {
     "done": ("#6ED2B4", "#1A3B36"), "cancelled": ("#ED9AB0", "#402735"),
-    "partial": ("#F0CE65", "#433B23"), "moved": ("#8ABAF6", "#253B59"),
+    "partial": ("#C6B57D", "#363329"), "moved": ("#8ABAF6", "#253B59"),
 }
 
 

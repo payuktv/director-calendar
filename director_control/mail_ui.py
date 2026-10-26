@@ -1,12 +1,13 @@
 """Connection panel and background read-only synchronization."""
 from datetime import date
 
-from PySide6.QtCore import QThread, QTimer, Signal
+from PySide6.QtCore import QThread, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -44,12 +45,19 @@ class MailPanel(QGroupBox):
 
     def __init__(self, store, selected_day, parent=None):
         super().__init__("Календарь Mail.ru", parent)
+        self.setProperty("settingsSection", True)
         self.store = store
         self.selected_day = selected_day
         self.credentials = Credentials()
         self.worker = None
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
         form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(24)
+        form.setVerticalSpacing(14)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.url = QLineEdit(store.get_setting("mail_url"))
         self.url.setPlaceholderText("https://calendar.mail.ru/principals/…/calendars/…/")
         form.addRow("Ссылка CalDAV", self.url)
@@ -72,12 +80,18 @@ class MailPanel(QGroupBox):
         self.auto.setChecked(store.get_setting("mail_auto", "1") == "1")
         form.addRow("", self.auto)
         layout.addLayout(form)
+        layout.addSpacing(4)
+        actions = QHBoxLayout()
+        actions.setSpacing(12)
         self.save_button = QPushButton("Сохранить подключение и обновить")
         self.save_button.clicked.connect(self.save_connection)
-        layout.addWidget(self.save_button)
+        actions.addWidget(self.save_button)
         self.sync_button = QPushButton("Обновить из Mail.ru")
         self.sync_button.clicked.connect(self.sync)
-        layout.addWidget(self.sync_button)
+        actions.addWidget(self.sync_button)
+        actions.addStretch()
+        layout.addLayout(actions)
+        layout.addSpacing(4)
         self.status = QLabel("Последнее успешное обновление: " + (store.get_setting("mail_last_sync").replace("T", " ") or "ещё не было"))
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -85,6 +99,7 @@ class MailPanel(QGroupBox):
                       "Название и плановое время меняй в Mail.ru; категорию, факт и итоги — здесь. "
                       "Пропавшие записи сохраняются с отметкой «Проверить Mail.ru». Пароль не хранится в базе или GitHub.")
         note.setWordWrap(True)
+        note.setObjectName("Muted")
         layout.addWidget(note)
         QTimer.singleShot(0, self.startup)
 
