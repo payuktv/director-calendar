@@ -148,6 +148,8 @@ class Store:
                     details TEXT NOT NULL,
                     changed_at TEXT NOT NULL
                 );
+                CREATE INDEX IF NOT EXISTS idx_audit_event ON audit(event_id,id DESC);
+                CREATE INDEX IF NOT EXISTS idx_audit_changed ON audit(changed_at,id DESC);
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
@@ -541,6 +543,68 @@ class Store:
     def audit_log(self, limit: int = 300) -> list[dict]:
         with self._connect() as con:
             return [dict(r) for r in con.execute("SELECT * FROM audit ORDER BY id DESC LIMIT ?", (limit,))]
+
+    def audit_page(self, *, search='', date_from=None, date_to=None, event_id=None,
+                   event_search='', before_id=None, ceiling_id=None, limit=100):
+        """Read a filtered, ID-ordered page. Dates are inclusive change dates.
+
+        A fixed ceiling prevents inserts from shifting older pages. No OFFSET or
+        journal truncation is used. Raw audit records remain available to callers.
+        """
+        from .history import AuditPage, matches, normalise
+        if not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError('Размер страницы: от 1 до 500 записей.')
+        if any(value is not None and (not isinstance(value, int) or value < 0)
+               for value in (before_id, ceiling_id)):
+            raise ValueError('Некорректная граница страницы истории.')
+        start = date.fromisoformat(date_from) if isinstance(date_from, str) else date_from
+        end = date.fromisoformat(date_to) if isinstance(date_to, str) else date_to
+        if start and end and start > end:
+            raise ValueError('Дата «С» должна быть не позже даты «По».')
+        clauses, args = [], []
+        if start:
+            clauses.append('a.changed_at>=?')
+            args.append(start.isoformat() + 'T00:00:00')
+        if end:
+            clauses.append('a.changed_at<?')
+            args.append((end + timedelta(days=1)).isoformat() + 'T00:00:00')
+        if event_id == 'system':
+            clauses.append('a.event_id IS NULL')
+        elif event_id is not None:
+            if not isinstance(event_id, int) or event_id <= 0:
+                raise ValueError('Выбери событие из истории.')
+            clauses.append('a.event_id=?')
+            args.append(event_id)
+        if normalise(event_search):
+            clauses.append('''a.event_id IN (SELECT b.event_id FROM audit b
+                WHERE b.event_id IS NOT NULL AND instr(history_fold(b.title),?)>0)''')
+            args.append(normalise(event_search))
+        if normalise(search):
+            clauses.append('history_matches(a.title,a.action,a.details,a.changed_at,?)')
+            args.append(search)
+        filters = ''.join(' AND ' + clause for clause in clauses)
+        with self._connect() as con:
+            con.create_function('history_fold', 1, normalise, deterministic=True)
+            con.create_function('history_matches', 5, matches, deterministic=True)
+            con.execute('BEGIN')
+            maximum = con.execute('SELECT coalesce(max(id),0) FROM audit').fetchone()[0]
+            ceiling = maximum if ceiling_id is None else ceiling_id
+            total = con.execute('SELECT count(*) FROM audit a WHERE a.id<=?' + filters, [ceiling, *args]).fetchone()[0]
+            newer = con.execute('SELECT count(*) FROM audit a WHERE a.id>?' + filters, [ceiling, *args]).fetchone()[0] if maximum > ceiling else 0
+            boundary = ' AND a.id<?' if before_id is not None else ''
+            rows = con.execute('SELECT a.* FROM audit a WHERE a.id<=?' + filters + boundary + ' ORDER BY a.id DESC LIMIT ?',
+                               [ceiling, *args, *([before_id] if before_id is not None else []), limit + 1]).fetchall()
+        return AuditPage(tuple(dict(row) for row in rows[:limit]), total, ceiling, len(rows) > limit, newer)
+
+    def audit_event_options(self):
+        """Include deleted and archived events, identified by ID rather than title."""
+        with self._connect() as con:
+            return [dict(row) for row in con.execute('''SELECT a.event_id,
+                coalesce(e.title,a.title) AS title, e.id IS NULL AS deleted, e.source,
+                coalesce(e.current_start,e.baseline_start,e.actual_start) AS starts
+                FROM audit a JOIN (SELECT event_id,max(id) AS latest FROM audit
+                WHERE event_id IS NOT NULL GROUP BY event_id) last ON a.id=last.latest
+                LEFT JOIN events e ON e.id=a.event_id ORDER BY a.id DESC''')]
 
     def export_csv(self, day: str, destination: Path | str) -> None:
         fields = ["id", "title", "category", "baseline_start", "baseline_end", "current_start", "current_end",
