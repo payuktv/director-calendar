@@ -131,8 +131,16 @@ def test_theme_empty_states_single_click_picker_and_narrow_layout(window, theme)
     for card in a.cards.values():
         assert card.value.width() > 100
     a.show_events()
-    app.processEvents()
-    assert window.width() == 1000 and a.event_table.width() < 760
+    # Windows can deliver nested tab/scroll-area layouts in another event-loop turn.
+    QTest.qWait(20)
+    assert window.width() == 1000
+    assert a.event_table.width() <= a.viewport().width()
+    assert a.horizontalScrollBar().maximum() == 0
+    # Longer font metrics must wrap inside cards rather than widen the dashboard.
+    a.setStyleSheet('QLabel#CardTitle { font-size: 15px; }')
+    QTest.qWait(20)
+    assert a.event_table.width() <= a.viewport().width()
+    assert a.horizontalScrollBar().maximum() == 0
 
 
 def test_csv_exports_whole_period_scope_even_when_details_filtered(window, tmp_path, monkeypatch):
