@@ -106,6 +106,8 @@ QComboBox::drop-down { border: none; width: 22px; }
 QComboBox QAbstractItemView { background: $surface; border: 1px solid $control_border; selection-background-color: $soft_accent; }
 QGroupBox { background: $surface; border: 1px solid $border; border-radius: 12px; margin-top: 17px; padding: 22px 16px 16px; font-weight: 650; }
 QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 5px; }
+QGroupBox[settingsSection="true"] { margin-top: 18px; padding: 0; }
+QGroupBox[settingsSection="true"]::title { left: 20px; padding: 0 4px; }
 QTableWidget { background: $surface; alternate-background-color: $table_alternate; border: 1px solid $border; border-radius: 10px;
     gridline-color: $table_grid; selection-background-color: $soft_accent; selection-color: $selection_text; outline: none; }
 QTableWidget::item { padding: 7px; border-bottom: 1px solid $table_grid; }
