@@ -5,7 +5,7 @@ import json
 from datetime import date, datetime, time, timedelta
 
 from PySide6.QtCore import QDate, QDateTime, QTime, Qt, QLocale, QSize
-from PySide6.QtGui import QBrush, QActionGroup
+from PySide6.QtGui import QBrush, QIcon, QActionGroup
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDateTimeEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
@@ -25,6 +25,7 @@ from .status_menu import EventStatusMenu
 from .mini_calendar import MiniCalendar
 from .date_picker import install_date_picker
 from .input_wheel import install_input_wheel_guard
+from .desktop import app_icon_path, create_desktop_shortcut as install_desktop_shortcut, shortcuts_available
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -233,7 +234,7 @@ class MainWindow(QMainWindow):
         self.theme_toggle.setIconSize(QSize(18, 18))
         self._update_theme_controls()
         side.addWidget(self.theme_toggle)
-        side.addWidget(plain_label("Версия 0.5.2", "Muted"))
+        side.addWidget(plain_label("Версия 0.6.0", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -607,6 +608,18 @@ class MainWindow(QMainWindow):
         add.addWidget(self.button("Добавить категорию", self.add_category))
         cv.addLayout(add)
         v.addWidget(categories_box)
+        launch_box = QGroupBox("Запуск приложения")
+        launch_box.setProperty("settingsSection", True)
+        launch_layout = QVBoxLayout(launch_box)
+        launch_layout.setContentsMargins(24, 24, 24, 24)
+        launch_layout.setSpacing(16)
+        self.shortcut_button = self.button("Создать ярлык на рабочем столе", self.create_desktop_shortcut)
+        self.shortcut_button.setEnabled(shortcuts_available())
+        launch_layout.addWidget(self.shortcut_button, 0, Qt.AlignmentFlag.AlignLeft)
+        launch_note = plain_label("Ярлык открывает календарь двойным щелчком, без окна командной строки.", "Muted")
+        launch_note.setWordWrap(True)
+        launch_layout.addWidget(launch_note)
+        v.addWidget(launch_box)
         data_box = QGroupBox("Данные и безопасность")
         data_box.setProperty("settingsSection", True)
         d = QVBoxLayout(data_box)
@@ -829,6 +842,14 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             error_box(self, exc)
 
+    def create_desktop_shortcut(self):
+        try:
+            install_desktop_shortcut()
+            QMessageBox.information(self, "Ярлык создан", "На рабочем столе создан ярлык «Director Calendar».\n"
+                                    "Открывай календарь двойным щелчком по нему.")
+        except Exception as exc:
+            error_box(self, exc)
+
     def closeEvent(self, event):
         if self.mail_panel.busy:
             QMessageBox.information(self, "Обновление календаря", "Дождись окончания обновления Mail.ru и закрой окно ещё раз.")
@@ -841,6 +862,8 @@ def run_app() -> int:
     import sys
     QLocale.setDefault(QLocale(QLocale.Language.Russian))
     app = QApplication(sys.argv)
+    if app_icon_path().is_file():
+        app.setWindowIcon(QIcon(str(app_icon_path())))
     install_input_wheel_guard(app)
     app.setStyle("Fusion")
     window = MainWindow(Store())
