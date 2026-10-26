@@ -158,12 +158,14 @@ class ProbeWindow(Original):
         super().show()
         QTimer.singleShot(100, self.record)
     def record(self):
-        Path({str(ready)!r}).write_text(json.dumps({{
+        pending = Path({str(ready.with_suffix('.tmp'))!r})
+        pending.write_text(json.dumps({{
             "cwd": os.getcwd(), "argv": sys.argv, "executable": sys.executable,
             "console": bool(ctypes.windll.kernel32.GetConsoleWindow()),
             "stdout_none": sys.stdout is None, "visible": self.isVisible(),
             "database": str(self.store.path), "icon": not self.windowIcon().isNull(),
         }}), encoding="utf-8")
+        pending.replace(Path({str(ready)!r}))
         self.close()
 ui.MainWindow = ProbeWindow
 raise SystemExit(main())
@@ -172,19 +174,24 @@ raise SystemExit(main())
     monkeypatch.setattr(desktop, "shortcut_spec", lambda: spec)
     desktop_dir = tmp_path / "Рабочий стол"
     desktop_dir.mkdir()
-    shortcut = desktop.create_desktop_shortcut(desktop_dir)
+    try:
+        shortcut = desktop.create_desktop_shortcut(desktop_dir)
+    except RuntimeError as exc:
+        pytest.fail(getattr(exc.__cause__, "stderr", None) or str(exc))
     assert desktop.create_desktop_shortcut(desktop_dir) == shortcut
     assert list(desktop_dir.iterdir()) == [shortcut]
     # Resolve saved .lnk properties through Windows, rather than trusting the builder.
     quoted = str(shortcut).replace("'", "''")
-    inspect_script = f"""[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+    inspect_script = f"""
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut('{quoted}')
-@{{target=$link.TargetPath; arguments=$link.Arguments; cwd=$link.WorkingDirectory; icon=$link.IconLocation; desktop=$shell.SpecialFolders.Item('Desktop'); expected_desktop=[Environment]::GetFolderPath('DesktopDirectory')}} | ConvertTo-Json -Compress
+$json = @{{target=$link.TargetPath; arguments=$link.Arguments; cwd=$link.WorkingDirectory; icon=$link.IconLocation; desktop=$shell.SpecialFolders.Item('Desktop'); expected_desktop=[Environment]::GetFolderPath('DesktopDirectory')}} | ConvertTo-Json -Compress
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
 """
     command = desktop._shortcut_command(spec, desktop_dir)
     command[-1] = base64.b64encode(inspect_script.encode("utf-16-le")).decode("ascii")
-    saved = json.loads(subprocess.run(command, check=True, capture_output=True, encoding="utf-8").stdout)
+    output = subprocess.run(command, check=True, capture_output=True, encoding="utf-8").stdout.strip()
+    saved = json.loads(base64.b64decode(output).decode("utf-8"))
     assert Path(saved["target"]) == spec.target
     assert saved["arguments"] == subprocess.list2cmdline(spec.arguments)
     assert Path(saved["cwd"]) == root

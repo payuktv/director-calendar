@@ -58,7 +58,6 @@ def _shortcut_command(spec: ShortcutSpec, desktop_dir: Path | None) -> list[str]
     }, ensure_ascii=False).encode("utf-8")).decode("ascii")
     script = """
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $spec = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__')) | ConvertFrom-Json
 $shell = New-Object -ComObject WScript.Shell
 $desktop = $spec.desktop
@@ -75,7 +74,7 @@ $link.IconLocation = $spec.icon + ',0'
 $link.Description = 'Director Calendar'
 $link.WindowStyle = 1
 $link.Save()
-[Console]::WriteLine($path)
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($path))
 """.replace("__PAYLOAD__", payload)
     powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     return [str(powershell), "-NoProfile", "-NonInteractive", "-EncodedCommand",
@@ -89,11 +88,12 @@ def create_desktop_shortcut(desktop_dir: Path | None = None) -> Path:
     try:
         result = subprocess.run(_shortcut_command(spec, desktop_dir), check=True, capture_output=True,
                                 encoding="utf-8", timeout=20, creationflags=0x08000000)  # CREATE_NO_WINDOW
-        path = Path(result.stdout.strip())
+        # ASCII output works even when the hidden process has no console handle.
+        path = Path(base64.b64decode(result.stdout.strip(), validate=True).decode("utf-8"))
         if path.name != "Director Calendar.lnk" or not path.is_file():
             raise OSError("Shortcut was not saved.")
         return path
-    except (OSError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
         raise RuntimeError("Не удалось создать ярлык. Проверь доступ к рабочему столу и повтори.") from exc
 
 
