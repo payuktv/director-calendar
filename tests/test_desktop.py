@@ -1,10 +1,9 @@
 """Windowless startup, installer feedback and a real Windows shortcut launch."""
-import base64
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
+import struct
 import sys
 from time import monotonic, sleep
 
@@ -27,14 +26,7 @@ def test_source_shortcut_uses_pythonw_and_absolute_quoted_entry(tmp_path, use_pr
     assert spec.target == target.resolve()
     assert spec.arguments == (str(root.resolve() / "main.pyw"),)
     assert spec.working_directory == root.resolve()
-    command = desktop._shortcut_command(spec, tmp_path)
-    script = base64.b64decode(command[-1]).decode("utf-16-le")
-    encoded = re.search(r"FromBase64String\('([^']+)'\)", script).group(1)
-    payload = json.loads(base64.b64decode(encoded).decode("utf-8"))
-    assert payload["target"] == str(target.resolve())
-    assert payload["arguments"] == subprocess.list2cmdline(spec.arguments)
-    assert payload["working_directory"] == str(root.resolve())
-    assert str(root) not in script  # A path is data, never interpolated script code.
+    assert subprocess.list2cmdline(spec.arguments).startswith('"')
 
 
 def test_missing_windowed_runtime_has_a_visible_installation_error(tmp_path):
@@ -50,24 +42,23 @@ def test_packaged_app_shortcut_targets_the_executable_without_python(tmp_path):
     assert spec.working_directory == tmp_path.resolve()
 
 
-def test_non_windows_creation_stops_before_starting_a_process(monkeypatch):
+def test_non_windows_creation_stops_before_windows_shell(monkeypatch):
     monkeypatch.setattr(desktop, "shortcuts_available", lambda: False)
-    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("Must not start PowerShell"))
+    monkeypatch.setattr(desktop, "_save_shortcut", lambda *a: pytest.fail("Must not call Windows Shell"))
     with pytest.raises(RuntimeError, match="Windows"):
         desktop.create_desktop_shortcut()
 
 
-def test_creation_failure_is_reported_without_leaking_process_output(tmp_path, monkeypatch):
+def test_creation_failure_has_a_clear_user_message(tmp_path, monkeypatch):
     spec = desktop.ShortcutSpec(tmp_path / "pythonw.exe", (), tmp_path, tmp_path / "icon.ico")
     monkeypatch.setattr(desktop, "shortcuts_available", lambda: True)
     monkeypatch.setattr(desktop, "shortcut_spec", lambda: spec)
     def fail(*args, **kwargs):
-        assert kwargs["creationflags"] == 0x08000000
-        raise subprocess.CalledProcessError(1, args[0], stderr="internal process output")
-    monkeypatch.setattr(subprocess, "run", fail)
+        raise OSError("internal Windows error")
+    monkeypatch.setattr(desktop, "_save_shortcut", fail)
     with pytest.raises(RuntimeError, match="доступ к рабочему столу") as error:
         desktop.create_desktop_shortcut(tmp_path)
-    assert "internal process output" not in str(error.value)
+    assert "internal Windows error" not in str(error.value)
 
 
 @pytest.mark.parametrize("success", [True, False])
@@ -177,26 +168,36 @@ raise SystemExit(main())
     try:
         shortcut = desktop.create_desktop_shortcut(desktop_dir)
     except RuntimeError as exc:
-        pytest.fail(getattr(exc.__cause__, "stderr", None) or str(exc))
+        pytest.fail(str(exc.__cause__) or str(exc))
     assert desktop.create_desktop_shortcut(desktop_dir) == shortcut
     assert list(desktop_dir.iterdir()) == [shortcut]
-    # Resolve saved .lnk properties through Windows, rather than trusting the builder.
-    quoted = str(shortcut).replace("'", "''")
-    inspect_script = f"""
-$shell = New-Object -ComObject WScript.Shell
-$link = $shell.CreateShortcut('{quoted}')
-$json = @{{target=$link.TargetPath; arguments=$link.Arguments; cwd=$link.WorkingDirectory; icon=$link.IconLocation; desktop=$shell.SpecialFolders.Item('Desktop'); expected_desktop=[Environment]::GetFolderPath('DesktopDirectory')}} | ConvertTo-Json -Compress
-[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
-"""
-    command = desktop._shortcut_command(spec, desktop_dir)
-    command[-1] = base64.b64encode(inspect_script.encode("utf-16-le")).decode("ascii")
-    output = subprocess.run(command, check=True, capture_output=True, encoding="utf-8").stdout.strip()
-    saved = json.loads(base64.b64decode(output).decode("utf-8"))
-    assert Path(saved["target"]) == spec.target
+    # Read StringData independently using Microsoft's MS-SHLLINK file format.
+    # https://learn.microsoft.com/openspecs/windows_protocols/ms-shllink/17b69472-0f34-4bcf-b290-eccdb8de224b
+    blob = shortcut.read_bytes()
+    assert struct.unpack_from("<I", blob)[0] == 0x4C
+    flags = struct.unpack_from("<I", blob, 20)[0]
+    assert flags & 0x80  # IsUnicode
+    offset = 76
+    if flags & 1:
+        offset += 2 + struct.unpack_from("<H", blob, offset)[0]
+    if flags & 2:
+        offset += struct.unpack_from("<I", blob, offset)[0]
+    saved = {}
+    for flag, key in ((4, "name"), (8, "relative"), (16, "cwd"), (32, "arguments"), (64, "icon")):
+        if flags & flag:
+            count = struct.unpack_from("<H", blob, offset)[0]
+            offset += 2
+            saved[key] = blob[offset:offset + count * 2].decode("utf-16-le")
+            offset += count * 2
     assert saved["arguments"] == subprocess.list2cmdline(spec.arguments)
     assert Path(saved["cwd"]) == root
-    assert saved["icon"] == str(spec.icon) + ",0"
-    assert saved["desktop"] and Path(saved["desktop"]) == Path(saved["expected_desktop"])
+    assert Path(saved["icon"]) == spec.icon
+    assert struct.unpack_from("<I", blob, 56)[0] == 0  # IconIndex
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                        r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as key:
+        expected_desktop = winreg.QueryValueEx(key, "Desktop")[0]
+    assert desktop.desktop_directory() == Path(os.path.expandvars(expected_desktop))
     try:
         os.startfile(str(shortcut))
         deadline = monotonic() + 25

@@ -1,14 +1,13 @@
 """Windows desktop shortcuts. No Qt or additional installation dependencies."""
 from __future__ import annotations
 
-import base64
 import ctypes
-import json
-import os
 from pathlib import Path
 import subprocess
 import sys
 from dataclasses import dataclass
+from contextlib import contextmanager
+from uuid import UUID
 
 
 def shortcuts_available() -> bool:
@@ -49,36 +48,99 @@ def shortcut_spec(root: Path | None = None, executable: Path | None = None,
     return ShortcutSpec(target, arguments, working_directory, icon if icon.is_file() else target)
 
 
-def _shortcut_command(spec: ShortcutSpec, desktop_dir: Path | None) -> list[str]:
-    # Paths travel as data, including quotes, Cyrillic letters and shell symbols.
-    payload = base64.b64encode(json.dumps({
-        "target": str(spec.target), "arguments": subprocess.list2cmdline(spec.arguments),
-        "working_directory": str(spec.working_directory), "icon": str(spec.icon),
-        "desktop": str(desktop_dir.resolve()) if desktop_dir is not None else None,
-    }, ensure_ascii=False).encode("utf-8")).decode("ascii")
-    script = """
-$ErrorActionPreference = 'Stop'
-$spec = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__')) | ConvertFrom-Json
-$shell = New-Object -ComObject WScript.Shell
-$desktop = $spec.desktop
-if ([String]::IsNullOrWhiteSpace($desktop)) { $desktop = $shell.SpecialFolders.Item('Desktop') }
-if ([String]::IsNullOrWhiteSpace($desktop) -or -not [IO.Directory]::Exists($desktop)) {
-    throw 'Desktop directory is unavailable.'
-}
-$path = [IO.Path]::Combine($desktop, 'Director Calendar.lnk')
-$link = $shell.CreateShortcut($path)
-$link.TargetPath = $spec.target
-$link.Arguments = $spec.arguments
-$link.WorkingDirectory = $spec.working_directory
-$link.IconLocation = $spec.icon + ',0'
-$link.Description = 'Director Calendar'
-$link.WindowStyle = 1
-$link.Save()
-[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($path))
-""".replace("__PAYLOAD__", payload)
-    powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    return [str(powershell), "-NoProfile", "-NonInteractive", "-EncodedCommand",
-            base64.b64encode(script.encode("utf-16-le")).decode("ascii")]
+class _GUID(ctypes.Structure):
+    _fields_ = [("data1", ctypes.c_uint32), ("data2", ctypes.c_uint16),
+                ("data3", ctypes.c_uint16), ("data4", ctypes.c_ubyte * 8)]
+
+    @classmethod
+    def parse(cls, value):
+        return cls.from_buffer_copy(UUID(value).bytes_le)
+
+
+_CLSID_SHELL_LINK = _GUID.parse("00021401-0000-0000-C000-000000000046")
+_IID_SHELL_LINK_W = _GUID.parse("000214F9-0000-0000-C000-000000000046")
+_IID_PERSIST_FILE = _GUID.parse("0000010B-0000-0000-C000-000000000046")
+_FOLDERID_DESKTOP = _GUID.parse("B4BFCC3A-DB2C-424C-B029-7FE99A87C641")
+
+
+def _check_hresult(result):
+    if result < 0:
+        raise OSError(f"Windows Shell error 0x{result & 0xFFFFFFFF:08X}")
+
+
+@contextmanager
+def _com_runtime():
+    ole = ctypes.WinDLL("ole32")
+    ole.CoInitializeEx.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+    ole.CoInitializeEx.restype = ctypes.c_long
+    ole.CoUninitialize.argtypes = ()
+    ole.CoUninitialize.restype = None
+    ole.CoTaskMemFree.argtypes = (ctypes.c_void_p,)
+    ole.CoTaskMemFree.restype = None
+    ole.CoCreateInstance.argtypes = (ctypes.POINTER(_GUID), ctypes.c_void_p, ctypes.c_uint32,
+                                    ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p))
+    ole.CoCreateInstance.restype = ctypes.c_long
+    result = ole.CoInitializeEx(None, 2)  # COINIT_APARTMENTTHREADED
+    # Qt may have initialized this thread already with a different apartment.
+    if result < 0 and result & 0xFFFFFFFF != 0x80010106:  # RPC_E_CHANGED_MODE
+        _check_hresult(result)
+    try:
+        yield ole
+    finally:
+        if result >= 0:
+            ole.CoUninitialize()
+
+
+def desktop_directory() -> Path:
+    """Ask Windows for the user's current Desktop, including folder redirection."""
+    with _com_runtime() as ole:
+        shell = ctypes.WinDLL("shell32")
+        get_path = shell.SHGetKnownFolderPath
+        get_path.argtypes = (ctypes.POINTER(_GUID), ctypes.c_uint32, ctypes.c_void_p,
+                             ctypes.POINTER(ctypes.c_wchar_p))
+        get_path.restype = ctypes.c_long
+        path = ctypes.c_wchar_p()
+        try:
+            _check_hresult(get_path(ctypes.byref(_FOLDERID_DESKTOP), 0, None, ctypes.byref(path)))
+            if not path.value:
+                raise OSError("Windows returned an empty Desktop path.")
+            return Path(path.value)
+        finally:
+            ole.CoTaskMemFree(ctypes.cast(path, ctypes.c_void_p))
+
+
+def _com_method(interface, slot, result_type, *argument_types):
+    table = ctypes.cast(interface, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+    function = ctypes.WINFUNCTYPE(result_type, ctypes.c_void_p, *argument_types)(table[slot])
+    return lambda *args: function(interface, *args)
+
+
+def _save_shortcut(spec: ShortcutSpec, path: Path) -> None:
+    # IShellLinkW / IPersistFile method order follows the Windows SDK interfaces:
+    # https://learn.microsoft.com/windows/win32/api/shobjidl_core/nn-shobjidl_core-ishelllinkw
+    # Wide-character setters and Save avoid WScript.Shell's ANSI path conversion.
+    with _com_runtime() as ole:
+        link, persist = ctypes.c_void_p(), ctypes.c_void_p()
+        try:
+            _check_hresult(ole.CoCreateInstance(ctypes.byref(_CLSID_SHELL_LINK), None, 1,
+                           ctypes.byref(_IID_SHELL_LINK_W), ctypes.byref(link)))
+            def call(slot, types, *args):
+                _check_hresult(_com_method(link, slot, ctypes.c_long, *types)(*args))
+            call(20, (ctypes.c_wchar_p,), str(spec.target))  # SetPath
+            call(7, (ctypes.c_wchar_p,), "Director Calendar")  # SetDescription
+            call(9, (ctypes.c_wchar_p,), str(spec.working_directory))  # SetWorkingDirectory
+            call(11, (ctypes.c_wchar_p,), subprocess.list2cmdline(spec.arguments))  # SetArguments
+            call(15, (ctypes.c_int,), 1)  # SetShowCmd: SW_SHOWNORMAL
+            call(17, (ctypes.c_wchar_p, ctypes.c_int), str(spec.icon), 0)  # SetIconLocation
+            call(0, (ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p)),
+                 ctypes.byref(_IID_PERSIST_FILE), ctypes.byref(persist))  # QueryInterface
+            save = _com_method(persist, 6, ctypes.c_long, ctypes.c_wchar_p, ctypes.c_int)
+            _check_hresult(save(str(path), 1))  # IPersistFile::Save
+        finally:
+            if persist.value:
+                _com_method(persist, 2, ctypes.c_ulong)()  # IUnknown::Release
+            if link.value:
+                _com_method(link, 2, ctypes.c_ulong)()
 
 
 def create_desktop_shortcut(desktop_dir: Path | None = None) -> Path:
@@ -86,14 +148,15 @@ def create_desktop_shortcut(desktop_dir: Path | None = None) -> Path:
         raise RuntimeError("Создание ярлыка на рабочем столе доступно в Windows.")
     spec = shortcut_spec()
     try:
-        result = subprocess.run(_shortcut_command(spec, desktop_dir), check=True, capture_output=True,
-                                encoding="utf-8", timeout=20, creationflags=0x08000000)  # CREATE_NO_WINDOW
-        # ASCII output works even when the hidden process has no console handle.
-        path = Path(base64.b64decode(result.stdout.strip(), validate=True).decode("utf-8"))
-        if path.name != "Director Calendar.lnk" or not path.is_file():
+        directory = desktop_dir.resolve() if desktop_dir is not None else desktop_directory()
+        if not directory.is_dir():
+            raise OSError("Desktop directory is unavailable.")
+        path = directory / "Director Calendar.lnk"
+        _save_shortcut(spec, path)
+        if not path.is_file():
             raise OSError("Shortcut was not saved.")
         return path
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError) as exc:
         raise RuntimeError("Не удалось создать ярлык. Проверь доступ к рабочему столу и повтори.") from exc
 
 
