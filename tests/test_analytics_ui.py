@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog
 
 from director_control.local_event_dialog import LocalEventDialog
 from director_control.storage import Store
-from director_control.theme import apply_theme
+from director_control.theme import apply_theme, color
 from director_control.ui import MainWindow, qt_datetime
 
 DAY = '2026-10-19'
@@ -159,6 +159,7 @@ def test_report_failure_clears_stale_charts_rows_and_export(window, monkeypatch)
     window.reload()
     a = window.analytics_page
     assert a.category_bars.values and a.event_rows and a.daily_bars.report
+    a.show_day(date(2026, 10, 19))
 
     def fail(*args):
         raise OSError('Тестовая ошибка чтения')
@@ -169,6 +170,7 @@ def test_report_failure_clears_stale_charts_rows_and_export(window, monkeypatch)
     assert not a.category_bars.values and not a.event_rows and a.daily_bars.report is None
     assert a.day_table.rowCount() == a.category_table.rowCount() == a.event_table.rowCount() == 0
     assert a.cards['actual'].value.text() == '—' and 'Тестовая ошибка' in a.quality.text()
+    assert a.reset_day.isHidden() and a.events_note.text() == 'Отчёт недоступен'
 
 
 def test_calendar_and_report_use_start_and_duration_with_strict_frozen_tolerance(window):
@@ -186,3 +188,5 @@ def test_calendar_and_report_use_start_and_duration_with_strict_frozen_tolerance
     window.reload()
     assert a.report.totals.start_outside == 0 and a.report.totals.duration_outside == 1
     assert 'отклонение' in window.table.item(0, 5).text()
+    assert a.event_table.item(0, 5).foreground().style() == Qt.BrushStyle.NoBrush
+    assert a.event_table.item(0, 6).foreground().color() == color('danger')

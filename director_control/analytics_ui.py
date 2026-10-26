@@ -392,6 +392,8 @@ class AnalyticsPage(QScrollArea):
                 table.setRowCount(0)
             self.category_bars.set_values([])
             self.event_rows = []
+            self.events_note.setText('Отчёт недоступен')
+            self.reset_day.hide()
             self.daily_bars.set_report(None)
             self.export_button.setEnabled(False)
             self.dirty = True
@@ -494,7 +496,8 @@ class AnalyticsPage(QScrollArea):
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setToolTip(tooltip)
-                if row.outside_tolerance and col in {5, 6}:
+                deviation = row.start_delta if col == 5 else row.duration_delta if col == 6 else None
+                if deviation is not None and abs(deviation) > row.tolerance:
                     item.setForeground(color('danger'))
                 self.event_table.setItem(i, col, item)
 
