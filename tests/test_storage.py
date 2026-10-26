@@ -93,7 +93,10 @@ def test_tracking_categories_can_be_configured(store):
     store.freeze_day("2026-10-22")
     assert store.day_summary("2026-10-22")["planned"] == 0
     store.set_category_tracking("Дорога", True)
-    assert store.day_summary("2026-10-22")["planned"] == 1
+    assert store.day_summary("2026-10-22")["planned"] == 0
+    seed_event(store, "Дорога завтра", "Дорога", "2026-10-23T08:00:00", "2026-10-23T09:00:00")
+    store.freeze_day("2026-10-23")
+    assert store.day_summary("2026-10-23")["planned"] == 1
     assert store.get_event(road).baseline_start
 
 

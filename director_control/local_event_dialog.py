@@ -165,7 +165,7 @@ class LocalEventDialog(QDialog):
             data.update(actual_start=self.stamp(self.start_input), actual_end=self.stamp(self.end_input))
         try:
             if self._event:
-                self.store.update_event(self._event.id, **data)
+                self.store.update_event(self._event.id, expected_revision=self._event.revision, **data)
             else:
                 self.event_id = self.store.create_event(**data)
             self._saved = True
@@ -183,7 +183,7 @@ class LocalEventDialog(QDialog):
                                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.store.delete_event(self._event.id)
+            self.store.delete_event(self._event.id, expected_revision=self._event.revision)
             self.event_id = None
             self._saved = True
             self.accept()

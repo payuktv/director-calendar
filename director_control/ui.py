@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QTabWidget, QVBoxLayout, QWidget, QButtonGroup, QStackedWidget,
 )
 
-from .storage import Event, STATUSES, Store, minutes_between
+from .storage import Event, STATUSES, Store, minutes_between, default_data_dir
 from .mail_ui import MailPanel
 
 
@@ -27,6 +27,9 @@ from .date_picker import install_date_picker
 from .input_wheel import install_input_wheel_guard
 from .desktop import app_icon_path, create_desktop_shortcut as install_desktop_shortcut, shortcuts_available
 from .local_event_dialog import LocalEventDialog
+from .schedule import events_in_layer
+from .instance import SingleInstance
+from .backup_ui import BackupPanel
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -144,7 +147,8 @@ class EventDialog(QDialog):
     def save(self) -> None:
         try:
             self.store.update_event(
-                self._event.id, category=self.category_input.currentText(), status=self.status_input.currentData(),
+                self._event.id, expected_revision=self._event.revision,
+                category=self.category_input.currentText(), status=self.status_input.currentData(),
                 actual_start=as_iso(self.fact_start) if self.fact_checkbox.isChecked() else None,
                 actual_end=as_iso(self.fact_end) if self.fact_checkbox.isChecked() else None,
                 note=self.note_input.text().strip(),
@@ -235,7 +239,7 @@ class MainWindow(QMainWindow):
         self.theme_toggle.setIconSize(QSize(18, 18))
         self._update_theme_controls()
         side.addWidget(self.theme_toggle)
-        side.addWidget(plain_label("Версия 0.7.0", "Muted"))
+        side.addWidget(plain_label("Версия 0.8.0", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -379,7 +383,8 @@ class MainWindow(QMainWindow):
         self.layer.currentIndexChanged.connect(self.reload)
         toolbar.addWidget(self.layer)
         toolbar.addStretch()
-        toolbar.addWidget(self.button("Зафиксировать план", self.freeze))
+        self.freeze_button = self.button("Зафиксировать план", self.freeze)
+        toolbar.addWidget(self.freeze_button)
         toolbar.addWidget(self.button("CSV", self.export))
         v.addLayout(toolbar)
         self.freeze_info = plain_label("", "Muted")
@@ -521,9 +526,9 @@ class MainWindow(QMainWindow):
         if event_id is not None:
             self.set_event_status(event_id, "done")
 
-    def set_event_status(self, event_id, status):
+    def set_event_status(self, event_id, status, expected_revision=None):
         try:
-            self.store.update_event(event_id, status=status)
+            self.store.update_event(event_id, expected_revision=expected_revision, status=status)
             self._selected_id = event_id
             self.reload()
         except Exception as exc:
@@ -546,7 +551,7 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
             group.addAction(action)
             action.setChecked(status == event.status)
-            action.triggered.connect(lambda checked, status=status: self.set_event_status(event_id, status))
+            action.triggered.connect(lambda checked, status=status: self.set_event_status(event_id, status, event.revision))
         try:
             menu.exec(global_pos)
         finally:
@@ -617,6 +622,8 @@ class MainWindow(QMainWindow):
         self.mail_panel.changed.connect(self.reload)
         self.mail_panel.message.connect(self.mail_status.setText)
         self.mail_panel.message.connect(self.mail_status.show)
+        self.mail_panel.busy_changed.connect(lambda busy: self.freeze_button.setEnabled(not busy))
+        self.mail_panel.busy_changed.connect(lambda busy: self.mail_refresh.setEnabled(not busy))
         v.addWidget(self.mail_panel)
         options = QGroupBox("Контроль времени")
         options.setProperty("settingsSection", True)
@@ -634,6 +641,9 @@ class MainWindow(QMainWindow):
         save_options = self.button("Сохранить настройки", self.save_settings)
         save_options.setMaximumWidth(220)
         f.addRow("", save_options)
+        rules_note = plain_label('Новые настройки применяются при следующей фиксации плана. Правила уже зафиксированных дней сохраняются.', 'Muted')
+        rules_note.setWordWrap(True)
+        f.addRow('', rules_note)
         v.addWidget(options)
         categories_box = QGroupBox("Категории и контроль выполнения")
         categories_box.setProperty("settingsSection", True)
@@ -668,19 +678,11 @@ class MainWindow(QMainWindow):
         launch_note.setWordWrap(True)
         launch_layout.addWidget(launch_note)
         v.addWidget(launch_box)
-        data_box = QGroupBox("Данные и безопасность")
-        data_box.setProperty("settingsSection", True)
-        d = QVBoxLayout(data_box)
-        d.setContentsMargins(24, 24, 24, 24)
-        d.setSpacing(16)
-        path_label = QLabel(f"База данных: {self.store.path}")
-        path_label.setWordWrap(True)
-        d.addWidget(path_label)
-        d.addWidget(self.button("Создать резервную копию", self.backup), 0, Qt.AlignmentFlag.AlignLeft)
-        data_note = plain_label("Рабочая база остаётся на этом компьютере. Подключение к Mail.ru используется только для чтения.", "Muted")
-        data_note.setWordWrap(True)
-        d.addWidget(data_note)
-        v.addWidget(data_box)
+        self.backup_panel = BackupPanel(self.store, lambda: not self.mail_panel.busy)
+        self.backup_panel.notice.connect(self.mail_status.setText)
+        self.backup_panel.notice.connect(self.mail_status.show)
+        self.backup_panel.restored.connect(self._after_restore)
+        v.addWidget(self.backup_panel)
         v.addStretch()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -689,6 +691,8 @@ class MainWindow(QMainWindow):
 
     def reload(self, *_):
         if not hasattr(self, "mail_panel"):
+            return
+        if getattr(self, '_restored', False) or (hasattr(self, 'backup_panel') and self.backup_panel.restoring):
             return
         day = self.selected_day()
         focus = date.fromisoformat(day)
@@ -724,6 +728,7 @@ class MainWindow(QMainWindow):
             if query and query not in " ".join((event.title, event.category, event.note)).casefold():
                 continue
             events.append(event)
+        events = events_in_layer(events, self.layer.currentData(), datetime.fromisoformat(lower), datetime.fromisoformat(upper))
         visible_ids = {event.id for event in events}
         if self._selected_id not in visible_ids:
             self._selected_id = None
@@ -734,18 +739,18 @@ class MainWindow(QMainWindow):
         self.inspector.set_event(selected, source_info.get(self._selected_id))
         day_start = datetime.combine(focus, time.min)
         day_end = day_start + timedelta(days=1)
-        table_events = [event for event in events if any(
-            span and span[0] < day_end and span[1] > day_start
-            for span in (event_interval(event, key) for key in ("current", "baseline", "actual")))]
+        table_events = events_in_layer(events, self.layer.currentData(), day_start, day_end)
         self.table.blockSignals(True)
         self.table.setRowCount(len(table_events))
         self.row_ids = []
         tolerance = int(self.store.get_setting("tolerance_minutes", "10"))
+        rules = self.store.baseline_rules()
         for row, ev in enumerate(table_events):
             self.row_ids.append(ev.id)
+            event_tolerance = rules.get(ev.id, {}).get('tolerance_minutes', tolerance)
             deviates = bool(ev.actual_start and ev.baseline_start and
-                            (abs(minutes_between(ev.baseline_start, ev.actual_start)) > tolerance or
-                             abs(minutes_between(ev.baseline_end, ev.actual_end)) > tolerance))
+                            (abs(minutes_between(ev.baseline_start, ev.actual_start)) > event_tolerance or
+                             abs(minutes_between(ev.baseline_end, ev.actual_end)) > event_tolerance))
             status_label = STATUSES[ev.status] + (" · отклонение" if ev.status == "done" and deviates else "")
             remote = source_info.get(ev.id)
             if remote:
@@ -842,15 +847,26 @@ class MainWindow(QMainWindow):
             self.reload()
 
     def freeze(self):
+        if self.mail_panel.busy:
+            QMessageBox.information(self, 'Обновление календаря', 'Дождись завершения обновления Mail.ru перед фиксацией плана.')
+            return
         day = self.selected_day()
         coverage = self.store.coverage_for_day(day)
         warning = f"Зафиксировать исходное расписание на {day}? Отменить фиксацию нельзя."
+        sync_warning = self.mail_panel.freeze_warning(day)
+        if sync_warning:
+            warning += '\n\n' + sync_warning + ' Рекомендуется сначала обновить календарь. Зафиксировать имеющиеся данные?'
         if coverage["gaps"]:
             warning += "\n\nВ расписании с 07:00 до 19:00 есть свободные окна: " + ", ".join(
                 f"{start}–{end}" for start, end in coverage["gaps"])
         if coverage["overlaps"]:
             warning += f"\nОбнаружено пересечений: {coverage['overlaps']}"
-        if QMessageBox.question(self, "Фиксация первоначального плана", warning) != QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, "Фиксация первоначального плана", warning,
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        if self.mail_panel.busy:
+            QMessageBox.information(self, 'Обновление календаря', 'Началось обновление Mail.ru. Дождись его завершения и повтори фиксацию.')
             return
         try:
             count = self.store.freeze_day(day)
@@ -895,11 +911,12 @@ class MainWindow(QMainWindow):
         self._reload_categories()
 
     def backup(self):
-        try:
-            saved = self.store.backup()
-            QMessageBox.information(self, "Резервная копия создана", str(saved))
-        except Exception as exc:
-            error_box(self, exc)
+        self.backup_panel.make_manual()
+
+    def _after_restore(self, _):
+        self._restored = True
+        self.mail_panel.auto.setChecked(False)
+        self.close()
 
     def create_desktop_shortcut(self):
         try:
@@ -910,10 +927,15 @@ class MainWindow(QMainWindow):
             error_box(self, exc)
 
     def closeEvent(self, event):
+        if self.backup_panel.busy:
+            QMessageBox.information(self, 'Резервные копии', 'Дождись завершения копирования или восстановления базы.')
+            event.ignore()
+            return
         if self.mail_panel.busy:
             QMessageBox.information(self, "Обновление календаря", "Дождись окончания обновления Mail.ru и закрой окно ещё раз.")
             event.ignore()
             return
+        self.backup_panel.timer.stop()
         super().closeEvent(event)
 
 
@@ -921,10 +943,26 @@ def run_app() -> int:
     import sys
     QLocale.setDefault(QLocale(QLocale.Language.Russian))
     app = QApplication(sys.argv)
+    instance = SingleInstance(default_data_dir() / 'director_control.db')
+    if not instance.acquire():
+        if not instance.notify():
+            QMessageBox.information(None, 'Director Calendar', 'Приложение уже запущено или открывается. Дождись появления его окна.')
+        return 0
     if app_icon_path().is_file():
         app.setWindowIcon(QIcon(str(app_icon_path())))
     install_input_wheel_guard(app)
     app.setStyle("Fusion")
-    window = MainWindow(Store())
-    window.show()
-    return app.exec()
+    try:
+        window = MainWindow(Store())
+        def activate():
+            if window.isMinimized():
+                window.showNormal()
+            window.show()
+            window.raise_()
+            window.activateWindow()
+        instance.activated.connect(activate)
+        window.show()
+        window.backup_panel.start()
+        return app.exec()
+    finally:
+        instance.close()

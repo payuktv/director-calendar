@@ -42,6 +42,7 @@ class SyncThread(QThread):
 class MailPanel(QGroupBox):
     changed = Signal()
     message = Signal(str)
+    busy_changed = Signal(bool)
 
     def __init__(self, store, selected_day, parent=None):
         super().__init__("Календарь Mail.ru", parent)
@@ -105,7 +106,22 @@ class MailPanel(QGroupBox):
 
     @property
     def busy(self):
-        return self.worker is not None and self.worker.isRunning()
+        return self.worker is not None
+
+    def freeze_warning(self, day):
+        if not self.store.get_setting('mail_url'):
+            return ''
+        config = CalendarConfig(self.store.get_setting('mail_url'), self.store.get_setting('mail_login'))
+        return self.store.sync_warning(day, config.calendar_key)
+
+    def sync_failed(self, text):
+        if getattr(self, '_sync_context', None):
+            config, start, end = self._sync_context
+            try:
+                self.store.record_sync_failure(config.calendar_key, start, end)
+            except Exception:
+                text += ' Не удалось сохранить результат попытки обновления.'
+        self.show_status(text)
 
     def show_status(self, text):
         self.status.setText(text)
@@ -149,26 +165,34 @@ class MailPanel(QGroupBox):
     def sync(self):
         if self.busy:
             return
+        self._sync_context = None
         try:
             config = CalendarConfig(self.store.get_setting("mail_url"), self.store.get_setting("mail_login"),
                                     self.store.get_setting("mail_timezone", "Europe/Moscow"))
             if not config.url:
                 raise CalendarError("Сначала укажи подключение на вкладке «Настройки».")
             config.validate()
+            self._sync_context = (config, *window_for_day(date.fromisoformat(self.selected_day())))
             password = self.credentials.get(config.calendar_key)
             if not password:
                 raise CalendarError("Введи пароль приложения на вкладке «Настройки» и сохрани подключение.")
             self.worker = SyncThread(config, password, date.fromisoformat(self.selected_day()), self)
             self.worker.snapshot_ready.connect(self.apply_snapshot)
-            self.worker.failed.connect(self.show_status)
+            self.worker.failed.connect(self.sync_failed)
             self.worker.finished.connect(self.finished)
             self.set_controls(False)
             self.show_status("Обновляем календарь Mail.ru…")
             self.worker.start()
+            self.busy_changed.emit(True)
         except CalendarError as exc:
-            self.show_status(str(exc))
+            self.sync_failed(str(exc))
         except Exception:
-            self.show_status("Не удалось начать обновление. Проверь настройки подключения.")
+            if self.worker is not None and not self.worker.isRunning():
+                self.worker.deleteLater()
+                self.worker = None
+                self.set_controls(True)
+                self.busy_changed.emit(False)
+            self.sync_failed("Не удалось начать обновление. Проверь настройки подключения.")
 
     def apply_snapshot(self, snapshot):
         try:
@@ -183,7 +207,7 @@ class MailPanel(QGroupBox):
                                  "Прежние записи сохранены, исчезновения не проверялись. " + snapshot.unavailable[0])
             self.changed.emit()
         except Exception:
-            self.show_status("Не удалось сохранить обновление. Предыдущие данные сохранены.")
+            self.sync_failed("Не удалось сохранить обновление. Предыдущие данные сохранены.")
 
     def set_controls(self, enabled):
         for control in (self.url, self.login, self.password, self.zone, self.auto, self.save_button, self.sync_button):
@@ -194,3 +218,4 @@ class MailPanel(QGroupBox):
         self.set_controls(True)
         self.worker.deleteLater()
         self.worker = None
+        self.busy_changed.emit(False)

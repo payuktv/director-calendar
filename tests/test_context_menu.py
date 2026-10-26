@@ -114,7 +114,8 @@ def test_menu_changes_only_target_status_and_refreshes_ui_and_audit(app, tmp_pat
         menu = choose_menu_action(app, lambda: window.show_event_context_menu(target, window.mapToGlobal(QPoint(430, 350))), status)
         assert menu["statuses"] == STATUSES and menu["checked"] == [previous]
         event = store.get_event(target)
-        assert event.status == status and replace(event, status=before.status) == before
+        assert event.status == status and replace(event, status=before.status, revision=before.revision) == before
+        assert event.revision > before.revision
         assert store.get_event(other) == untouched
         assert window.selected_event_id() == target
         assert window.inspector.status.text() == STATUSES[status]
