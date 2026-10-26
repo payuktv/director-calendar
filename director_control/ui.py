@@ -1,7 +1,6 @@
 """Qt Widgets account of Mail.ru events and app-only plans and facts."""
 from __future__ import annotations
 
-import json
 from datetime import date, datetime, time, timedelta
 
 from PySide6.QtCore import QDate, QDateTime, QTime, QTimer, Qt, QLocale, QSize
@@ -32,6 +31,7 @@ from .instance import SingleInstance
 from .backup_ui import BackupPanel
 from .analytics import deviations
 from .analytics_ui import AnalyticsPage
+from .history_ui import HistoryPage
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -241,7 +241,7 @@ class MainWindow(QMainWindow):
         self.theme_toggle.setIconSize(QSize(18, 18))
         self._update_theme_controls()
         side.addWidget(self.theme_toggle)
-        side.addWidget(plain_label("Версия 0.9.0", "Muted"))
+        side.addWidget(plain_label("Версия 0.10.0", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -310,6 +310,8 @@ class MainWindow(QMainWindow):
         self.page_subtitle.setText(descriptions[index])
         self.nav_buttons[index].setChecked(True)
         self.search.setVisible(index == 0)
+        if index == 2:
+            self.history_page.refresh()
         if index == 1 and self.analytics_page.dirty:
             self.analytics_page.refresh()
 
@@ -583,20 +585,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.analytics_page, 'Аналитика')
 
     def _build_history_tab(self):
-        page = QWidget()
-        v = QVBoxLayout(page)
-        v.setContentsMargins(0, 18, 0, 0)
-        v.addWidget(QLabel("Последние 300 изменений · журнал хранится локально"))
-        self.history_table = QTableWidget(0, 4)
-        self.history_table.setHorizontalHeaderLabels(["Когда", "Мероприятие", "Действие", "Детали"])
-        self.history_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.history_table.setColumnWidth(0, 165)
-        self.history_table.setColumnWidth(1, 250)
-        self.history_table.setColumnWidth(2, 130)
-        self.history_table.verticalHeader().hide()
-        self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        v.addWidget(self.history_table)
-        self.tabs.addTab(page, "История изменений")
+        self.history_page = HistoryPage(self.store)
+        self.history_page.open_requested.connect(self.open_event)
+        self.history_table = self.history_page.table
+        self.tabs.addTab(self.history_page, 'История изменений')
 
     def _build_settings_tab(self):
         page = QWidget()
@@ -769,18 +761,9 @@ class MainWindow(QMainWindow):
             self.analytics_page.refresh()
 
     def _reload_history(self):
-        logs = self.store.audit_log()
-        self.history_table.setRowCount(len(logs))
-        for row, log in enumerate(logs):
-            details = log["details"]
-            try:
-                details = json.dumps(json.loads(details), ensure_ascii=False, separators=(", ", ": "))
-            except ValueError:
-                pass
-            for col, val in enumerate((log["changed_at"].replace("T", " "), log["title"], log["action"], details)):
-                item = QTableWidgetItem(str(val))
-                item.setToolTip(str(val))
-                self.history_table.setItem(row, col, item)
+        self.history_page.dirty = True
+        if self.tabs.currentIndex() == 2:
+            self.history_page.refresh()
 
     def _reload_categories(self):
         cats = self.store.categories()
@@ -885,6 +868,7 @@ class MainWindow(QMainWindow):
         self.cards["unplanned"].set_value(str(summary["unplanned"]))
         self.cards["rate"].set_value("—" if summary["percent"] is None else f"{summary['percent']:.0f}%")
         self._reload_analytics(day, summary)
+        self._reload_history()
         self._reload_categories()
 
     def backup(self):
@@ -913,6 +897,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.backup_panel.timer.stop()
+        self.history_page.timer.stop()
         super().closeEvent(event)
 
 
