@@ -89,6 +89,8 @@ def event_interval(event, layer):
     fields = {"current": ("current_start", "current_end"), "baseline": ("baseline_start", "baseline_end"),
               "actual": ("actual_start", "actual_end")}[layer]
     start, end = (getattr(event, field) for field in fields)
+    if layer == "current" and event.source == "local" and not start:
+        start, end = event.actual_start, event.actual_end
     return (datetime.fromisoformat(start), datetime.fromisoformat(end)) if start and end else None
 
 
@@ -253,7 +255,8 @@ class HitCanvas(QWidget):
             if hit:
                 interval = event_interval(hit, self.board.layer)
                 times = f"{interval[0]:%d.%m %H:%M} — {interval[1]:%d.%m %H:%M}" if interval else ""
-                detail = escape(f"{hit.title}\n{times}\n{hit.category} · {STATUSES[hit.status]}").replace("\n", "<br>")
+                source = hit.source_label + (" · Вне плана, факт" if hit.is_postfactum else "")
+                detail = escape(f"{hit.title}\n{times}\n{hit.category} · {STATUSES[hit.status]}\n{source}").replace("\n", "<br>")
                 QToolTip.showText(event.globalPos(), "<p>" + detail + "</p>", self)
                 return True
             QToolTip.hideText()
@@ -302,7 +305,9 @@ class HitCanvas(QWidget):
             used = text(painter, title_rect, event.title, 12, event_foreground(accent), QFont.Weight.DemiBold, wrap=True)
             status_top = title_rect.y() + used + 4
             if used and content.bottom() - status_top >= meta_height:
-                text(painter, QRectF(content.x(), status_top, content.width(), meta_height), STATUSES[event.status], 10, accent)
+                status_text = ("Вне плана · " + STATUSES[event.status] if event.is_postfactum
+                               else STATUSES[event.status] + (" · Локально" if event.source == "local" else ""))
+                text(painter, QRectF(content.x(), status_top, content.width(), meta_height), status_text, 10, accent)
         painter.restore()
         self.hits.append((rect, event))
 
@@ -586,6 +591,17 @@ class CalendarBoard(QWidget):
             if x < left + width:
                 return day
         return self.days[-1]
+
+    def reveal_event(self, event_id):
+        if self.mode == "month":
+            return
+        block = next((block for block in self.timed.get(self.focus, []) if block.event.id == event_id), None)
+        if block is None:
+            return
+        _, left, width = next(column for column in self.time_columns() if column[0] == self.focus)
+        x = left + 5 + (width - 10) / block.lanes * (block.lane + .5)
+        y = block.start / 60 * self.hour_height + 12
+        self.scroll.ensureVisible(int(x), int(y), 8, 32)
 
     def is_all_day(self, event):
         if self.layer == "actual":

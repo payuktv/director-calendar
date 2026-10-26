@@ -88,7 +88,7 @@ class LegacyStoreFixture(Store):
 
 
 def seed_event(store, title, category, current_start, current_end, *, source="caldav", external_key=None):
-    """Populate a test database without restoring a production creation API."""
+    """Populate import/legacy fixtures independently of the local creation API."""
     event_id = LegacyStoreFixture.create_event(store, title, category, current_start, current_end,
                                               source=source, external_key=external_key)
     if source == "caldav":

@@ -65,13 +65,15 @@ class EventInspector(QFrame):
             self.title.setText("Выбери событие")
             self.category.setText("Нажми на встречу, чтобы увидеть план и факт")
             self.status.hide()
-            self.note.setText("События создаются и изменяются в Mail.ru.")
+            self.note.setText("")
             for label in self.time_labels.values():
                 label.setText("—")
             return
         self.title.setText(event.title)
-        self.category.setText(event.category + "  ·  Mail.ru")
+        self.category.setText(event.category + "  ·  " + event.source_label)
         status = STATUSES[event.status]
+        if event.is_postfactum:
+            status = "Вне плана · " + status
         if info and info.get("missing"):
             status += " · проверить Mail.ru"
         elif info and info.get("cancelled") and event.status != "cancelled":
@@ -83,7 +85,8 @@ class EventInspector(QFrame):
             "actual": (event.actual_start, event.actual_end),
         }.items():
             if not start:
-                value = "Не зафиксирован" if key == "baseline" else "Не заполнен"
+                value = ("Не планировалось" if event.is_postfactum and key in {"baseline", "current"}
+                         else "Не зафиксирован" if key == "baseline" else "Не заполнен")
             else:
                 a, b = datetime.fromisoformat(start), datetime.fromisoformat(end)
                 all_day = info and ((info.get("baseline_all_day") if key == "baseline" else info.get("all_day")) if key != "actual" else False)

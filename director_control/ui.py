@@ -1,11 +1,11 @@
-"""Qt Widgets account of events read from one Mail.ru calendar."""
+"""Qt Widgets account of Mail.ru events and app-only plans and facts."""
 from __future__ import annotations
 
 import json
 from datetime import date, datetime, time, timedelta
 
-from PySide6.QtCore import QDate, QDateTime, QTime, Qt, QLocale, QSize
-from PySide6.QtGui import QBrush, QIcon, QActionGroup
+from PySide6.QtCore import QDate, QDateTime, QTime, QTimer, Qt, QLocale, QSize
+from PySide6.QtGui import QBrush, QIcon, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDateTimeEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
@@ -26,6 +26,7 @@ from .mini_calendar import MiniCalendar
 from .date_picker import install_date_picker
 from .input_wheel import install_input_wheel_guard
 from .desktop import app_icon_path, create_desktop_shortcut as install_desktop_shortcut, shortcuts_available
+from .local_event_dialog import LocalEventDialog
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -234,7 +235,7 @@ class MainWindow(QMainWindow):
         self.theme_toggle.setIconSize(QSize(18, 18))
         self._update_theme_controls()
         side.addWidget(self.theme_toggle)
-        side.addWidget(plain_label("Версия 0.6.0", "Muted"))
+        side.addWidget(plain_label("Версия 0.7.0", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -273,6 +274,8 @@ class MainWindow(QMainWindow):
         self._build_analytics_tab()
         self._build_history_tab()
         self._build_settings_tab()
+        self.new_event_shortcut = QShortcut(QKeySequence.StandardKey.New, self)
+        self.new_event_shortcut.activated.connect(self.add_event)
         self.tabs.currentChanged.connect(self.navigate)
         self.navigate(0)
         self.reload()
@@ -309,6 +312,8 @@ class MainWindow(QMainWindow):
             self.calendar.set_compact(self.height() < 820)
         if hasattr(self, "search"):
             self.search.setFixedWidth(210 if self.width() >= 1240 else 150)
+        if hasattr(self, "add_event_button"):
+            self.add_event_button.setText("Добавить событие" if self.width() >= 1240 else "Добавить")
         if hasattr(self, "mini"):
             self.mini.setVisible(self.height() >= 800)
 
@@ -332,6 +337,11 @@ class MainWindow(QMainWindow):
         self.period_title = plain_label("", "PeriodTitle")
         period.addWidget(self.period_title)
         period.addStretch()
+        self.add_event_button = self.button("Добавить событие", self.add_event, primary=True)
+        self.add_event_button.setIcon(icon("plus", "white"))
+        self.add_event_button.setAccessibleName("Добавить событие")
+        self.add_event_button.setToolTip("Добавить локальное событие · Ctrl+N")
+        period.addWidget(self.add_event_button)
         segments = QFrame()
         segments.setObjectName("Segments")
         buttons = QHBoxLayout(segments)
@@ -364,7 +374,7 @@ class MainWindow(QMainWindow):
         self.date_input.dateChanged.connect(self.reload)
         toolbar.addWidget(self.date_input)
         self.layer = QComboBox()
-        for label, key in (("Актуальный план", "current"), ("Исходный план", "baseline"), ("Факт", "actual")):
+        for label, key in (("Расписание", "current"), ("Исходный план", "baseline"), ("Факт", "actual")):
             self.layer.addItem(label, key)
         self.layer.currentIndexChanged.connect(self.reload)
         toolbar.addWidget(self.layer)
@@ -443,9 +453,45 @@ class MainWindow(QMainWindow):
             current = current.addDays(offset * (7 if self.mode == "week" else 1))
         self.date_input.setDate(current)
 
+    def add_event(self):
+        day = date.fromisoformat(self.selected_day())
+        now = self.calendar.now().replace(tzinfo=None, second=0, microsecond=0)
+        start = datetime.combine(day, now.time()) - timedelta(minutes=30)
+        dialog = LocalEventDialog(self.store, start, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.event_id is not None:
+            event = self.store.get_event(dialog.event_id)
+            self._selected_id = event.id
+            self.search.blockSignals(True)
+            self.search.clear()
+            self.search.blockSignals(False)
+            self.layer.blockSignals(True)
+            self.layer.setCurrentIndex(self.layer.findData("current"))
+            self.layer.blockSignals(False)
+            self.tabs.setCurrentIndex(0)
+            target = datetime.fromisoformat(event.current_start or event.actual_start).date()
+            self.set_date(target)
+            self.reload()
+            QTimer.singleShot(0, lambda: self._reveal_created_event(event.id))
+
+    def _reveal_created_event(self, event_id):
+        if self._selected_id != event_id:
+            return
+        if self.mode == "agenda" and event_id in self.row_ids:
+            self.table.scrollToItem(self.table.item(self.row_ids.index(event_id), 0))
+        elif self.mode in {"day", "week"}:
+            self.calendar.reveal_event(event_id)
+
+    def _find_event(self, event_id):
+        try:
+            return self.store.get_event(event_id)
+        except KeyError:
+            self._selected_id = None
+            self.reload()
+            return None
+
     def select_event(self, event_id):
-        event = self.store.get_event(event_id)
-        if event.source != "caldav":
+        event = self._find_event(event_id)
+        if event is None or event.source not in {"caldav", "local"}:
             return
         self._selected_id = event_id
         interval = event_interval(event, self.layer.currentData())
@@ -459,11 +505,13 @@ class MainWindow(QMainWindow):
         row = self.table.currentRow()
         if 0 <= row < len(getattr(self, "row_ids", [])):
             self._selected_id = self.row_ids[row]
-            selected = self.store.get_event(self._selected_id)
-            self.inspector.set_event(selected, self.store.calendar_info().get(self._selected_id))
+            selected = self._find_event(self._selected_id)
+            if selected is not None:
+                self.inspector.set_event(selected, self.store.calendar_info().get(self._selected_id))
 
     def open_event(self, event_id):
-        if self.store.get_event(event_id).source != "caldav":
+        event = self._find_event(event_id)
+        if event is None or event.source not in {"caldav", "local"}:
             return
         self._selected_id = event_id
         self.edit_event()
@@ -482,10 +530,10 @@ class MainWindow(QMainWindow):
             error_box(self, exc)
 
     def show_event_context_menu(self, event_id, global_pos):
-        if self.store.get_event(event_id).source != "caldav":
+        event = self._find_event(event_id)
+        if event is None or event.source not in {"caldav", "local"}:
             return
         self.select_event(event_id)
-        event = self.store.get_event(event_id)
         menu = EventStatusMenu(event, self)
         heading = menu.addAction("Статус события")
         heading.setEnabled(False)
@@ -707,7 +755,8 @@ class MainWindow(QMainWindow):
                     status_label += " · отменено в Mail.ru"
             values = [ev.title, ev.category, interval(ev.baseline_start, ev.baseline_end),
                       interval(ev.current_start, ev.current_end), interval(ev.actual_start, ev.actual_end),
-                      status_label, "Mail.ru" + (" · весь день" if remote and remote["all_day"] else "")]
+                      status_label, ev.source_label + (" · вне плана" if ev.is_postfactum else "")
+                      + (" · весь день" if remote and remote["all_day"] else "")]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if col == 5:
@@ -778,8 +827,18 @@ class MainWindow(QMainWindow):
         if event_id is None:
             QMessageBox.information(self, "Выбери мероприятие", "Выбери событие в календаре или списке.")
             return
-        dialog = EventDialog(self.store, self.store.get_event(event_id), self)
+        event = self._find_event(event_id)
+        if event is None:
+            return
+        dialog = (LocalEventDialog(self.store, datetime.fromisoformat(event.current_start or event.actual_start), event, self)
+                  if event.source == "local" else EventDialog(self.store, event, self))
         if dialog.exec() == QDialog.DialogCode.Accepted:
+            if event.source == "local" and dialog.event_id is not None:
+                updated = self._find_event(dialog.event_id)
+                span = event_interval(updated, self.layer.currentData()) if updated else None
+                days = period_days(date.fromisoformat(self.selected_day()), self.mode)
+                if span and (span[1].date() < days[0] or span[0].date() > days[-1]):
+                    self.set_date(span[0].date())
             self.reload()
 
     def freeze(self):

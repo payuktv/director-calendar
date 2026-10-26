@@ -1,4 +1,4 @@
-"""Mail.ru is the only schedule source; local work is account data only."""
+"""Imported Mail.ru events remain read-only and historical manual records stay archived."""
 import os
 import sqlite3
 from datetime import date
@@ -24,9 +24,9 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def test_import_is_the_only_event_creation_path(tmp_path):
+def test_import_keeps_source_fields_read_only_when_local_creation_is_available(tmp_path):
     store = Store(tmp_path / "source.db")
-    assert not hasattr(store, "create_event") and not hasattr(store, "delete_event")
+    assert hasattr(store, "create_event") and hasattr(store, "delete_event")
     assert store.daily_events("2026-10-22") == []
     snapshot = imported_snapshot()
     assert store.apply_calendar_snapshot(snapshot)["added"] == 1
@@ -71,7 +71,7 @@ def test_legacy_records_are_preserved_but_excluded_from_all_accounting(tmp_path)
 
 
 @pytest.mark.parametrize("mode", ["day", "week", "month"])
-def test_empty_calendar_has_no_creation_or_deletion_controls(app, tmp_path, monkeypatch, mode):
+def test_empty_calendar_double_click_does_not_create_without_form_confirmation(app, tmp_path, monkeypatch, mode):
     from PySide6.QtCore import QDate, QPoint, Qt
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QPushButton
@@ -91,7 +91,8 @@ def test_empty_calendar_has_no_creation_or_deletion_controls(app, tmp_path, monk
     QTest.mouseDClick(canvas, Qt.MouseButton.LeftButton, pos=point)
     app.processEvents()
     assert dialogs == [] and store.daily_events("2026-10-22") == []
-    assert all(not hasattr(window, name) for name in ("add_event", "add_at_time", "delete_event", "show_manual", "show_mail"))
+    assert window.add_event_button.isEnabled()
+    assert all(not hasattr(window, name) for name in ("add_at_time", "delete_event", "show_manual", "show_mail"))
     assert not hasattr(window.calendar, "slot_requested")
     assert not any(button.text() in {"Событие", "Удалить", "Удалить событие"} for button in window.findChildren(QPushButton))
     assert not hasattr(window.inspector, "delete_button")

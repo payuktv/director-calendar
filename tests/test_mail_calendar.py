@@ -245,7 +245,9 @@ def test_source_plan_fields_cannot_be_overwritten_locally(tmp_path):
     ev = store.daily_events("2026-10-22")[0]
     with pytest.raises(ValueError):
         store.update_event(ev.id, title="Local change")
-    assert not hasattr(store, "delete_event")
+    with pytest.raises(ValueError, match="Mail.ru"):
+        store.delete_event(ev.id)
+    assert store.get_event(ev.id) == ev
 
 
 def test_xml_entities_are_rejected(monkeypatch):
