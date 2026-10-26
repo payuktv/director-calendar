@@ -29,7 +29,7 @@ LIGHT = {
     "now": "#E47786", "mini_today": "#C4BAF8", "mini_disabled": "#D6D9E4",
     "mini_outside": "#B9BDCB", "mini_weekend": "#9C7F91", "mini_text": "#535B72",
     "plan_bar": "#B5A8F4", "actual_bar": "#57B89F", "plan_legend": "#A28DE8",
-    "actual_legend": "#43A88D",
+    "actual_legend": "#43A88D", "unplanned_bar": "#B58B46",
 }
 DARK = {
     **LIGHT,
@@ -54,7 +54,7 @@ DARK = {
     "now": "#F18CA1", "mini_today": "#9B8AE0", "mini_disabled": "#627088",
     "mini_outside": "#77859D", "mini_weekend": "#C2A4BC", "mini_text": "#CCD5E6",
     "plan_bar": "#B5A5FF", "actual_bar": "#6ED2B4", "plan_legend": "#B5A5FF",
-    "actual_legend": "#6ED2B4",
+    "actual_legend": "#6ED2B4", "unplanned_bar": "#D0AE72",
 }
 
 _STYLE_TEMPLATE = """
@@ -98,6 +98,10 @@ QPushButton#Danger { color: $danger; }
 QPushButton#ThemeToggle { text-align: left; padding: 10px 12px; }
 QPushButton#Link { color: $accent; background: transparent; border: none; text-align: left; padding-left: 0; }
 QTabWidget::pane { border: none; background: transparent; }
+QTabWidget#AnalyticsDetails QTabBar::tab { background: $segments; color: $segment_text; border: none; border-radius: 7px; padding: 9px 16px; margin: 0 5px 8px 0; }
+QTabWidget#AnalyticsDetails QTabBar::tab:selected { background: $surface; color: $accent; }
+QTabWidget#AnalyticsDetails QTabBar::tab:hover { background: $hover; }
+QLabel#UnplannedLegend { color: $unplanned_bar; }
 QLineEdit, QPlainTextEdit, QComboBox, QDateTimeEdit, QDateEdit, QSpinBox { background: $surface; border: 1px solid $control_border;
     border-radius: 8px; padding: 7px 10px; min-height: 22px; selection-background-color: $selection; }
 QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QDateTimeEdit:focus, QDateEdit:focus, QSpinBox:focus { border: 1px solid $focus_border; }

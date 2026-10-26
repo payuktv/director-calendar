@@ -14,13 +14,13 @@ from PySide6.QtWidgets import (
     QTabWidget, QVBoxLayout, QWidget, QButtonGroup, QStackedWidget,
 )
 
-from .storage import Event, STATUSES, Store, minutes_between, default_data_dir
+from .storage import Event, STATUSES, Store, default_data_dir
 from .mail_ui import MailPanel
 
 
 from .theme import apply_theme, current_theme, color as theme_color, icon
 from .calendar_view import CalendarBoard, MONTHS, MONTHS_GEN, period_days, event_interval, color_for
-from .inspector import EventInspector, CategoryBars, plain_label
+from .inspector import EventInspector, plain_label
 from .status_menu import EventStatusMenu
 from .mini_calendar import MiniCalendar
 from .date_picker import install_date_picker
@@ -30,6 +30,8 @@ from .local_event_dialog import LocalEventDialog
 from .schedule import events_in_layer
 from .instance import SingleInstance
 from .backup_ui import BackupPanel
+from .analytics import deviations
+from .analytics_ui import AnalyticsPage
 
 
 def qt_datetime(value: str) -> QDateTime:
@@ -239,7 +241,7 @@ class MainWindow(QMainWindow):
         self.theme_toggle.setIconSize(QSize(18, 18))
         self._update_theme_controls()
         side.addWidget(self.theme_toggle)
-        side.addWidget(plain_label("Версия 0.8.0", "Muted"))
+        side.addWidget(plain_label("Версия 0.9.0", "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -302,12 +304,14 @@ class MainWindow(QMainWindow):
 
     def navigate(self, index):
         names = ("Календарь", "Аналитика", "История изменений", "Настройки")
-        descriptions = ("Рабочий ритм руководителя — в одном месте", "План и подтверждённый результат за выбранный день",
+        descriptions = ("Рабочий ритм руководителя — в одном месте", "План, факт и качество учёта за выбранный период",
                         "Изменения расписания и решений", "Подключение календаря и рабочие параметры")
         self.page_title.setText(names[index])
         self.page_subtitle.setText(descriptions[index])
         self.nav_buttons[index].setChecked(True)
         self.search.setVisible(index == 0)
+        if index == 1 and self.analytics_page.dirty:
+            self.analytics_page.refresh()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -323,6 +327,14 @@ class MainWindow(QMainWindow):
 
     def selected_day(self) -> str:
         return self.date_input.date().toString("yyyy-MM-dd")
+
+    def selected_sync_day(self) -> str:
+        return self.analytics_page.anchor.isoformat() if self.tabs.currentIndex() == 1 else self.selected_day()
+
+    def calendar_date_changed(self, *_):
+        if hasattr(self, 'analytics_page'):
+            self.analytics_page.set_anchor(date.fromisoformat(self.selected_day()), refresh=False)
+        self.reload()
 
     def button(self, title: str, callback, primary: bool = False) -> QPushButton:
         button = QPushButton(title)
@@ -375,7 +387,7 @@ class MainWindow(QMainWindow):
         install_date_picker(self.date_input)
         self.date_input.setDisplayFormat("dd.MM.yyyy")
         self.date_input.setFixedWidth(126)
-        self.date_input.dateChanged.connect(self.reload)
+        self.date_input.dateChanged.connect(self.calendar_date_changed)
         toolbar.addWidget(self.date_input)
         self.layer = QComboBox()
         for label, key in (("Расписание", "current"), ("Исходный план", "baseline"), ("Факт", "actual")):
@@ -459,7 +471,7 @@ class MainWindow(QMainWindow):
         self.date_input.setDate(current)
 
     def add_event(self):
-        day = date.fromisoformat(self.selected_day())
+        day = date.fromisoformat(self.selected_sync_day())
         now = self.calendar.now().replace(tzinfo=None, second=0, microsecond=0)
         start = datetime.combine(day, now.time()) - timedelta(minutes=30)
         dialog = LocalEventDialog(self.store, start, parent=self)
@@ -563,38 +575,12 @@ class MainWindow(QMainWindow):
             self.show_event_context_menu(self.row_ids[index.row()], self.table.viewport().mapToGlobal(point))
 
     def _build_analytics_tab(self):
-        page = QWidget()
-        v = QVBoxLayout(page)
-        v.setContentsMargins(0, 18, 0, 0)
-        caption = QLabel("Аналитика за выбранную дату")
-        caption.setStyleSheet("font-size: 18px; font-weight: 700")
-        v.addWidget(caption)
-        self.analytics_description = QLabel("")
-        self.analytics_description.setWordWrap(True)
-        v.addWidget(self.analytics_description)
-        legend = QHBoxLayout()
-        for label, name in (("Исходный план", "PlanLegend"), ("Подтверждённый факт", "ActualLegend")):
-            item = plain_label("●  " + label, name)
-            legend.addWidget(item)
-        legend.addStretch()
-        v.addLayout(legend)
-        self.category_bars = CategoryBars()
-        chart_scroll = QScrollArea()
-        chart_scroll.setWidgetResizable(True)
-        chart_scroll.setWidget(self.category_bars)
-        chart_scroll.setMinimumHeight(230)
-        v.addWidget(chart_scroll, 1)
-        self.analytics_table = QTableWidget(0, 3)
-        self.analytics_table.setHorizontalHeaderLabels(["Категория", "Первоначально, мин", "Фактически подтверждено, мин"])
-        self.analytics_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.analytics_table.verticalHeader().hide()
-        self.analytics_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        v.addWidget(self.analytics_table, stretch=1)
-        note = QLabel("Факт времени учитывается только если в карточке заполнены начало и конец. Статус «Выполнено» без времени не создаёт вымышленных часов.")
-        note.setObjectName("Muted")
-        note.setWordWrap(True)
-        v.addWidget(note)
-        self.tabs.addTab(page, "Аналитика")
+        self.analytics_page = AnalyticsPage(self.store, date.fromisoformat(self.selected_day()))
+        self.analytics_page.open_requested.connect(self.open_event)
+        self.analytics_description = self.analytics_page.quality
+        self.category_bars = self.analytics_page.category_bars
+        self.analytics_table = self.analytics_page.category_table
+        self.tabs.addTab(self.analytics_page, 'Аналитика')
 
     def _build_history_tab(self):
         page = QWidget()
@@ -618,7 +604,7 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 8, 12, 24)
         v.setSpacing(20)
-        self.mail_panel = MailPanel(self.store, self.selected_day)
+        self.mail_panel = MailPanel(self.store, self.selected_sync_day)
         self.mail_panel.changed.connect(self.reload)
         self.mail_panel.message.connect(self.mail_status.setText)
         self.mail_panel.message.connect(self.mail_status.show)
@@ -748,9 +734,9 @@ class MainWindow(QMainWindow):
         for row, ev in enumerate(table_events):
             self.row_ids.append(ev.id)
             event_tolerance = rules.get(ev.id, {}).get('tolerance_minutes', tolerance)
-            deviates = bool(ev.actual_start and ev.baseline_start and
-                            (abs(minutes_between(ev.baseline_start, ev.actual_start)) > event_tolerance or
-                             abs(minutes_between(ev.baseline_end, ev.actual_end)) > event_tolerance))
+            start_delta, duration_delta = deviations(ev)
+            deviates = bool(start_delta is not None and not source_info.get(ev.id, {}).get('baseline_all_day') and
+                            (abs(start_delta) > event_tolerance or abs(duration_delta) > event_tolerance))
             status_label = STATUSES[ev.status] + (" · отклонение" if ev.status == "done" and deviates else "")
             remote = source_info.get(ev.id)
             if remote:
@@ -777,19 +763,10 @@ class MainWindow(QMainWindow):
         self._reload_history()
         self._reload_categories()
 
-    def _reload_analytics(self, day: str, summary: dict):
-        self.analytics_description.setText(
-            f"Исходный план: {summary['planned']} контролируемых мероприятий · "
-            f"выполнено: {summary['done']} · частично: {summary['partial']} · "
-            f"отменено: {summary['cancelled']} · перенесено: {summary['moved']} · "
-            f"не подтверждено: {summary['pending']} · вне плана: {summary['unplanned']}."
-        )
-        totals = self.store.category_totals(day)
-        self.category_bars.set_values(totals)
-        self.analytics_table.setRowCount(len(totals))
-        for row, (cat, planned, actual) in enumerate(totals):
-            for col, val in enumerate((cat, str(planned), str(actual))):
-                self.analytics_table.setItem(row, col, QTableWidgetItem(val))
+    def _reload_analytics(self, day=None, summary=None):
+        self.analytics_page.dirty = True
+        if self.tabs.currentIndex() == 1:
+            self.analytics_page.refresh()
 
     def _reload_history(self):
         logs = self.store.audit_log()
@@ -838,7 +815,7 @@ class MainWindow(QMainWindow):
         dialog = (LocalEventDialog(self.store, datetime.fromisoformat(event.current_start or event.actual_start), event, self)
                   if event.source == "local" else EventDialog(self.store, event, self))
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            if event.source == "local" and dialog.event_id is not None:
+            if event.source == "local" and dialog.event_id is not None and self.tabs.currentIndex() == 0:
                 updated = self._find_event(dialog.event_id)
                 span = event_interval(updated, self.layer.currentData()) if updated else None
                 days = period_days(date.fromisoformat(self.selected_day()), self.mode)

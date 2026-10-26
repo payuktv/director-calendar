@@ -101,7 +101,7 @@ def test_menu_changes_only_target_status_and_refreshes_ui_and_audit(app, tmp_pat
     other = seed_event(store, "Другое событие", "Работа", "2026-10-22T11:00:00", "2026-10-22T12:00:00")
     store.freeze_day("2026-10-22")
     store.update_event(target, note="Локальный комментарий", category="Работа", **(
-        {"actual_start": "2026-10-22T09:05:00", "actual_end": "2026-10-22T10:15:00"} if has_fact else {}))
+        {"actual_start": "2026-10-22T09:05:00", "actual_end": "2026-10-22T10:20:00"} if has_fact else {}))
     before, untouched = store.get_event(target), store.get_event(other)
     window = MainWindow(store)
     window.date_input.setDate(QDate(2026, 10, 22))

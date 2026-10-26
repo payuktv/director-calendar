@@ -515,6 +515,29 @@ class Store:
                 totals[ev.category][1] += max(0, minutes_between(max(start, ev.actual_start), min(end, ev.actual_end)))
         return sorted(((name, pair[0], pair[1]) for name, pair in totals.items()), key=lambda x: -x[1])
 
+    def analytics_report(self, anchor: date | str, mode: str = 'week', only_tracked: bool = True):
+        from .analytics import build_report, period_bounds
+        from .mail_calendar import CalendarConfig
+        anchor = date.fromisoformat(anchor) if isinstance(anchor, str) else anchor
+        start, end = period_bounds(anchor, mode)
+        begin, finish = start.isoformat() + 'T00:00:00', end.isoformat() + 'T00:00:00'
+        with self._connect() as con:
+            # One read transaction: no mixed revisions if a sync commits during the report.
+            con.execute('BEGIN')
+            events = [self._as_event(r) for r in con.execute('''SELECT * FROM events
+                WHERE source IN ('caldav','local') AND ((baseline_start<? AND baseline_end>?)
+                OR (current_start<? AND current_end>?) OR (actual_start<? AND actual_end>?))
+                ORDER BY coalesce(actual_start,baseline_start,current_start),id''',
+                (finish, begin, finish, begin, finish, begin))]
+            categories = [dict(r) for r in con.execute('SELECT * FROM categories')]
+            rules = {r['event_id']: dict(r) for r in con.execute('SELECT * FROM baseline_rules')}
+            metadata = {r['event_id']: dict(r) for r in con.execute('SELECT * FROM calendar_events')}
+            frozen = {r['day'] for r in con.execute('SELECT day FROM day_freezes')}
+            syncs = [dict(r) for r in con.execute('SELECT * FROM calendar_syncs')]
+            settings = dict(con.execute('SELECT key,value FROM settings'))
+        key = CalendarConfig(settings['mail_url'], settings.get('mail_login', '')).calendar_key if settings.get('mail_url') else None
+        return build_report(anchor, mode, only_tracked, events, categories, rules, metadata, frozen, syncs, key)
+
     def audit_log(self, limit: int = 300) -> list[dict]:
         with self._connect() as con:
             return [dict(r) for r in con.execute("SELECT * FROM audit ORDER BY id DESC LIMIT ?", (limit,))]
