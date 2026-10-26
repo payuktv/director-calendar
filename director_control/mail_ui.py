@@ -123,8 +123,8 @@ class MailPanel(QGroupBox):
             config.validate()
             # Do not reinterpret already imported floating times by changing the display zone.
             old_zone = self.store.get_setting("mail_timezone", "Europe/Moscow")
-            if config.timezone != old_zone and self.store.calendar_info():
-                raise CalendarError("После импорта часовой пояс менять нельзя: это изменит смысл сохранённого плана и факта.")
+            if config.timezone != old_zone and self.store.has_schedule_events():
+                raise CalendarError("После появления событий часовой пояс менять нельзя: это изменит смысл сохранённого плана и факта.")
             old_url = self.store.get_setting("mail_url")
             old_login = self.store.get_setting("mail_login")
             if self.store.calendar_info() and (config.url != old_url or config.username.lower() != old_login.lower()):

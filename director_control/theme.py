@@ -72,6 +72,7 @@ QLabel#Logo { background: $primary; color: white; border-radius: 12px; font-size
 QLabel#PageTitle { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
 QLabel#PeriodTitle { font-size: 20px; font-weight: 700; }
 QLabel#Muted { color: $muted; }
+QLabel#DangerText { color: $danger; }
 QLabel#SectionTitle { font-size: 15px; font-weight: 650; }
 QLabel#EventTitle { font-size: 19px; font-weight: 700; }
 QLabel#StatusPill { color: $accent; background: $soft_accent; border-radius: 7px; padding: 6px 9px; }
@@ -97,9 +98,9 @@ QPushButton#Danger { color: $danger; }
 QPushButton#ThemeToggle { text-align: left; padding: 10px 12px; }
 QPushButton#Link { color: $accent; background: transparent; border: none; text-align: left; padding-left: 0; }
 QTabWidget::pane { border: none; background: transparent; }
-QLineEdit, QComboBox, QDateTimeEdit, QDateEdit, QSpinBox { background: $surface; border: 1px solid $control_border;
+QLineEdit, QPlainTextEdit, QComboBox, QDateTimeEdit, QDateEdit, QSpinBox { background: $surface; border: 1px solid $control_border;
     border-radius: 8px; padding: 7px 10px; min-height: 22px; selection-background-color: $selection; }
-QLineEdit:focus, QComboBox:focus, QDateTimeEdit:focus, QDateEdit:focus, QSpinBox:focus { border: 1px solid $focus_border; }
+QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QDateTimeEdit:focus, QDateEdit:focus, QSpinBox:focus { border: 1px solid $focus_border; }
 QLineEdit:disabled, QDateTimeEdit:disabled { background: $readonly_surface; color: $readonly_text; }
 QLineEdit#Search { background: $surface; padding-left: 12px; }
 QComboBox::drop-down { border: none; width: 22px; }

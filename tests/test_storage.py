@@ -67,9 +67,15 @@ def test_moved_across_days_is_visible_in_both(store):
     assert store.day_summary("2026-10-23")["unplanned"] == 1
 
 
-def test_events_cannot_be_created_or_deleted_locally(store):
-    assert not hasattr(store, "create_event")
-    assert not hasattr(store, "delete_event")
+def test_local_creation_is_separate_from_import_and_cannot_delete_mail(store):
+    mail_id = make(store)
+    local_id = store.create_event("Срочно", "Работа", actual_start="2026-10-22T11:00:00",
+                                  actual_end="2026-10-22T11:30:00")
+    assert store.get_event(local_id).source == "local"
+    with pytest.raises(ValueError, match="Mail.ru"):
+        store.delete_event(mail_id)
+    store.delete_event(local_id)
+    assert [event.id for event in store.daily_events("2026-10-22")] == [mail_id]
 
 
 def test_invalid_time_and_incomplete_fact_are_rejected(store):

@@ -61,8 +61,8 @@ class Event:
     id: int
     title: str
     category: str
-    current_start: str
-    current_end: str
+    current_start: str | None
+    current_end: str | None
     baseline_start: str | None
     baseline_end: str | None
     actual_start: str | None
@@ -70,6 +70,14 @@ class Event:
     status: str
     note: str
     source: str
+
+    @property
+    def is_postfactum(self) -> bool:
+        return self.source == "local" and self.current_start is None
+
+    @property
+    def source_label(self) -> str:
+        return "Локально" if self.source == "local" else "Mail.ru"
 
 
 class Store:
@@ -96,7 +104,7 @@ class Store:
 
     def _initialize(self) -> None:
         with self._connect() as con:
-            if con.execute("PRAGMA user_version").fetchone()[0] > 2:
+            if con.execute("PRAGMA user_version").fetchone()[0] > 3:
                 raise ValueError("База создана более новой версией программы. Обнови приложение.")
             con.executescript("""
                 CREATE TABLE IF NOT EXISTS categories (
@@ -108,8 +116,8 @@ class Store:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
                     category TEXT NOT NULL REFERENCES categories(name),
-                    current_start TEXT NOT NULL,
-                    current_end TEXT NOT NULL,
+                    current_start TEXT,
+                    current_end TEXT,
                     baseline_start TEXT,
                     baseline_end TEXT,
                     actual_start TEXT,
@@ -150,11 +158,57 @@ class Store:
                     baseline_all_day INTEGER,
                     local_status INTEGER NOT NULL DEFAULT 0
                 );
-                PRAGMA user_version=2;
             """)
             for name, color, track in DEFAULT_CATEGORIES:
                 con.execute("INSERT OR IGNORE INTO categories VALUES (?, ?, ?)", (name, color, track))
             con.execute("INSERT OR IGNORE INTO settings VALUES ('tolerance_minutes', '10')")
+
+        self._migrate_local_events()
+
+    def _migrate_local_events(self):
+        with self._connect() as con:
+            needs_rebuild = any(row["name"] in {"current_start", "current_end"} and row["notnull"]
+                                for row in con.execute("PRAGMA table_info(events)"))
+        if not needs_rebuild:
+            with self._connect() as con:
+                con.execute("PRAGMA user_version=3")
+            return
+        # Save the old database before changing its format. A failed copy stops migration.
+        self.backup()
+        with self._connect() as con:
+            con.execute("PRAGMA foreign_keys=OFF")
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                schema = con.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='events'").fetchone()[0]
+                schema = schema.replace("current_start TEXT NOT NULL", "current_start TEXT")
+                schema = schema.replace("current_end TEXT NOT NULL", "current_end TEXT")
+                # Use the existing definition, including its foreign keys and constraints.
+                opening = schema.index("(")
+                con.execute("CREATE TABLE events_v3 " + schema[opening:])
+                if any(row["name"] in {"current_start", "current_end"} and row["notnull"]
+                       for row in con.execute("PRAGMA table_info(events_v3)")):
+                    raise ValueError("Не удалось обновить формат временных полей. Исходная база сохранена.")
+                sequence = con.execute("SELECT seq FROM sqlite_sequence WHERE name='events'").fetchone()
+                objects = con.execute("SELECT sql FROM sqlite_master WHERE tbl_name='events' AND type IN ('index','trigger') AND sql IS NOT NULL").fetchall()
+                con.execute("INSERT INTO events_v3 SELECT * FROM events")
+                con.execute("DROP TABLE events")
+                con.execute("ALTER TABLE events_v3 RENAME TO events")
+                for row in objects:
+                    con.execute(row[0])
+                if sequence:
+                    if con.execute("SELECT 1 FROM sqlite_sequence WHERE name='events'").fetchone():
+                        con.execute("UPDATE sqlite_sequence SET seq=max(seq,?) WHERE name='events'", (sequence[0],))
+                    else:
+                        con.execute("INSERT INTO sqlite_sequence(name,seq) VALUES ('events',?)", (sequence[0],))
+                if con.execute("PRAGMA foreign_key_check").fetchall():
+                    raise ValueError("Не удалось обновить формат базы: нарушены связи записей.")
+                con.execute("PRAGMA user_version=3")
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
+            finally:
+                con.execute("PRAGMA foreign_keys=ON")
 
     @staticmethod
     def _as_event(row: sqlite3.Row) -> Event:
@@ -198,26 +252,71 @@ class Store:
             raise KeyError(f"Мероприятие #{event_id} не найдено")
         return self._as_event(r)
 
+    def _validate_event_data(self, data: dict) -> None:
+        title = data.get("title")
+        if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
+            raise ValueError("Название мероприятия должно содержать 1–200 символов")
+        if data.get("status") not in STATUSES:
+            raise ValueError("Неизвестный статус")
+        if data.get("category") not in {row["name"] for row in self.categories()}:
+            raise ValueError("Выбери существующую категорию")
+        for start, end, label in (("current_start", "current_end", "Актуальный план"),
+                                  ("actual_start", "actual_end", "Фактическое время")):
+            if bool(data.get(start)) != bool(data.get(end)):
+                raise ValueError(f"{label}: укажи оба времени либо оставь оба пустыми")
+            if data.get(start):
+                try:
+                    stamps = [datetime.fromisoformat(data[field]) for field in (start, end)]
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{label}: неверный формат даты/времени") from exc
+                if any(stamp.tzinfo is not None for stamp in stamps):
+                    raise ValueError(f"{label}: укажи местное время без часового пояса")
+                validate_interval(data[start], data[end], label)
+                data[start], data[end] = (stamp.isoformat() for stamp in stamps)
+            else:
+                data[start] = data[end] = None
+        if not data.get("current_start") and not data.get("actual_start"):
+            raise ValueError("Укажи фактическое время внепланового события или интервал плана")
+
+    def create_event(self, title: str, category: str, current_start: str | None = None,
+                     current_end: str | None = None, *, actual_start: str | None = None,
+                     actual_end: str | None = None, status: str | None = None, note: str = "") -> int:
+        """Create an app-only event; actual-only records can never enter the baseline."""
+        data = dict(title=title.strip() if isinstance(title, str) else title, category=category, current_start=current_start,
+                    current_end=current_end, actual_start=actual_start, actual_end=actual_end,
+                    status=status if status is not None else ("pending" if current_start else "done"), note=(note or "").strip())
+        self._validate_event_data(data)
+        with self._connect() as con:
+            cur = con.execute("""INSERT INTO events
+                (title,category,current_start,current_end,actual_start,actual_end,status,note,source,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,'local',?,?)""",
+                [data[key] for key in ("title", "category", "current_start", "current_end", "actual_start", "actual_end", "status", "note")]
+                + [now_iso(), now_iso()])
+            event_id = cur.lastrowid
+            self._audit(con, event_id, data["title"], "Создание локального события", data)
+            return event_id
+
     def update_event(self, event_id: int, **updates: str | None) -> None:
-        if {"title", "current_start", "current_end"}.intersection(updates):
+        old = self.get_event(event_id)
+        if old.source not in {"caldav", "local"}:
+            raise ValueError("Учёт доступен для событий Mail.ru и новых локальных событий.")
+        source_fields = {"title", "current_start", "current_end"}
+        if old.source == "caldav" and source_fields.intersection(updates):
             raise ValueError("Название и плановое время события меняются только в Mail.ru.")
         allowed = {"category", "actual_start", "actual_end", "status", "note"}
+        if old.source == "local":
+            allowed |= source_fields
         if not updates or not set(updates).issubset(allowed):
             raise ValueError("Недопустимые поля изменения")
-        old = self.get_event(event_id)
-        if old.source != "caldav":
-            raise ValueError("Учёт доступен только для событий Mail.ru.")
         data = asdict(old)
         data.update(updates)
-        if not str(data["title"]).strip():
-            raise ValueError("Название не может быть пустым")
-        validate_interval(data["current_start"], data["current_end"], "Актуальный план")
-        if bool(data["actual_start"]) != bool(data["actual_end"]):
-            raise ValueError("Укажи оба времени факта либо оставь оба пустыми")
-        if data["actual_start"]:
-            validate_interval(data["actual_start"], data["actual_end"], "Фактическое время")
-        if data["status"] not in STATUSES:
-            raise ValueError("Неизвестный статус")
+        if "title" in updates and isinstance(data["title"], str):
+            data["title"] = data["title"].strip()
+        if "note" in updates:
+            data["note"] = (data["note"] or "").strip()
+        self._validate_event_data(data)
+        if old.source == "local" and bool(old.current_start) != bool(data["current_start"]):
+            raise ValueError("Тип существующего локального события менять нельзя: сохрани план и факт раздельно.")
         changes = {k: {"было": getattr(old, k), "стало": data[k]} for k in updates if getattr(old, k) != data[k]}
         if not changes:
             return
@@ -229,15 +328,29 @@ class Store:
                 con.execute("UPDATE calendar_events SET local_status=1 WHERE event_id=?", (event_id,))
             self._audit(con, event_id, str(data["title"]), "Изменение", changes)
 
+    def delete_event(self, event_id: int) -> None:
+        with self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+            if row is None:
+                raise KeyError("Событие не найдено")
+            event = self._as_event(row)
+            if event.source != "local":
+                raise ValueError("Удалять можно только локальные события. События Mail.ru меняются в Mail.ru.")
+            if event.baseline_start:
+                raise ValueError("Событие входит в зафиксированный план. Вместо удаления выбери статус «Отменено».")
+            self._audit(con, event_id, event.title, "Удаление локального события", asdict(event))
+            con.execute("DELETE FROM events WHERE id=?", (event_id,))
+
     def freeze_day(self, day: str) -> int:
         date.fromisoformat(day)
         with self._connect() as con:
             if con.execute("SELECT 1 FROM day_freezes WHERE day=?", (day,)).fetchone():
                 raise ValueError("Первоначальный план на эту дату уже зафиксирован")
             con.execute("INSERT INTO day_freezes VALUES (?, ?)", (day, now_iso()))
-            ids = con.execute("SELECT id, title FROM events WHERE source='caldav' AND substr(current_start,1,10)=? AND baseline_start IS NULL", (day,)).fetchall()
+            ids = con.execute("SELECT id, title FROM events WHERE source IN ('caldav','local') AND substr(current_start,1,10)=? AND baseline_start IS NULL", (day,)).fetchall()
             con.execute("""UPDATE events SET baseline_start=current_start, baseline_end=current_end
-                        WHERE source='caldav' AND substr(current_start,1,10)=? AND baseline_start IS NULL""", (day,))
+                        WHERE source IN ('caldav','local') AND substr(current_start,1,10)=? AND baseline_start IS NULL""", (day,))
             for row in ids:
                 con.execute("UPDATE calendar_events SET baseline_all_day=all_day WHERE event_id=?", (row["id"],))
             for row in ids:
@@ -252,21 +365,15 @@ class Store:
         date.fromisoformat(day)
         start = f"{day}T00:00:00"
         end = (date.fromisoformat(day) + timedelta(days=1)).isoformat() + "T00:00:00"
-        with self._connect() as con:
-            rows = con.execute("""
-                SELECT * FROM events WHERE source='caldav' AND ((current_start<? AND current_end>?)
-                OR (baseline_start<? AND baseline_end>?))
-                ORDER BY CASE WHEN substr(current_start,1,10)=? THEN current_start ELSE baseline_start END, id
-            """, (end, start, end, start, day)).fetchall()
-            return [self._as_event(r) for r in rows]
+        return self.events_between(start, end)
 
     def events_between(self, start: str, end: str) -> list[Event]:
         """Include any current, baseline or actual interval overlapping [start, end)."""
         validate_interval(start, end)
         with self._connect() as con:
             rows = con.execute("""SELECT * FROM events
-                WHERE source='caldav' AND ((current_start<? AND current_end>?) OR (baseline_start<? AND baseline_end>?)
-                OR (actual_start<? AND actual_end>?)) ORDER BY current_start, id""",
+                WHERE source IN ('caldav','local') AND ((current_start<? AND current_end>?) OR (baseline_start<? AND baseline_end>?)
+                OR (actual_start<? AND actual_end>?)) ORDER BY coalesce(current_start,actual_start), id""",
                 (end, start, end, start, end, start)).fetchall()
             return [self._as_event(row) for row in rows]
 
@@ -278,7 +385,7 @@ class Store:
         slots = []
         metadata = self.calendar_info()
         for event in self.daily_events(day):
-            if (event.status in {"cancelled", "moved"}
+            if (not event.current_start or event.status in {"cancelled", "moved"}
                     or metadata.get(event.id, {}).get("all_day")):
                 continue
             start = max(day_start, datetime.fromisoformat(event.current_start))
@@ -305,12 +412,13 @@ class Store:
         with self._connect() as con:
             rows = con.execute("""
                 SELECT e.*, c.track FROM events e JOIN categories c ON e.category=c.name
-                WHERE e.source='caldav' AND ((e.current_start<? AND e.current_end>?) OR (e.baseline_start<? AND e.baseline_end>?))
-            """, (end, start, end, start)).fetchall()
+                WHERE e.source IN ('caldav','local') AND ((e.current_start<? AND e.current_end>?) OR (e.baseline_start<? AND e.baseline_end>?) OR (e.actual_start<? AND e.actual_end>?))
+            """, (end, start, end, start, end, start)).fetchall()
         planned = [r for r in rows if r["baseline_start"] and r["baseline_start"][:10] == day and r["track"]]
         uncontrolled = [r for r in rows if r["track"] == 0]
         unscheduled = [r for r in rows if r["track"] and (not r["baseline_start"] or r["baseline_start"][:10] != day)
-                       and r["current_start"][:10] == day]
+                       and ((r["current_start"] and r["current_start"][:10] == day)
+                            or (not r["current_start"] and r["actual_start"] < end and r["actual_end"] > start))]
         done = sum(r["status"] == "done" for r in planned)
         return {
             "total": len(rows), "planned": len(planned), "done": done,
@@ -350,6 +458,7 @@ class Store:
             for event in self.daily_events(day):
                 values = asdict(event)
                 values["status"] = STATUSES[values["status"]]
+                values["source"] = event.source_label
                 # Protect Excel from interpreting attacker-supplied calendar text as formulas.
                 def excel_safe(value):
                     if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")):
@@ -368,6 +477,10 @@ class Store:
     def calendar_info(self) -> dict[int, dict]:
         with self._connect() as con:
             return {r["event_id"]: dict(r) for r in con.execute("SELECT * FROM calendar_events")}
+
+    def has_schedule_events(self) -> bool:
+        with self._connect() as con:
+            return con.execute("SELECT 1 FROM events WHERE source IN ('caldav','local') LIMIT 1").fetchone() is not None
 
     def apply_calendar_snapshot(self, snapshot) -> dict[str, int]:
         """Atomically upsert source data; baseline, local fact, category and notes survive."""
