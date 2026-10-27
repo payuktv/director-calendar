@@ -6,7 +6,6 @@ import pytest
 
 
 def test_main_window_can_be_created(tmp_path, monkeypatch):
-    pytest.importorskip("PySide6")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
     from director_control.storage import Store
