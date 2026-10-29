@@ -11,6 +11,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterator
 
+from .provenance import work_origin
+
 STATUSES = {
     "pending": "Не подтверждено",
     "done": "Выполнено",
@@ -481,16 +483,17 @@ class Store:
         start = f"{day}T00:00:00"
         end = (date.fromisoformat(day) + timedelta(days=1)).isoformat() + "T00:00:00"
         with self._connect() as con:
+            con.execute('BEGIN')
+            frozen = {r['day'] for r in con.execute('SELECT day FROM day_freezes')}
             rows = con.execute("""
                 SELECT e.*, c.track, coalesce(b.track,c.track) AS baseline_track FROM events e
                 JOIN categories c ON e.category=c.name LEFT JOIN baseline_rules b ON b.event_id=e.id
                 WHERE e.source IN ('caldav','local') AND ((e.current_start<? AND e.current_end>?) OR (e.baseline_start<? AND e.baseline_end>?) OR (e.actual_start<? AND e.actual_end>?))
             """, (end, start, end, start, end, start)).fetchall()
         planned = [r for r in rows if r["baseline_start"] and r["baseline_start"][:10] == day and r["baseline_track"]]
-        uncontrolled = [r for r in rows if (r['baseline_track'] if r['baseline_start'] and r['baseline_start'][:10] == day else r['track']) == 0]
-        unscheduled = [r for r in rows if r["track"] and (not r["baseline_start"] or r["baseline_start"][:10] != day)
-                       and ((r["current_start"] and r["current_start"][:10] == day)
-                            or (not r["current_start"] and r["actual_start"] < end and r["actual_end"] > start))]
+        uncontrolled = [r for r in rows if not r['baseline_track']]
+        origins = [work_origin(self._as_event(r), frozen) for r in rows if r['baseline_track']]
+        unscheduled = origins.count('unplanned')
         done = sum(r["status"] == "done" for r in planned)
         return {
             "total": len(rows), "planned": len(planned), "done": done,
@@ -498,7 +501,7 @@ class Store:
             "cancelled": sum(r["status"] == "cancelled" for r in planned),
             "moved": sum(r["status"] == "moved" for r in planned),
             "pending": sum(r["status"] == "pending" for r in planned),
-            "unplanned": len(unscheduled), "nontracked": len(uncontrolled),
+            "unplanned": unscheduled, "unfixed": origins.count("unfixed"), "nontracked": len(uncontrolled),
             "percent": (done / len(planned) * 100) if planned else None,
         }
 
@@ -729,4 +732,5 @@ class Store:
             stats["missing"] = con.execute("SELECT count(*) FROM calendar_events WHERE calendar_key=? AND missing=1",
                                            (snapshot.calendar_key,)).fetchone()[0]
         return stats
+
 

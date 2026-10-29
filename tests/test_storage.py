@@ -14,12 +14,13 @@ def make(store, day="2026-10-22", title="Плановое совещание", s
     return seed_event(store, title, "Совещания", f"{day}T{start}:00", f"{day}T{end}:00")
 
 
-def test_imported_fixture_persists_and_is_initially_unplanned(store):
+def test_imported_fixture_persists_and_is_initially_unfixed(store):
     event_id = make(store)
     assert store.get_event(event_id).title == "Плановое совещание"
     assert store.daily_events("2026-10-22")[0].id == event_id
     assert store.day_summary("2026-10-22")["planned"] == 0
-    assert store.day_summary("2026-10-22")["unplanned"] == 1
+    assert store.day_summary("2026-10-22")["unplanned"] == 0
+    assert store.day_summary("2026-10-22")["unfixed"] == 1
 
 
 def test_snapshot_is_immutable_after_reschedule(store):
@@ -64,7 +65,7 @@ def test_moved_across_days_is_visible_in_both(store):
     assert len(store.daily_events("2026-10-22")) == 1
     assert len(store.daily_events("2026-10-23")) == 1
     assert store.day_summary("2026-10-22")["planned"] == 1
-    assert store.day_summary("2026-10-23")["unplanned"] == 1
+    assert store.day_summary("2026-10-23")["unplanned"] == 0
 
 
 def test_local_creation_is_separate_from_import_and_cannot_delete_mail(store):
@@ -137,3 +138,4 @@ def test_coverage_detects_gaps_overlaps_and_cancellations(store):
     coverage = store.coverage_for_day(day)
     assert coverage["gaps"] == [("10:00", "19:00")]
     assert coverage["overlaps"] == 1
+

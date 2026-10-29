@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from .storage import Event
+from .provenance import work_origin
 
 
 def period_bounds(anchor: date, mode: str) -> tuple[date, date]:
@@ -145,12 +146,7 @@ def build_report(anchor, mode, only_tracked, events, categories, rules, metadata
         plan_time = clipped_seconds(plan, begin, finish) if not all_day else 0.
         fact_time = clipped_seconds(actual, begin, finish)
         baseline_category = rule.get('category', event.category)
-        if plan:
-            origin = 'planned'
-        elif event.is_postfactum or (event.current_start and event.current_start[:10] in frozen):
-            origin = 'unplanned'
-        else:
-            origin = 'unfixed'
+        origin = work_origin(event, frozen)
         # Count tasks once, by the date of the original plan. Times may span days.
         if plan and plan[0].date() in daily:
             bucket = daily[plan[0].date()]
@@ -242,3 +238,4 @@ def export_report(report: Report, destination: Path | str):
         writer.writerow([value(v) for v in row('Итого', report.start, report.end, report.totals, True)])
         for day, metrics in report.daily.items():
             writer.writerow([value(v) for v in row('День', day, day + timedelta(days=1), metrics)])
+
