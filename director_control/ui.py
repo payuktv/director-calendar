@@ -679,6 +679,9 @@ class MainWindow(QMainWindow):
         for key in ("planned", "done", "pending", "unplanned"):
             self.cards[key].set_value(str(summary[key]))
         self.cards["rate"].set_value("—" if summary["percent"] is None else f"{summary['percent']:.0f}%")
+        self.cards["unplanned"].setToolTip(
+            "Подтверждённо вне плана. Без фиксации плана: " + str(summary["unfixed"])
+            + ". Переносы исходного плана остаются плановыми.")
         coverage = self.store.coverage_for_day(day)
         self.cards["gaps"].set_value(str(len(coverage["gaps"])))
         message = "Исходный план зафиксирован" if self.store.is_frozen(day) else "Исходный план на выбранный день ещё не зафиксирован"
@@ -928,3 +931,4 @@ def run_app() -> int:
         return app.exec()
     finally:
         instance.close()
+
