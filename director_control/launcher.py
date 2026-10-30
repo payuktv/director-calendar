@@ -17,6 +17,11 @@ def main() -> int:
         return run_app()
     except Exception:
         details = traceback.format_exc()
+        if len(sys.argv) == 3 and sys.argv[1] == '--verify-installation':
+            import json
+            from pathlib import Path
+            Path(sys.argv[2]).write_text(json.dumps({'ok': False, 'error': details}), encoding='utf-8')
+            return 1
         message = "Не удалось открыть Director Calendar."
         try:
             log = default_data_dir() / "startup-error.log"

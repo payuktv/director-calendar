@@ -1,5 +1,6 @@
 """Real old-exe -> new-installer acceptance on a disposable Windows CI runner."""
 import ctypes
+from contextlib import closing
 from ctypes import wintypes
 import json
 import os
@@ -37,7 +38,7 @@ def windows(pid):
 
 
 def open_app(exe, env, cwd):
-    print(f'Launching: {exe}', flush=True)
+    print(f'Launching: {ascii(str(exe))}', flush=True)
     process = subprocess.Popen([str(exe)], env=env, cwd=cwd)
     deadline = monotonic() + 45
     while process.poll() is None and monotonic() < deadline:
@@ -45,9 +46,13 @@ def open_app(exe, env, cwd):
             if title.startswith('Director Calendar —'):
                 return process, hwnd
         sleep(.1)
+    log = Path(env['LOCALAPPDATA']) / 'DirectorControl/startup-error.log'
+    if log.is_file():
+        print(ascii(log.read_text(encoding='utf-8')), flush=True)
+    print('Visible windows: ' + ascii(windows(process.pid)), flush=True)
     process.kill()
     process.wait()
-    raise AssertionError('Packaged GUI did not open; see startup-error.log in isolated data')
+    raise AssertionError('Packaged GUI did not open')
 
 
 def close_app(process, hwnd):
@@ -66,7 +71,7 @@ def close_app(process, hwnd):
 
 
 def snapshot(path):
-    with sqlite3.connect(path) as con:
+    with closing(sqlite3.connect(path)) as con:
         tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('settings','sqlite_sequence')")]
         result = {name: con.execute('SELECT * FROM "' + name + '" ORDER BY rowid').fetchall() for name in tables}
         result['settings'] = con.execute("SELECT * FROM settings WHERE key NOT IN ('app_last_version','backup_last_auto') ORDER BY key").fetchall()
@@ -135,7 +140,7 @@ s.set_setting('ui_calendar_view','month')
             assert snapshot(database) == expected
             backups = list(database.parent.glob('backups/before-update-*.db'))
             assert len(backups) == 1 and snapshot(backups[0]) == expected
-            with sqlite3.connect(database) as con:
+            with closing(sqlite3.connect(database)) as con:
                 assert con.execute("SELECT value FROM settings WHERE key='app_last_version'").fetchone()[0] == __version__
             assert vault.get_password('DirectorControl.CalDAV', key) == 'synthetic-credential'
             # Reinstall and relaunch are idempotent; no duplicate version backup.
@@ -147,8 +152,11 @@ s.set_setting('ui_calendar_view','month')
             setup(old_setup, install, env, success=False)  # Explicit downgrade rejected.
             # Exercise bundled Qt, iCalendar, tzdata, CA store, Vault and backup/restore.
             checked = temp / 'bundle-check.json'
-            subprocess.run([str(exe), '--verify-installation', str(checked)], cwd=temp, env=env, check=True, timeout=60)
-            check = json.loads(checked.read_text())
+            result = subprocess.run([str(exe), '--verify-installation', str(checked)], cwd=temp, env=env, timeout=60)
+            if checked.is_file():
+                print(ascii(checked.read_text(encoding='utf-8')), flush=True)
+            result.check_returncode()
+            check = json.loads(checked.read_text(encoding='utf-8'))
             assert check['ok'] and check['frozen'] and check['version'] == __version__
             assert Path(check['shortcut_target']) == exe
             # Uninstall must retain DB/backups/settings/Vault. Then a clean reinstall reuses them.
