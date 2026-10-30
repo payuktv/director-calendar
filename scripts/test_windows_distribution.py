@@ -158,7 +158,7 @@ s.set_setting('ui_calendar_view','month')
             result.check_returncode()
             check = json.loads(checked.read_text(encoding='utf-8'))
             assert check['ok'] and check['frozen'] and check['version'] == __version__
-            assert Path(check['shortcut_target']) == exe
+            assert Path(check['shortcut_target']).samefile(exe)
             # Uninstall must retain DB/backups/settings/Vault. Then a clean reinstall reuses them.
             subprocess.run([str(install/'unins000.exe'), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'], env=env, check=True, timeout=120)
             assert database.is_file() and snapshot(database) == expected and backups[0].is_file()
