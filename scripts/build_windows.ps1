@@ -25,7 +25,9 @@ $App = "$SourceRoot/dist/DirectorCalendar"
 if (-not (Test-Path "$App/DirectorCalendar.exe")) { throw 'Missing executable.' }
 if (-not $ISCC) { $ISCC = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" }
 if (-not (Test-Path $ISCC)) { throw 'Install Inno Setup 6 or pass -ISCC.' }
-if ((Get-Item $ISCC).VersionInfo.FileVersion -notlike '6.7.1*') { throw 'Use pinned Inno Setup 6.7.1.' }
+$CompilerVersion = (Get-Item $ISCC).VersionInfo
+Write-Host "Inno Setup compiler: $($CompilerVersion.FileVersion)"
+if ($CompilerVersion.FileMajorPart -ne 6) { throw 'Inno Setup 6 is required.' }
 $Output = "$SourceRoot/dist/artifacts"
 New-Item -ItemType Directory -Force $Output | Out-Null
 & $ISCC "/DAppVersion=$Version" "/DSourceDir=$App" "/DBuildOutput=$Output" "$Packaging/installer.iss"

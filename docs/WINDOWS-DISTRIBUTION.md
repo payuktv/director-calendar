@@ -46,7 +46,7 @@ Hosted Windows runner всё ещё содержит установленный 
 
 ## Воспроизводимая процедура сборки
 
-Windows x64, Python 3.13 x64 и Inno Setup **6.7.1**:
+Windows x64, Python 3.13 x64 и Inno Setup **6**:
 
 ```powershell
 ./scripts/build_windows.ps1
