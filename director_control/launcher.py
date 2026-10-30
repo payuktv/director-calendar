@@ -8,6 +8,11 @@ from .storage import default_data_dir
 
 def main() -> int:
     try:
+        if len(sys.argv) == 3 and sys.argv[1] == '--verify-installation':
+            from .distribution_check import verify_installation
+            return verify_installation(sys.argv[2])
+        from .windows_lifecycle import hold_installer_mutex
+        hold_installer_mutex()
         from .ui import run_app
         return run_app()
     except Exception:
@@ -24,3 +29,4 @@ def main() -> int:
             sys.stderr.write(details)
         show_message(message, error=True)
         return 1
+

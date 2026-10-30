@@ -241,7 +241,8 @@ class MainWindow(QMainWindow):
         self.theme_toggle.setIconSize(QSize(18, 18))
         self._update_theme_controls()
         side.addWidget(self.theme_toggle)
-        side.addWidget(plain_label("Версия 0.10.0", "Muted"))
+        from . import __version__
+        side.addWidget(plain_label("Версия " + __version__, "Muted"))
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -918,7 +919,11 @@ def run_app() -> int:
     install_input_wheel_guard(app)
     app.setStyle("Fusion")
     try:
-        window = MainWindow(Store())
+        from .updates import prepare_version_update, record_version
+        prepare_version_update(default_data_dir() / "director_control.db")
+        store = Store()
+        window = MainWindow(store)
+        record_version(store)
         def activate():
             if window.isMinimized():
                 window.showNormal()

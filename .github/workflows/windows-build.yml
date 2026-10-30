@@ -1,0 +1,41 @@
+name: Windows distribution
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: x64
+      - name: Build current Windows executable and installer
+        shell: pwsh
+        run: ./scripts/build_windows.ps1
+      - name: Check out previous application for real upgrade acceptance
+        uses: actions/checkout@v7
+        with:
+          ref: a7e524281a3026d501eb7232d68008f09700e3c3
+          path: previous-version
+      - name: Build previous application with the same packaging toolchain
+        shell: pwsh
+        run: ./scripts/build_windows.ps1 -SourceRoot ./previous-version
+      - name: Install, launch, upgrade and preserve data
+        shell: pwsh
+        run: |
+          & ./.build-venv/Scripts/python.exe scripts/test_windows_distribution.py previous-version dist/artifacts/distribution-check.json
+          if ($LASTEXITCODE -ne 0) { throw 'Distribution acceptance failed.' }
+      - name: Publish verified Windows distribution
+        uses: actions/upload-artifact@v6
+        with:
+          name: DirectorCalendar-Windows-x64
+          path: dist/artifacts/
+          if-no-files-found: error
+          retention-days: 30
