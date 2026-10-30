@@ -86,6 +86,22 @@ def setup(executable, folder, env, *, success=True):
     assert (result.returncode == 0) == success, result.returncode
 
 
+
+def uninstall(folder, env):
+    # Inno may allocate unins001 after a previous loader is still cleaning itself up.
+    candidates = [p.with_suffix('.exe') for p in folder.glob('unins*.dat')]
+    assert len(candidates) == 1, candidates
+    print('Uninstalling: ' + candidates[0].name, flush=True)
+    subprocess.run([str(candidates[0]), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'],
+                   env=env, check=True, timeout=120)
+    deadline = monotonic() + 30
+    while monotonic() < deadline:
+        if not (folder / 'DirectorCalendar.exe').exists() and not list(folder.glob('unins*.dat')):
+            return
+        sleep(.1)
+    raise AssertionError('Uninstall did not finish removing program files')
+
+
 def main(previous_root, output):
     from keyring.backends.Windows import WinVaultKeyring
     from director_control import __version__
@@ -160,14 +176,14 @@ s.set_setting('ui_calendar_view','month')
             assert check['ok'] and check['frozen'] and check['version'] == __version__
             assert Path(check['shortcut_target']).samefile(exe)
             # Uninstall must retain DB/backups/settings/Vault. Then a clean reinstall reuses them.
-            subprocess.run([str(install/'unins000.exe'), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'], env=env, check=True, timeout=120)
+            uninstall(install, env)
             assert database.is_file() and snapshot(database) == expected and backups[0].is_file()
             assert vault.get_password('DirectorControl.CalDAV', key) == 'synthetic-credential'
             setup(new_setup, install, env)
             process, hwnd = open_app(exe, env, temp)
             close_app(process, hwnd)
             assert snapshot(database) == expected
-            subprocess.run([str(install/'unins000.exe'), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'], env=env, check=True, timeout=120)
+            uninstall(install, env)
             report.update(check, source_to_exe=True, old_to_new=True, reinstall=True, uninstall_preserves_data=True,
                           running_app_protected=True, downgrade_rejected=True, no_python_on_path=True,
                           default_data_directory=str(default_data_dir()), unicode_install_path=True)
