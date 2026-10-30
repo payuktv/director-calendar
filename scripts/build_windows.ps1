@@ -25,9 +25,9 @@ $App = "$SourceRoot/dist/DirectorCalendar"
 if (-not (Test-Path "$App/DirectorCalendar.exe")) { throw 'Missing executable.' }
 if (-not $ISCC) { $ISCC = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" }
 if (-not (Test-Path $ISCC)) { throw 'Install Inno Setup 6 or pass -ISCC.' }
-$CompilerVersion = (Get-Item $ISCC).VersionInfo
-Write-Host "Inno Setup compiler: $($CompilerVersion.FileVersion)"
-if ($CompilerVersion.FileMajorPart -ne 6) { throw 'Inno Setup 6 is required.' }
+# ISCC has no Windows version resource (FileVersion is 0.0.0.0).
+$CompilerVersion = (& $ISCC /? | Select-Object -First 3) -join ' '
+Write-Host $CompilerVersion
 $Output = "$SourceRoot/dist/artifacts"
 New-Item -ItemType Directory -Force $Output | Out-Null
 & $ISCC "/DAppVersion=$Version" "/DSourceDir=$App" "/DBuildOutput=$Output" "$Packaging/installer.iss"
@@ -35,7 +35,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
 $Setup = "$Output/DirectorCalendar-$Version-Setup-x64.exe"
 if (-not (Test-Path $Setup)) { throw 'Missing installer.' }
 Compress-Archive -Path $App -DestinationPath "$Output/DirectorCalendar-$Version-portable-x64.zip" -Force
-"Python: $(& $Python --version); Inno Setup: $((Get-Item $ISCC).VersionInfo.FileVersion); Source: $(git rev-parse HEAD)" | Set-Content "$Output/build-info.txt"
+"Python: $(& $Python --version); Inno Setup: $CompilerVersion; Source: $(git rev-parse HEAD)" | Set-Content "$Output/build-info.txt"
 & $Python -m pip freeze | Set-Content "$Output/build-dependencies.txt"
 if ($LASTEXITCODE -ne 0) { throw 'Cannot record dependencies.' }
 Get-ChildItem $Output -File | Where-Object Extension -in '.exe','.zip' | ForEach-Object {

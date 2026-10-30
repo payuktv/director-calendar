@@ -37,6 +37,7 @@ def windows(pid):
 
 
 def open_app(exe, env, cwd):
+    print(f'Launching: {exe}', flush=True)
     process = subprocess.Popen([str(exe)], env=env, cwd=cwd)
     deadline = monotonic() + 45
     while process.poll() is None and monotonic() < deadline:
@@ -73,6 +74,7 @@ def snapshot(path):
 
 
 def setup(executable, folder, env, *, success=True):
+    print(f'Installer: {executable.name}, expected success={success}', flush=True)
     result = subprocess.run([str(executable), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
                              '/SP-', '/DIR=' + str(folder), '/LOG=' + str(folder.parent / (executable.stem+'.log'))],
                             env=env, timeout=180)
@@ -110,6 +112,8 @@ s.create_event('Synthetic unplanned','Работа',actual_start='2026-10-29T12:
 s.set_setting('ui_theme','dark')
 s.set_setting('mail_login','synthetic@example.test')
 s.set_setting('mail_auto','0')
+# Daily-backup workers have separate entry-point tests; isolate update acceptance.
+s.set_setting('backup_auto','0')
 s.set_setting('ui_calendar_view','month')
 """
             subprocess.run([sys.executable, '-c', seed], cwd=previous_root, env=env, check=True, timeout=30)
