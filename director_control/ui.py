@@ -920,7 +920,12 @@ def run_app() -> int:
     app.setStyle("Fusion")
     try:
         from .updates import prepare_version_update, record_version
-        prepare_version_update(default_data_dir() / "director_control.db")
+        try:
+            prepare_version_update(default_data_dir() / "director_control.db")
+        except Exception as exc:
+            from .recovery import offer_recovery
+            offer_recovery(default_data_dir() / "director_control.db", exc)
+            return 1
         store = Store()
         window = MainWindow(store)
         record_version(store)
