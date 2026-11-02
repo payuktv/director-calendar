@@ -1,290 +1,223 @@
-# Director Calendar — версия 0.11.0
+# Director Calendar — v0.12.0
 
-Версия 0.11.0: автономная Windows x64-сборка и установщик для текущего пользователя. Python для запуска не нужен. База, история и настройки сохраняются в прежней папке данных; пароль остаётся в Windows Vault. Перед первым открытием существующей базы новой версией создаётся проверенная страховочная копия. [Установка, обновление и сборка](docs/WINDOWS-DISTRIBUTION.md).
+A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
-Уточнение учёта: календарь и аналитика используют общее определение происхождения работы. Перенесённое событие исходного плана остаётся плановым; до фиксации дня происхождение обычных событий неизвестно. Число таких событий доступно в подсказке показателя «Вне плана». Локальное постфактум всегда внеплановое.
+**Status:** pre-release. **v1.0.0 is reserved for the production release.** The application interface is currently in Russian; the English labels below describe its controls.
 
-Версия 0.10.0: история без ограничения экрана последними 300 записями. Добавлены страницы по 50/100/200 записей, поиск по всему журналу, фильтры по датам изменений и событию, понятные описания «было → стало» и полное описание записи с переходом к существующему событию. Доступна история переименованных, удалённых и архивных событий. Чтение не переписывает исходный журнал; схема базы остаётся 4 (добавлены индексы для фильтрации). Версия 1.0 зарезервирована для релиза.
+## Features
 
-Версия 0.9.0: аналитика за день, календарную неделю и месяц. Добавлены взвешенное исполнение исходного плана, доля внеплановой работы по подтверждённому времени, отклонения начала и длительности, счётчик выполненных событий без времени. Доступны график динамики, разбивки по дням и категориям, список событий с переходом к заполнению факта и экспорт сводки с днями в CSV. Расчёты учитывают переносы, границы периодов и сохранённые правила контроля. Схема базы и зависимости не меняются.
+- Day, week, month and agenda views, with separate current schedule, original plan and actual-work layers.
+- Read-only Mail.ru CalDAV import, including recurring events and individual exceptions.
+- Local planned events and post-factum records for unplanned work; no writes to Mail.ru.
+- Manual, one-time daily plan fixation, execution statuses, actual times and comments.
+- Daily, weekly and monthly analytics, data-quality indicators and CSV export.
+- Full retained change history with search, date/event filters and pagination.
+- Light/dark themes, desktop shortcuts and single-instance protection.
+- Verified manual/daily backups, update backups and startup recovery for damaged databases.
+- Standalone Windows x64 installer and portable ZIP. Python is bundled.
 
-Версия 0.8.0: завершены пять доработок надёжности и учёта. Во всех видах календаря действует общий отбор по слоям; список больше не показывает внеплановый факт в исходном плане и события без факта в слое «Факт». Во время синхронизации фиксация плана недоступна; при частичном/неудачном обновлении, отсутствии подтверждённой загрузки выбранного дня или давности более 30 минут перед фиксацией появляется предупреждение. Периоды и результаты загрузок сохраняются локально.
+![Calendar, light theme](docs/screenshots/calendar-week.png)
+![Calendar, dark theme](docs/screenshots/calendar-week-dark.png)
 
-При фиксации сохраняются категория, участие в контроле и допустимое отклонение: последующие настройки не пересчитывают исходные показатели. Изменения правил записываются в историю. Для ранее зафиксированных событий схема 4 сохраняет правила по настройкам на момент обновления; прежние незаписанные переключения восстановить нельзя. Формы и меню защищены от сохранения устаревшей версии события. Повторный запуск активирует уже открытое окно; блокировка базы снимается после выхода и автоматически восстанавливается после аварии процесса.
+Screenshots use synthetic data and may show an earlier interface revision. No demo schedule is created on a fresh installation.
 
-В **Настройки → Данные и резервные копии** доступны ежедневное копирование, выбор папки, количество автоматических копий (по умолчанию 30), ручная копия и восстановление. Автоматическая копия создаётся при первом запуске за день; пока приложение открыто, проверка выполняется каждые 15 минут. Закрытое приложение не выполняет копирование. Удаляются только старые автоматические копии этой базы; ручные, миграционные и страховые копии сохраняются. Перед публикацией копии проверяются структура и целостность SQLite. При восстановлении сначала проверяется файл, сохраняется текущая база в отдельную страховую копию, затем в отдельном файле выполняются обновление формата и проверка. Только после успеха рабочая база заменяется. Приложение закрывается после восстановления; открой его снова ярлыком. Пароль Windows Vault не входит в копию базы.
+## Install on Windows
 
-Версия 0.7.0: возвращено создание событий внутри приложения. Кнопка «Добавить событие» над календарём и Ctrl+N открывают форму с режимами «Постфактум — вне плана» и «Запланировать локально». Постфактум сохраняется только фактический интервал и не включается в исходный план; локальный план фиксируется наравне с расписанием Mail.ru, без автоматической подстановки факта. Локальные записи видны в календаре, аналитике, истории и CSV и не отправляются в Mail.ru. Их можно редактировать и удалять с подтверждением; событие зафиксированного плана можно отменить, сохранив исходный план. Перед обновлением старого формата базы автоматически создаётся резервная копия.
+Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-Версия 0.6.0: добавлен запуск через ярлык на рабочем столе без окна консоли. Для уже установленного приложения дважды открой `create_desktop_shortcut.pyw` в папке проекта либо создай ярлык в разделе «Настройки → Запуск приложения». Ярлык использует окружение проекта, фирменную иконку и прежнюю локальную базу. При ошибке запуска показывается сообщение с путём к журналу.
+1. Open [Windows distribution in GitHub Actions](https://github.com/payuktv/director-calendar/actions/workflows/windows-build.yml).
+2. Select a successful run for the intended version on `main`. Also check that the **Tests** workflow passed for the same commit.
+3. Download the **DirectorCalendar-Windows-x64** artifact and extract it. Access to this private repository is required.
+4. Close any running Director Calendar instance, including older source-based launches.
+5. Run `DirectorCalendar-0.12.0-Setup-x64.exe` as your normal Windows user.
+6. Open **Director Calendar** from the desktop or Start menu.
 
-Версия 0.5.2: жёлтый цвет статуса «Частично» стал более приглушённым в светлой и тёмной темах; календарь, список и контекстное меню используют общую палитру. На странице настроек увеличены промежутки между разделами, полями, флажками и пояснениями; внутренние отступы блоков выровнены. Кнопки подключения собраны в один ряд, поле допустимого отклонения стало компактнее, строки категорий — просторнее.
+The artifact includes the installer, portable ZIP, SHA-256 checksums, build/dependency information and a distribution acceptance report. Actions artifacts are retained for **30 days**; this is not yet a permanent release-download channel. Installers are not currently Authenticode-signed.
 
-Версия 0.5.1: в недельном виде колонка выбранного дня в 1,5 раза шире остальных. Расширение следует за выбором даты в сетке, шапке, событии или мини-календаре; общая ширина календаря остаётся прежней. Заголовки, события на весь день, временная сетка и обработка кликов используют общие границы колонок, в том числе при горизонтальной прокрутке.
+For portable use, extract the **entire** `DirectorCalendar-0.12.0-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
-Версия 0.5.0: добавлены светлая и тёмная темы. Кнопка «Тёмная тема» / «Светлая тема» внизу левой панели переключает оформление сразу, без перезапуска. Выбор сохраняется на этом компьютере. Оформление охватывает календарь, мини-календарики, карточку события, меню статусов, списки, аналитику и настройки; привычные цвета статусов сохраняются.
+## Update and data locations
 
-![Тёмная тема](docs/screenshots/calendar-week-dark.png)
+Close the application, run the new installer and reopen the existing shortcut. Updates are installed manually; there is no automatic update download.
 
-Версия 0.4.6: колесо мыши больше не меняет значения полей даты, времени, чисел, списков и других полей ввода, даже если поле активно. Вместо изменения значения колесо прокручивает содержащую поле форму. Общий обработчик действует во всех окнах, включая настройки Mail.ru, карточку события и выбор года. Ввод с клавиатуры, кнопки полей, выбор даты и прокрутка открытых списков сохранены.
+| Item | Default location |
+| --- | --- |
+| Installed program | `%LOCALAPPDATA%\Programs\DirectorCalendar` |
+| Database, settings and history | `%LOCALAPPDATA%\DirectorControl\director_control.db` |
+| Default backups | `%LOCALAPPDATA%\DirectorControl\backups` |
+| Preserved emergency-recovery files | `%LOCALAPPDATA%\DirectorControl\recovery` |
+| Saved Mail.ru password | Windows Credential Manager, service `DirectorControl.CalDAV` |
 
-Исправление 0.4.5: повторный клик по полю даты закрывает календарик сразу. Состояние popup проверяется до перевода фокуса в поле, а захваченный всплывающим окном клик по полю обрабатывается до стандартного обработчика Qt. Потеря фокуса и повторная доставка того же клика больше не запускают повторное открытие. Добавлены проверки этих сценариев для поля, его текстовой части и кнопки.
+Installation, update and uninstallation preserve the separate data directory and saved credentials. Before an existing database is opened by a different application version, a verified `before-update-*.db` backup is required. Failure to create it prevents normal startup. Reopening the same version does not create duplicate version backups.
 
-Версия 0.4.4: клик по полю даты открывает мини-календарь, повторный клик закрывает его; кнопка внутри поля работает так же. В карточке события клик по дате открывает календарь, а часы и минуты редактируются отдельно. Выпадающее окно получило скругления, внутренние отступы, мягкую тень и зазор 8 пикселей от поля; у края экрана оно открывается сверху. Вне календаря курсор не остаётся указателем, после закрытия обычный курсор восстанавливается.
+If you previously set `DIRECTOR_CONTROL_DATA_DIR`, preserve that environment variable when launching the new installation. A custom database location is not discovered automatically. Moving to another Windows account or PC requires entering the Mail.ru application password again; database backups do not contain Windows Vault credentials.
 
-Версия 0.4.3: новый мини-календарь используется во всём приложении — в sidebar, выборе даты над расписанием и всех четырёх полях даты/времени карточки события. Общий компонент заменяет стандартную шапку Qt: единые стрелки, меню месяца/года, наведение и круглое выделение дня. Выбор даты факта сохраняет время, клавиатурное управление и допустимый диапазон дат работают через Qt; плановые поля Mail.ru остаются недоступны для редактирования.
+The installer blocks downgrades and installation/removal while a v0.11.0-or-later instance is running. Close earlier versions manually before updating. For a portable update, extract the new package into a separate directory and update the shortcut; do not mix `_internal` directories from different versions.
 
-Версия 0.4.2: показатели «В плане», «Выполнено», «Без подтверждения», «Вне плана», «Исполнение» и «Окна 07–19» перенесены под календарь. Уменьшены отступы, размер чисел и промежутки между карточками; для расписания остаётся больше высоты.
+## Connect Mail.ru
 
-Версия 0.4.1: убраны подписи «Источник Mail.ru», «ПЛАН / ФАКТ» и слоган в боковой панели, подсказки и дублирующая кнопка «Открыть карточку» под календарём. Карточка по-прежнему открывается двойным щелчком; кнопка в правой панели выбранного события сохранена. Сообщения обновления Mail.ru появляются под заголовком только при синхронизации или ошибке; постоянная подсказка о подключении снизу удалена.
+1. Open **Settings → Mail.ru calendar**.
+2. Enter the full CalDAV collection URL from your calendar settings and your full email login.
+3. Enter a Mail.ru **application password**, locally on your computer. Do not put it in chat, source files or GitHub.
+4. Select the display time zone, normally `Europe/Moscow`.
+5. Optionally save the password in Windows Credential Manager. Otherwise it is kept only for the current session.
+6. Save the connection and update the calendar.
 
-Версия 0.4.0: единственный источник расписания — Mail.ru. Создание, перенос, переименование и удаление событий выполняются в Mail.ru; приложение читает календарь и ведёт локальный учёт категорий, статусов, факта и комментариев. Кнопки и обработчики создания/удаления событий, а также выбор ручного источника удалены. Календарь, фиксация плана, показатели, свободные окна и CSV учитывают только Mail.ru. Старые ручные записи, журнал и ранее зафиксированные даты сохраняются в базе и резервных копиях.
+The application imports 30 days before and 90 days after the selected date. On the Analytics page, synchronization uses that page's anchor date. Automatic loading at startup is optional; periodic polling is not implemented.
 
-Версия 0.3.6: обновлён мини-календарь слева. Собственная шапка со стрелками и единым выбором месяца/года заменяет стандартные элементы с синими рамками. Кнопки и даты реагируют на наведение; на интерактивных элементах показан курсор-указатель. Выбранный день выделен кругом, сегодняшний — отдельным контуром. Сохранены клавиатурная навигация, выбор месяца и года, связь с основным календарём и скрытие на небольшом окне.
+Change imported titles, scheduled times and recurrence rules in Mail.ru. Categories, local execution status, actual time and comments are maintained here and survive synchronization. Repeated imports preserve event identity. The original plan is never overwritten by synchronization.
 
-Исправление 0.3.5: правая карточка события имеет фиксированную ширину 280 пикселей. Выбор событий с разной длиной названия, комментария и интервала больше не меняет ширину календаря. Перенос текста и скрытие правой панели на небольшом окне сохраняются.
+A missing event in a bounded server response is **not proof of deletion**: it remains available with a source warning. Network, authorization and parse failures preserve the previous data. A recoverable `calendar-data 404` can produce an explicitly marked partial import; disappearance detection is disabled for that import.
 
-Версия 0.3.4: для «Частично» установлен жёлтый фон с тёмной золотистой подписью, для «Перенесено» — синий цвет. Цвета едины для карточек календаря, контекстного меню и подписей статусов в списке.
+After importing a calendar, switching accounts/collections is blocked. The display time zone cannot be changed once schedule events exist. UTC/TZID values are converted on import; floating times use the selected zone.
 
-Версия 0.3.3: пункты контекстного меню показывают те же цвета текста и фона, которые получит карточка события после выбора статуса. При наведении сохраняется соответствующий оттенок; текущий статус отмечен цветной галочкой. Используется общая функция цветов календаря, включая цвет категории для статусов без отдельной окраски.
+Before relying on a connection, use a synthetic appointment to verify initial import, duplicate-free reimport, rescheduling after plan fixation, preservation of actual time/comments, and a recurring event with one moved occurrence.
 
-Версия 0.3.2: правый щелчок по событию открывает меню выбора статуса — «Не подтверждено», «Выполнено», «Частично», «Отменено», «Перенесено». Текущий статус отмечен галочкой. Меню доступно в дневном, недельном, месячном виде, для событий на весь день и в списке. Изменение применяется к выбранному щелчком событию и записывается в историю; исходный план, актуальное и фактическое время сохраняются. Статусы импортированных событий учитываются локально и сохраняются при синхронизации Mail.ru.
+## Daily workflow
 
-Исправление 0.3.1: названия событий в недельной и дневной сетке переносятся по всей доступной высоте карточки. Отображаются только целые строки; если места не хватает, последняя строка заканчивается многоточием. В коротких событиях приоритет у названия, время и статус занимают только свободное место. Полное название и интервал доступны при наведении или в карточке события.
+1. Select the date and refresh Mail.ru.
+2. Review the schedule, conflicts and free intervals within the 07:00–19:00 workday.
+3. Fix the original plan once the day is agreed. Fixation is disabled during synchronization; missing, partial, failed or older-than-30-minute coverage produces a warning.
+4. Record actual start/end times and execution status in the event card. Missing actual time is never replaced with scheduled time.
+5. Use **Add event** or **Ctrl+N** for local planning or post-factum unplanned work.
+6. Review analytics and incomplete actual-time records; use History to inspect changes.
 
-Исправление 0.2.2: при `calendar-data 404` программа пробует прочитать запись отдельным GET внутри выбранного календаря. Если запись остаётся недоступной, доступны частичная загрузка остальных записей и явное предупреждение. При частичной загрузке отсутствующие в ответе прежние события не помечаются исчезнувшими, а время последней полной синхронизации не меняется. Если недоступны все записи, обновление завершается ошибкой без изменения базы.
+A local event already included in the original plan cannot be deleted; cancel it while retaining its baseline. Imported events cannot be deleted locally. Post-factum local work is always unplanned. A baseline event moved to another day remains planned; ordinary events on an unfixed day have unknown work origin.
 
-Исправление 0.2.1: ошибки отдельных служебных свойств CalDAV больше не блокируют доступное `calendar-data`; HTTP-статусы распознаются и без текстовой причины. Если само событие недоступно, сообщение содержит только номер ресурса и числовой статус, без содержимого ответа и секретов. Неполный ответ по-прежнему не применяется к базе.
+Plan fixation preserves the category, tracking flag and time tolerance used for baseline calculations. Later settings changes do not rewrite those saved rules. All-day events are displayed separately and do not contribute 24 hours of planned work.
 
-Локальное Windows-приложение для бизнес-ассистента генерального директора: исходный план, актуальное расписание, факт выполнения и журнал изменений.
+## Analytics and exports
 
-**Статус:** локальное приложение для событий из Mail.ru по CalDAV в режиме чтения и локальных записей, которые хранятся только в приложении. Первоначальный план фиксируется вручную кнопкой. Протокол, импорт и интерфейс проверяются автоматическими тестами; подключение к конкретной учётной записи подтверждается после ввода пароля на компьютере пользователя.
+Reports cover a day, Monday–Sunday week or calendar month. Calendar search and display-layer filters do not filter the report. By default, reports include tracked categories; all categories can be included explicitly.
 
-## Возможности версии 0.8
+| Metric | Meaning |
+| --- | --- |
+| Plan completion | Completed baseline events / all baseline events starting in the period; period totals are not averages of daily percentages |
+| Confirmed actual time | Actual intervals of completed or partially completed events, clipped to report/day boundaries |
+| Unplanned share | Confirmed unplanned time / all confirmed actual time; unknown-origin time makes this a lower bound, shown with `≥` |
+| Start/duration deviation | Actual minus original plan; summary cards use absolute deviations so early and late values do not cancel out |
+| Completed without time | Completed events missing a full actual interval, excluding current all-day events |
 
-- Запуск ярлыком «Director Calendar» с рабочего стола без PowerShell и окна консоли.
-- Календарь с видами «День», «Неделя», «Месяц» и «Список», мини-календарём и переходом к сегодняшней дате.
-- Чтение одного календаря Mail.ru и локальный учёт его исполнения. Создание, переименование и перенос импортированных событий выполняются в Mail.ru.
-- Создание локальных событий: постфактум вне плана или планирование внутри приложения; редактирование, удаление ошибочных записей и история изменений.
-- Однократная фиксация первоначального плана на дату.
-- Отдельное хранение текущего плана, фактического интервала и статуса.
-- Отметки «выполнено», «частично», «отменено», «перенесено», «не подтверждено».
-- Неподтверждённый факт **не подменяется** запланированным временем.
-- Категории и настройка того, какие категории требуют контроля.
-- Допустимое отклонение от плана (в минутах).
-- Показатели за день, длительность по категориям и журнал изменений.
-- Проверка свободных промежутков с **07:00 до 19:00** и пересечений в текущем расписании; предупреждение перед фиксацией плана.
-- Экспорт отчёта в CSV (разделитель `;`, UTF-8 BOM — для Excel).
-- Локальная SQLite-база; проверяемые ручные и ежедневные копии, настройка папки/хранения и восстановление со страховой копией.
+No plan or actual data produces an undefined metric rather than a misleading zero. Deviation comparisons use complete original/actual intervals and the saved tolerance; equality with the tolerance is allowed. Overlapping actual intervals are summed, with duplicated minutes reported explicitly.
 
-Подробное решение по стеку и рассмотренные альтернативы — в [`docs/ADR-0001-stack.md`](docs/ADR-0001-stack.md).
+Reports show plan-fixation coverage, complete Mail.ru loading coverage, source warnings and missing actual time. Loading coverage is not a guarantee that the remote calendar is still current. Drill down by day, category or event; open an event to correct its actual time.
 
-## Технический стек (октябрь 2026)
+Period CSV exports include a total row and every day in the selected period. Files use UTF-8 with BOM, semicolons and decimal commas. Undefined values are blank. Reports are read from a consistent SQLite snapshot and do not modify the plan or fact records.
 
-- Python **3.13** (исполняемая среда; возможно развитие до 3.14 после тестирования).
-- PySide6 **6.12.0** (Qt Widgets — настольный интерфейс Windows).
-- SQLite (`sqlite3` в стандартной библиотеке Python).
-- Pytest — автоматические тесты; GitHub Actions — тесты на Windows и Linux.
-- CalDAV: только HTTPS REPORT через `requests`; iCalendar и повторы — `icalendar` и `recurring-ical-events`; XML — `defusedxml`; пароль Windows — `keyring` с явным WinVault backend.
+## History
 
-Модули: `history.py` — описания записей истории; `history_ui.py` — поиск, фильтры и страницы журнала; `analytics.py` — расчёты и CSV за период; `analytics_ui.py` — экран аналитики; `schedule.py` — общий отбор слоёв; `backups.py` и `backup_ui.py` — копии и восстановление; `instance.py` — единственный экземпляр; `storage.py` — правила учёта и БД; `calendar_view.py` — календарная сетка и размещение событий; `theme.py` — оформление; `inspector.py` — карточка и график; `ui.py` — навигация и формы; `mail_calendar.py` и `mail_ui.py` — чтение Mail.ru; `main.py` — запуск. Логика учёта отделена от интерфейса и проверяется автоматическими тестами.
+All retained audit records are accessible, including entries beyond the former 300-record view. Pages contain 50, 100 or 200 entries.
 
-## Запуск на Windows 10/11
+- Search covers the entire journal, including readable descriptions and former event titles, not only the visible page.
+- Search, event and change-date filters can be combined. Date endpoints are inclusive and refer to audit timestamps, not meeting dates.
+- Selecting an event uses its ID, so identical titles do not mix unrelated histories. Deleted and archived event history remains readable.
+- Double-click or press Enter for the complete change description. Existing events can be opened from their history entries.
+- Older pages keep their position when new entries arrive. Refresh or return to the first page to see new records.
 
-### Если приложение уже установлено
+Browsing and searching do not delete or rewrite the original audit journal.
 
-1. Закрой приложение, обнови исходники проекта и дважды щёлкни по `create_desktop_shortcut.pyw` в его папке.
-2. Подтверди сообщение «На рабочем столе создан ярлык».
-3. Дальше открывай **Director Calendar** с рабочего стола двойным щелчком. PowerShell и окно командной строки для запуска больше не нужны.
+## Backups and recovery
 
-Другой способ создания ярлыка: в открытом приложении перейди в **Настройки → Запуск приложения → Создать ярлык на рабочем столе**. Если Windows не связывает `.pyw` с Python, используй эту кнопку. Повторное создание обновляет существующий ярлык и не добавляет дубликаты. Учитывается системная папка рабочего стола, включая перенаправление в OneDrive.
+### Routine backups and restoration
 
-Ярлык ссылается на текущую папку проекта; после её переноса создай его заново. Данные и подключение Mail.ru остаются прежними. Запуск через ярлык не устанавливает зависимости и не обращается к GitHub.
+Use **Settings → Data and backups** to choose a backup directory, create a manual copy or restore a verified copy. Daily backup is enabled by default and retains 30 automatic copies. The application checks at startup and every 15 minutes while open; it creates at most one scheduled copy per day when the previous copy remains present. No backup runs while the application is closed.
 
-Если приложение не смогло открыться, появится сообщение с путём к файлу `startup-error.log` в папке данных. Для диагностики также можно запустить `main.py` через консоль.
+Retention removes only this database's old automatic copies. Manual, migration, update and safety copies are not automatically rotated. Consider a protected location on another disk for protection against loss of the working disk.
 
-### Первоначальная установка
+Normal restoration validates the selected copy, creates a safety backup of the current database, prepares/migrates a separate staging database and replaces the live database only after validation. Restart the application after successful restoration. Use copies compatible with the installed version; startup also checks the stored application version.
 
-Потребуется установленный **Python 3.13 (64-bit)** с доступной командой `py` и подключение к интернету *для первоначальной установки библиотек*.
+### Emergency recovery at startup — v0.12.0
 
-1. Распакуй архив и открой PowerShell в папке проекта.
-2. Выполни:
+If the startup database check fails, the error dialog offers recovery without opening the main calendar:
 
-```powershell
-py -3.13 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\python.exe main.py
-```
+1. Choose recovery and select a known-good `.db` or `.sqlite` backup.
+2. Confirm replacement of the working events, history and settings.
+3. The copy is checked, including its recorded application version, and prepared separately.
+4. Original database and WAL/SHM/journal files, when present, are preserved under a unique directory inside `recovery` beside the working database. Damaged files are preserved as raw files rather than requiring a successful SQLite backup.
+5. After successful replacement, reopen the application and verify the restored data.
 
-Либо запусти `scripts\run_windows.ps1` из PowerShell (может потребоваться разрешить выполнение собственных скриптов). После первоначальной установки создай ярлык способом выше. У приложения отдельное окно Windows, **не браузер**.
+The application retains its single-instance database lock during this process. Cancellation, invalid copies and preparation/archive failures do not replace the working database. The replacement failure path restores moved sidecar files. Keep preserved originals until the result has been checked. This feature restores a backup; it does not reconstruct records absent from that backup or repair a damaged file in place.
 
-При первом запуске программа создаёт папку и базу данных (пути по умолчанию):
+Other startup failures are reported through the normal startup error message and `startup-error.log` when the log can be written.
 
-`%LOCALAPPDATA%\DirectorControl\director_control.db`
+## Development and source-based launch
 
-В Linux/macOS для тестирования используется `~/.local/share/director-control/`. Путь можно переопределить переменной окружения `DIRECTOR_CONTROL_DATA_DIR`.
-
-**База данных, журнал событий и резервные копии не должны попадать в GitHub.** Они исключены через `.gitignore` и хранятся вне папки проекта. Рекомендуется приватный репозиторий.
-
-## Интерфейс
-
-![Календарь на вымышленных тестовых событиях](docs/screenshots/calendar-week.png)
-
-На иллюстрации используются только тестовые записи; в приложение они не добавляются.
-
-Общий мини-календарь для sidebar и полей даты:
-
-![Мини-календарь](docs/screenshots/mini-calendar.png)
-
-Тот же компонент во всплывающем выборе даты:
-
-![Выбор даты](docs/screenshots/date-picker.png)
-
-- Боковая навигация: календарь, аналитика, история и настройки.
-- Режимы **День / Неделя / Месяц / Список**. Последний выбранный режим сохраняется.
-- Временная сетка на 24 часа: пересекающиеся встречи располагаются рядом, события на весь день — отдельно. Текущий момент отмечен линией.
-- Выбор слоя **Расписание / Исходный план / Факт**. «Расписание» показывает актуальный план и внеплановые локальные факты; слой исходного плана исключает записи постфактум. Пустой факт не подменяется планом.
-- Один щелчок выбирает событие. На широком высоком окне справа показаны его название, источник, исходный план, актуальное время, факт и комментарий, а также кнопка **Открыть карточку**. Двойной щелчок открывает карточку на любом размере окна.
-- **Добавить событие** (Ctrl+N) открывает форму локальной записи. По умолчанию выбран режим **Постфактум — вне плана** со статусом «Выполнено»: проверь название, категорию, фактические начало/конец и при необходимости добавь комментарий. Данные сохраняются только после нажатия «Создать».
-- В режиме **Запланировать локально** указывается плановый интервал; факт заполняется отдельно. Локальные планы участвуют в фиксации исходного плана, записи постфактум — всегда вне него, даже до первой фиксации дня.
-- Локальная карточка позволяет менять название, время, статус, категорию и комментарий. Удаление требует подтверждения и сохраняется в истории. Включённую в исходный план запись нельзя удалить; для неё используется статус «Отменено».
-- Карточка события Mail.ru позволяет менять только категорию, факт, статус и комментарий. Название, плановое время и удаление по-прежнему управляются в Mail.ru.
-- Поиск фильтрует события **только открытого периода** по названию, категории и комментарию. Источник «Локально» показан в карточке и списке; синхронизация Mail.ru не меняет локальные записи.
-- Ссылка «+N событий» в месяце открывает список выбранного дня. Мини-календарь, стрелки и кнопка **Сегодня** помогают перемещаться по датам.
-- Компактные показатели под календарём относятся к выбранному дню. На странице «Аналитика» можно независимо выбрать день, неделю или месяц, сравнить план и подтверждённый факт, найти пропуски времени и отклонения.
-- На небольшом окне второстепенная панель скрывается и временная сетка становится плотнее. Окно при первом открытии подбирается под доступную область экрана.
-
-Данные, параметры подключения, пароль в хранилище Windows и существующий исходный план сохраняются. При первом запуске 0.8 база старого формата обновляется до схемы 4: исходная копия сохраняется в папке `backups` рядом с базой, затем схема меняется одной транзакцией с проверкой связей. Существующие события, исходный план, история и настройки сохраняются. Старые архивные ручные записи раннего прототипа остаются в архиве; новые локальные события учитываются отдельно. Дополнительные зависимости не нужны.
-
-## Работа с расписанием
-
-Создай расписание в Mail.ru. В приложении выбери дату и нажми **Обновить Mail.ru**. После согласования дня нажми **Зафиксировать план**. Двойной щелчок по строке открывает карточку для заполнения факта, статуса и комментария. Аналитика и история доступны на отдельных вкладках. Старые ручные записи остаются в истории и резервных копиях, но не участвуют в календаре, фиксации новых планов, показателях и CSV.
-
-Создание демонстрационного расписания удалено. При обновлении старые автоматически созданные примеры удаляются только при совпадении полного исторического следа генерации в журнале: создание 11 записей, фиксация плана и шесть изменений с исходными отметками. Перед очисткой автоматически сохраняется резервная копия. Похожие названия и отдельные записи без такого следа не удаляются. Данные Mail.ru исключены из очистки. Если после удаления примеров у даты не осталось реального исходного плана, снимается и фиксация демонстрационного дня.
-
-## Подключение Mail.ru
-
-1. Перед обновлением существующей версии создай резервную копию на вкладке **Настройки**. Загрузи новые исходники и снова выполни `python.exe -m pip install -e .` из своего виртуального окружения.
-2. Открой **Настройки → Календарь Mail.ru**.
-3. Вставь полную ссылку **CalDAV** из настроек своего календаря и полный адрес почты для входа.
-4. Введи **пароль внешнего приложения**, созданный в Mail.ru. Основной пароль почты не нужен. Пароль вводится только локально, не отправляется в чат или GitHub.
-5. Оставь часовой пояс **Europe/Moscow** для расписания в московском времени. События с UTC/TZID переводятся в этот пояс; события без часового пояса трактуются в нём. После первого импорта или создания локального события менять пояс в этой версии нельзя — это переинтерпретировало бы сохранённый план и факт.
-6. При желании включи сохранение пароля в **Диспетчере учётных данных Windows**. Без сохранения пароль живёт только до закрытия приложения. В Linux/macOS эта версия использует только память текущего запуска.
-7. Нажми **Сохранить подключение и обновить**. Результат или причина ошибки появится под кнопками и в верхней строке окна.
-
-Кнопка **Обновить Mail.ru** на вкладке «План / Факт» получает события за 30 дней до и 90 дней после выбранной даты, включая эту дату. Для другой даты выбери её и обнови снова. Можно включить обновление при запуске; периодического фонового опроса пока нет.
-
-### Как сохраняется план и факт
-
-- У каждого события стабильный ключ из календаря, учётной записи, UID и исходного RECURRENCE-ID. Повторная загрузка не создаёт дублей; перенос отдельного повтора сохраняет его идентичность.
-- Mail.ru управляет названием и текущим временем. Меняй их в исходном календаре; поля в импортированной карточке заблокированы.
-- Здесь заполняются категория, локальный статус, фактическое время и комментарий. Они переживают обновления. Явная отмена в Mail.ru меняет статус, если локальный статус/факт ещё не задан. Если факт уже заполнен, рядом с локальным статусом показывается отметка отмены источником.
-- Первоначальный план фиксируется отдельно кнопкой **Зафиксировать план** и больше не перезаписывается синхронизацией.
-- События без времени показываются как «весь день» и по умолчанию не входят в контроль выполнения. Они не занимают все часы рабочего дня и не добавляют 24 часа в первоначальный почасовой план.
-- Отсутствие события в ограниченном ответе сервера не доказывает удаление. Запись, её план и факт остаются с отметкой **проверить Mail.ru**. Это бывает и при переносе за пределы загружаемого периода. Явное удаление из локальной базы импортированных записей запрещено.
-- Ошибка сети, авторизации, XML или разбора события останавливает обновление до записи в базу. Отдельный случай `calendar-data 404` допускает частичную загрузку доступных записей с явным предупреждением; старое расписание сохраняется и проверка исчезновений отключается на этот запуск.
-
-### Первая проверка на своём календаре
-
-1. Создай в Mail.ru вымышленную встречу **Тест Director Calendar**, выбери её дату и обнови приложение.
-2. Обнови второй раз: запись должна остаться одна.
-3. Зафиксируй план на тестовую дату, перенеси встречу в Mail.ru и обнови: исходный план останется, актуальное время изменится.
-4. Заполни локальный факт и комментарий, снова измени встречу в Mail.ru: факт и комментарий должны сохраниться.
-5. Проверь ежедневный повтор и перенос одного его экземпляра. При отмене/удалении проверь соответствующую отметку источника.
-
-Проверки с вымышленными iCalendar-ответами не заменяют эту проверку сервера Mail.ru. При ошибке пришли только текст статуса без пароля.
-
-## GitHub и контроль версий
-
-Приватный репозиторий проекта: https://github.com/payuktv/director-calendar.
-Приложение называется Director Calendar. Python-пакет и прежний путь к базе DirectorControl сохраняются для совместимости.
-
-Для получения исходников в PowerShell:
+Normal users should use the standalone installer above. Source-based development uses Python **3.13 x64** and a separate virtual environment.
 
 ```powershell
 git clone https://github.com/payuktv/director-calendar.git
 cd director-calendar
-```
-
-Без Git: открой репозиторий, выбери **Code → Download ZIP**, распакуй архив и открой PowerShell в папке с `main.py` и `pyproject.toml`.
-Далее выполни команды из раздела «Запуск на Windows 10/11».
-
-Основная ветка `main` должна оставаться работоспособной. Новые функции — через `feature/...` и Pull Request; небольшие изменения — отдельными коммитами.
-Рабочая база данных, отчёты и резервные копии остаются локально и исключены через `.gitignore`.
-
-## Тесты
-
-```powershell
+py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe main.py
 ```
 
-В GitHub Actions файл `.github/workflows/ci.yml` запускает тесты при `push` и `pull_request`. Qt smoke-тест использует виртуальную (`offscreen`) графическую платформу.
+For a source-based desktop shortcut, run `create_desktop_shortcut.pyw` with the configured environment or use the shortcut button in Settings. If the source directory moves, recreate the shortcut. Source-based and installed launches use the same default database location.
 
-Набор тестов разделён по возможностям платформы. Общие проверки выполняются и в Windows, и в Linux. `tests/windows/test_shortcut.py` проверяет настоящий ярлык `.lnk`, Windows Shell, `pythonw.exe`, запуск приложения без консоли и путь с кириллицей. Эта проверка входит в Windows-набор и выполняется полностью; в Linux каталог `tests/windows` не собирается, поскольку Windows Shell там отсутствует. Это не замена реальной проверки имитацией или успешной заглушкой. Проверка отказа от создания Windows-ярлыка на неподдерживаемой платформе остаётся в общем наборе.
+The stack is PySide6/Qt Widgets, SQLite, requests, icalendar, recurring-ical-events and Windows Vault through keyring. Package metadata accepts Python 3.13–3.14, but CI and distribution builds currently use Python 3.13.
 
-CI сохраняет JUnit-отчёт и проверяет его отдельной командой. Любой пропуск, ошибка, отсутствующий или пустой отчёт делают проверку неуспешной. В Windows дополнительно требуется наличие и успешное завершение именно теста настоящего ярлыка: исключение этого теста из запуска не может дать зелёный результат CI. Отсутствие обязательной PySide6 теперь считается ошибкой установки зависимостей, а не поводом пропустить GUI-тест. Итоги публикуются в сводке задания GitHub Actions.
-
-Чтобы воспроизвести полную проверку в Windows:
+## Tests and Windows packaging
 
 ```powershell
+$env:QT_QPA_PLATFORM = 'offscreen'
+$env:DIRECTOR_CONTROL_DATA_DIR = Join-Path $env:TEMP 'director-calendar-tests'
+.\.venv\Scripts\python.exe -m ruff check director_control tests scripts --select F
 .\.venv\Scripts\python.exe -m pytest -q --junitxml=pytest-results.xml
 .\.venv\Scripts\python.exe scripts\verify_test_results.py pytest-results.xml --platform Windows
 ```
 
-В Linux используется тот же отчёт с `--platform Linux`; итог содержит только проверки, применимые к Linux, без пропущенных тестов Windows. Сам отчёт не изменяется проверяющим скриптом. Версия приложения остаётся 0.10.0: изменена инфраструктура тестирования, пользовательские функции и формат данных не меняются.
+The **Tests** workflow runs unit and GUI tests on Windows and Linux. Missing/empty JUnit reports, failures and skipped tests fail verification. Windows must include the native shortcut integration test. Linux excludes that Windows-only module during collection and uses `--platform Linux` for report verification.
 
-## Сборка Windows exe
+Build on Windows x64 with Python 3.13 and Inno Setup 6:
 
-Используется зафиксированная конфигурация PyInstaller и Inno Setup 6. На Windows x64 с Python 3.13 запусти `scripts/build_windows.ps1`. Получатся установщик и переносимая папка в ZIP. Ошибка любого этапа прерывает сборку.
+```powershell
+./scripts/build_windows.ps1
+```
 
-Workflow **Windows distribution** собирает текущую версию и предыдущую 0.10.0, проверяет установку, запуск, обновление, запрет установки при открытом приложении, повторную установку и сохранность данных после удаления. Только после успешной приёмки публикуется артефакт **DirectorCalendar-Windows-x64**. Подробности: [Windows-дистрибутив](docs/WINDOWS-DISTRIBUTION.md).
+Build dependencies are pinned in `packaging/requirements-windows.lock`. PyInstaller uses `packaging/director-calendar.spec`; Inno Setup uses `packaging/installer.iss`. Outputs are written to `dist/artifacts`.
 
-## Ограничения прототипа и следующие этапы
+**Windows distribution** builds the current source and actual v0.10.0 source for upgrade acceptance. It checks installation, GUI startup, update/reinstallation, downgrade/running-app protection, Unicode paths, backup behavior and preservation of data/credentials after uninstall. Bundled Qt, calendar parsing, time zones, TLS certificates and Vault are exercised. Artifacts are uploaded only after distribution acceptance passes; the separate Tests workflow must also be checked.
 
-- **CalDAV работает только на чтение одного календаря Mail.ru**. Обратной записи, автоклассификации категорий и выбора нескольких календарей нет. Замена подключённого календаря после первого импорта пока заблокирована во избежание смешения расписаний.
-- **Нет синхронизации между ПК**. SQLite предназначена для одного локального пользователя.
-- **Нет автоматического мониторинга без запущенного приложения**. Внешний фоновый сервис пока не реализован.
-- **Нет конструируемых отчётов и пользовательских полей**. Добавим по согласованным требованиям.
-- Повторы обрабатываются в ограниченном периоде. Секундные/минутные серии и события с нулевой либо неопределённой длительностью не поддерживаются: импорт останавливается с ошибкой, без изменения данных. После изменения целой серии часть старых экземпляров может потребовать ручной проверки.
-- При переносе мероприятия на другую дату оно видно как в дне первоначального плана, так и в дне актуального расписания. В периодной аналитике перенос зафиксированного события сохраняет связь с исходным планом: он не становится внеплановым только из-за смены даты.
-- План и факт хранятся в отображаемом часовом поясе без смещения в строках SQLite. TZID/UTC источника переводятся при импорте; смена часового пояса после первого импорта пока запрещена. Для автоматических процессов без запущенного приложения нужен отдельный сервис.
+Hosted runners still have Python installed, although the packaged child processes run without Python on PATH. These checks do not replace acceptance on a clean target Windows computer and the real Mail.ru account.
 
-## Аналитика за период
+## Version conventions
 
-Открой **Аналитика** и выбери **День**, **Неделя** или **Месяц**. Неделя — понедельник–воскресенье, месяц — с первого до последнего календарного дня. Стрелки переключают целый период; дата и «Сегодня» выбирают опорный день. Выбранные режим и участие неконтролируемых категорий сохраняются. Дата сначала следует за календарём; внутри аналитики можно выбрать другую дату. Поиск, вид и слой основного календаря не фильтруют отчёт. Кнопка обновления Mail.ru на странице аналитики использует её опорную дату.
+- Use **`vMAJOR.MINOR.PATCH`** in documentation, Git tags and release titles, for example **v0.12.0**.
+- Write version descriptions, release notes, commit messages and PR titles/descriptions in English.
+- Keep machine-readable package versions and `__version__` numeric (`0.12.0`). Installer filenames currently follow that numeric form; do not rename them in instructions.
+- Keep `pyproject.toml`, `director_control/__init__.py` and current-version documentation aligned when releasing an application change.
+- Documentation-only changes do not require an application version bump. Do not label a build **v1.0.0** until release acceptance is complete.
 
-- **Исполнение исходного плана**: число событий со статусом «Выполнено» / число событий зафиксированного плана, начавшихся в периоде. Частичные, отменённые, перенесённые и неподтверждённые остаются в знаменателе. Итог недели и месяца считается по всем событиям, а не усреднением дневных процентов. При отсутствии плана показано «—».
-- **Подтверждённое время**: сумма заполненных фактических интервалов событий «Выполнено» и «Частично». Плановое время не подставляется. Пересекающие полночь и границы отчёта интервалы делятся по дням с точностью до секунд. Задача исходного плана считается один раз по дате его начала. События на весь день могут участвовать в счётчике задач, но не создают 24 часа планового времени.
-- **Доля внеплановой работы**: подтверждённое время вне плана / всё подтверждённое время. Внеплановыми считаются локальные записи постфактум и события без исходного плана, день текущего начала которых уже зафиксирован. Любое событие с исходным планом остаётся плановым, в том числе перенесённое из другого периода. Если день не был зафиксирован, происхождение работы отмечается как неизвестное. Такое время входит в общий факт; доля внепланового показана с **≥** как нижняя оценка, а объём неизвестного времени указан отдельно. Без факта доля — «—».
-- **Отклонения начала и длительности**: фактическое начало минус исходное начало; фактическая длительность минус исходная длительность. В таблице плюс означает позже/дольше, минус — раньше/короче. В сводке — средние **абсолютные** отклонения: положительные и отрицательные не погашают друг друга. Выборка — выполненные и частичные события с полным планом и фактом, начало факта которых попадает в период, кроме исходных событий на весь день. По переносу из другого дня учитывается полный сдвиг. Сравнение использует полные интервалы, даже когда минуты графика обрезаны границей отчёта. Отклонение строго больше сохранённого допуска считается нарушением; равенство допустимо. Метка отклонения в основном списке использует то же правило начала и длительности.
-- **Выполнено без времени**: выполненные события без полного фактического интервала, кроме текущих событий на весь день. Они относятся к исходной дате, а при отсутствии исходного плана — к текущей. Нажми показатель, чтобы открыть список; двойной щелчок или Enter открывает карточку для заполнения. Изменение сразу обновляет отчёт. Частичные без времени не входят в этот счётчик и не создают часы.
+### Recent milestones
 
-По умолчанию отчёт включает только контролируемые категории. Для зафиксированных событий участие в контроле, категория плана и допуск берутся из сохранённого снимка правил; факт группируется по текущей категории. Переключатель позволяет включить все категории явно.
+| Version | Main change |
+| --- | --- |
+| v0.12.0 | Startup recovery from a verified backup with damaged originals preserved separately |
+| v0.11.0 | Standalone Windows installer/portable package and verified update backups |
+| v0.10.0 | Full-history pagination, search and readable change descriptions |
+| v0.9.0 | Daily/weekly/monthly analytics and period CSV exports |
+| v0.8.0 | Backup/restore controls, saved baseline rules, edit-conflict and single-instance protection |
+| v0.7.0 | Local planned events and post-factum unplanned work |
+| v0.6.0 | Desktop shortcut launch |
+| v0.5.0 | Light and dark themes |
 
-Вкладки **Динамика**, **По дням**, **Категории** и **События** дают переход от общей картины к записям. Нажатие на день графика или активация строки дня открывает события этого дня. Фильтры событий показывают пропуски факта, внеплановую работу, отклонения вне допуска и записи без зафиксированного плана. Эти фильтры и выбор дня внутри списка не меняют сводные показатели.
+Earlier implementation details remain available in the repository's commit and pull-request history.
 
-В отчёте указаны дни с фиксацией плана и, при подключённом Mail.ru, дни с полной загрузкой. Покрытие загрузки проверяется по последней попытке, покрывающей каждый день, для этого же календаря. Историческая загрузка не обязана быть моложе 30 минут; это показатель покрытия, а не гарантия актуальности источника. Частичные и неудачные попытки не считаются полными. Отдельно отмечены исчезнувшие/отменённые в источнике записи и пересечения факта. Время суммируется по событиям: повторно учтённые из-за пересечений минуты показаны явно, а не вычтены незаметно.
+## Limits and release readiness
 
-**CSV** экспортирует весь выбранный период и область категорий: строку «Итого» и каждый календарный день. Формат — UTF-8 с BOM, разделитель `;`, десятичная запятая. Неопределённые проценты и средние оставлены пустыми. Итоговые показатели качества и исходные числа позволяют проверить расчёт. Данные читаются одной транзакцией SQLite; формирование отчёта не фиксирует план, не заполняет факт и не меняет события.
+- One local user/database and one Mail.ru calendar; no multi-PC synchronization or calendar write-back.
+- Manual plan fixation; no automatic daily fixation or background service when the app is closed.
+- No periodic Mail.ru polling or automatic application update download.
+- Secondly/minutely recurrences and timed events with zero/undefined duration are unsupported. Invalid input stops parsing without applying the import. Series changes can require manual review of old occurrences.
+- The database stores local display-zone times without offsets; changing the zone after events exist is blocked.
+- No permanent release channel or Authenticode signing is configured yet. Clean Windows acceptance and real-account checks remain required before v1.0.0.
 
-## Поиск и просмотр истории
+## Data privacy and further documentation
 
-На странице **История** доступны все сохранённые записи. В таблицу загружается только выбранная страница: **по 50, 100 или 200 записей**. Кнопки **Старее**, **Новее** и **К началу** позволяют пройти весь журнал, включая записи старше прежних 300. Размер страницы сохраняется на этом компьютере. Приложение не удаляет историю при перелистывании и поиске.
+The SQLite database, audit history, CSV exports, backups and preserved recovery files can contain confidential schedule information. They are not encrypted by the application. Protect the Windows account, disk and backup location according to company policy. Passwords are not stored in SQLite; never commit databases, credentials or real calendar exports.
 
-**Поиск** проверяет весь журнал, а не только открытую страницу: название события или объекта, действие, понятное описание изменений и время записи. Регистр не важен; «е» и «ё» считаются одинаковыми. Несколько слов должны встретиться в одной записи, но могут находиться в разных частях описания. Например, `совещание выполнено` найдёт изменение статуса соответствующей встречи. Знаки `%`, `_`, кавычки и другие символы ищутся как обычный текст. Поиск применяется после короткой паузы при вводе или по Enter.
+- [Windows distribution details](docs/WINDOWS-DISTRIBUTION.md) — additional operational/build notes, currently in Russian.
+- [Original stack decision](docs/ADR-0001-stack.md) — historical rationale; the current packaging implementation uses PyInstaller.
+- [Mail.ru integration decision](docs/ADR-0002-mail-calendar.md) — protocol rationale and historical implementation notes.
 
-В поле **Событие** можно выбрать конкретную запись календаря или ввести часть названия. При выборе используется идентификатор события, поэтому одинаковые названия не смешиваются. Частичное название проверяется также по прежним названиям события и показывает всю его историю. Удалённые и архивные события помечены в списке; их записи остаются доступны. Для настроек и обслуживания есть отдельный вариант фильтра. Кнопка **По выбранной записи** устанавливает фильтр события из выделенной строки, сохраняя остальные условия.
-
-Включи **Дата изменения**, чтобы задать диапазон **С / По**. Обе даты включены. Это даты записей журнала, а не плановые даты встреч. По умолчанию ограничение по датам выключено. Поиск, даты и событие работают совместно; **Сбросить фильтры** возвращает весь журнал.
-
-Действия и поля показаны обычным языком: `actual_start` отображается как «Фактическое начало», статусы — по-русски, даты — в формате `дд.мм.гггг`, изменения — **было → стало**. Состояние источника не трактуется как подтверждённое удаление: запись «Нет в ответе Mail.ru» просит проверить источник. Изменения категорий, допуска времени, резервного копирования и восстановления тоже имеют понятные описания. Исходные данные журнала сохранены в прежнем виде, включая записи старых версий.
-
-**Двойной щелчок или Enter** открывает полное описание без ограничения высотой строки. Длинные комментарии отображаются обычным текстом. Кнопка **Открыть событие** доступна, пока локальное событие или запись Mail.ru существует в действующем календаре; удалённые и архивные записи можно читать без открытия карточки.
-
-При просмотре старых страниц новые записи не сдвигают строки: выбранная страница, выделение и прокрутка сохраняются. После обновления данных появляется число новых записей по текущим фильтрам. **Обновить** или **К началу** открывает свежие записи и сохраняет фильтры. При возвращении на первую страницу истории через навигацию показываются последние изменения. Чтение выполняется согласованным снимком SQLite; страницы идут по идентификаторам записей, поэтому одинаковое время изменения не создаёт пропусков и повторов. Данные Mail.ru продолжают использоваться только для чтения.
-
-## Конфиденциальность
-
-Не используй реальные ФИО, подробности личных встреч, пароли или документы директора при демонстрации проекта или публикации скриншотов. Резервные копии SQLite содержат полный журнал мероприятий. Программа пока не шифрует файл БД: соблюдай корпоративные правила доступа к ПК и диску (например, BitLocker), а резервные копии храни в защищённом месте.
-
+The application is named **Director Calendar**. The Python package name `director-control` and data directory `DirectorControl` remain unchanged for compatibility.
