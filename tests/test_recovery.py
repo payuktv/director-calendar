@@ -44,3 +44,26 @@ def test_failed_swap_keeps_original_and_sidecars(tmp_path, monkeypatch):
         recover_database(path, copy)
     assert path.read_bytes() == b'broken'
     assert wal.read_bytes() == b'wal'
+
+
+def test_newer_copy_is_rejected(tmp_path):
+    store = Store(tmp_path / 'future.db')
+    store.set_setting('app_last_version', '99.0.0')
+    source = create_backup(store)
+    target = tmp_path / 'live.db'
+    target.write_bytes(b'original')
+    with pytest.raises(ValueError, match='новой'):
+        recover_database(target, source)
+    assert target.read_bytes() == b'original'
+
+
+def test_cancel_recovery_dialog_preserves_original(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+    from director_control.recovery import offer_recovery
+    app = QApplication.instance() or QApplication([])
+    target = tmp_path / 'live.db'
+    target.write_bytes(b'original')
+    monkeypatch.setattr(QMessageBox, 'question', lambda *a: QMessageBox.StandardButton.No)
+    assert not offer_recovery(target, ValueError('broken'))
+    assert target.read_bytes() == b'original'
+    assert app is not None
