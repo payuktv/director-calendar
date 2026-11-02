@@ -8,10 +8,20 @@ from .storage import default_data_dir
 
 def main() -> int:
     try:
+        if len(sys.argv) == 3 and sys.argv[1] == '--verify-installation':
+            from .distribution_check import verify_installation
+            return verify_installation(sys.argv[2])
+        from .windows_lifecycle import hold_installer_mutex
+        hold_installer_mutex()
         from .ui import run_app
         return run_app()
     except Exception:
         details = traceback.format_exc()
+        if len(sys.argv) == 3 and sys.argv[1] == '--verify-installation':
+            import json
+            from pathlib import Path
+            Path(sys.argv[2]).write_text(json.dumps({'ok': False, 'error': details}), encoding='utf-8')
+            return 1
         message = "Не удалось открыть Director Calendar."
         try:
             log = default_data_dir() / "startup-error.log"
@@ -24,3 +34,4 @@ def main() -> int:
             sys.stderr.write(details)
         show_message(message, error=True)
         return 1
+

@@ -24,3 +24,6 @@ pysidedeploy.spec
 .idea/
 .vscode/
 pytest-results.xml
+
+
+.build-venv/
