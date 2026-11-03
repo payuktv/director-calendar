@@ -52,6 +52,19 @@ def test_exception_repr_and_str_are_never_called_and_operation_is_allowlisted(lo
     assert read(logs)[0]['exceptions'][0]['type'] == 'Dangerous'
 
 
+def test_hidden_provider_cause_keeps_type_without_private_message(logs):
+    from director_control.mail_calendar import CalendarError
+    try:
+        try:
+            raise ConnectionError('private-provider-url-and-password')
+        except ConnectionError:
+            raise CalendarError('Safe user-facing message') from None
+    except CalendarError as exc:
+        assert diagnostics.record_error('mail.fetch', exc)
+    assert [e['type'] for e in read(logs)[0]['exceptions']] == ['CalendarError', 'ConnectionError']
+    assert 'private-provider' not in logs.read_text()
+
+
 def test_sqlite_error_code_is_recorded_without_sql_or_database_content(logs, tmp_path):
     con = sqlite3.connect(tmp_path / 'private.db')
     try:

@@ -94,7 +94,9 @@ def exception_details(error, traceback=None):
             if type(value) is int and 0 <= value <= 65535:
                 detail[key] = value
         result.append(detail)
-        chained = current.__cause__ or (None if current.__suppress_context__ else current.__context__)
+        # ``from None`` hides sensitive provider messages in the UI. The type and
+        # code locations remain useful here because messages are never serialized.
+        chained = current.__cause__ if current.__cause__ is not None else current.__context__
         if chained is not None:
             pending.append((chained, None))
         if isinstance(current, BaseExceptionGroup):
