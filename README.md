@@ -1,4 +1,4 @@
-# Director Calendar — v0.12.0
+# Director Calendar — v0.12.1
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
@@ -29,12 +29,12 @@ Target platform: Windows 10/11 x64. Use the installer for normal use; Python, Po
 2. Select a successful run for the intended version on `main`. Also check that the **Tests** workflow passed for the same commit.
 3. Download the **DirectorCalendar-Windows-x64** artifact and extract it. Access to this private repository is required.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.12.0-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-0.12.1-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 The artifact includes the installer, portable ZIP, SHA-256 checksums, build/dependency information and a distribution acceptance report. Actions artifacts are retained for **30 days**; this is not yet a permanent release-download channel. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.12.0-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-0.12.1-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -124,7 +124,11 @@ Use **Settings → Data and backups** to choose a backup directory, create a man
 
 Retention removes only this database's old automatic copies. Manual, migration, update and safety copies are not automatically rotated. Consider a protected location on another disk for protection against loss of the working disk.
 
-Normal restoration validates the selected copy, creates a safety backup of the current database, prepares/migrates a separate staging database and replaces the live database only after validation. Restart the application after successful restoration. Use copies compatible with the installed version; startup also checks the stored application version.
+Normal restoration validates the selected copy, creates a safety backup of the current database, prepares/migrates a separate staging database and replaces the live database only after validation. Restart the application after successful restoration.
+
+Since **v0.12.1**, startup, normal restoration and emergency recovery use the same compatibility checks. A copy with a newer database schema or a newer recorded application version is rejected **before replacement**, even if its schema has not changed. The message identifies the recorded and installed application versions: update the application first or choose an older compatible copy. Invalid or empty version records are also rejected; legacy copies without a version record remain supported if their structure and data pass validation. Compatible older schemas are migrated only in staging.
+
+The staged database is checked again before migration and after preparation, so the actual file being installed must pass the same gate as startup. A rejected copy does not replace working events, history or settings. Database schema version and application version are separate checks; neither is inferred from the backup filename.
 
 ### Emergency recovery at startup — v0.12.0
 
@@ -182,9 +186,9 @@ Hosted runners still have Python installed, although the packaged child processe
 
 ## Version conventions
 
-- Use **`vMAJOR.MINOR.PATCH`** in documentation, Git tags and release titles, for example **v0.12.0**.
+- Use **`vMAJOR.MINOR.PATCH`** in documentation, Git tags and release titles, for example **v0.12.1**.
 - Write version descriptions, release notes, commit messages and PR titles/descriptions in English.
-- Keep machine-readable package versions and `__version__` numeric (`0.12.0`). Installer filenames currently follow that numeric form; do not rename them in instructions.
+- Keep machine-readable package versions and `__version__` numeric (`0.12.1`). Installer filenames currently follow that numeric form; do not rename them in instructions.
 - Keep `pyproject.toml`, `director_control/__init__.py` and current-version documentation aligned when releasing an application change.
 - Documentation-only changes do not require an application version bump. Do not label a build **v1.0.0** until release acceptance is complete.
 
@@ -192,6 +196,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v0.12.1 | Shared backup compatibility checks before normal/emergency restoration and on startup |
 | v0.12.0 | Startup recovery from a verified backup with damaged originals preserved separately |
 | v0.11.0 | Standalone Windows installer/portable package and verified update backups |
 | v0.10.0 | Full-history pagination, search and readable change descriptions |

@@ -10,6 +10,8 @@ import sqlite3
 import tempfile
 from zoneinfo import ZoneInfo
 
+from . import __version__
+
 SCHEMA_VERSION = 4
 
 
@@ -82,6 +84,32 @@ def _copy_database(source, target):
         # Make every snapshot a self-contained file, including sources in WAL mode.
         if dst.execute('PRAGMA journal_mode=DELETE').fetchone()[0].lower() != 'delete':
             raise ValueError('Не удалось подготовить автономный файл резервной копии.')
+
+
+def version_tuple(value):
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value):
+        raise ValueError('Некорректная сохранённая версия приложения. Выбери другую копию или обратись за помощью.')
+    return tuple(int(part) for part in value.split('.'))
+
+
+def validate_compatible_database(path, version=__version__):
+    """Shared read-only gate for startup and both restore paths; return the stored version.
+
+    A missing marker is supported for legacy copies. A present but invalid marker
+    is rejected. Snapshot creation remains structural-only so it can preserve data
+    without treating that snapshot as safe to open in this application version.
+    """
+    current = version_tuple(version)
+    validate_database(path)
+    with closing(_read_only(path)) as con:
+        row = con.execute("SELECT value FROM settings WHERE key='app_last_version'").fetchone()
+    if row is None:
+        return None
+    previous = row[0]
+    if version_tuple(previous) > current:
+        raise ValueError(f'База уже открывалась в более новой версии v{previous}; установлена v{version}. '
+                         'Сначала обнови приложение или выбери более старую совместимую копию.')
+    return previous
 
 
 def _temporary(folder):
@@ -174,18 +202,18 @@ def restore_backup(store, source):
     source = Path(source).resolve()
     if source == store.path.resolve():
         raise ValueError('Выбери резервную копию, а не открытую рабочую базу.')
-    validate_database(source)
+    validate_compatible_database(source)
     safety = create_backup(store, kind='before-restore')
     temporary = _temporary(store.path.parent)
     try:
         _copy_database(source, temporary)
-        validate_database(temporary)
+        validate_compatible_database(temporary)
         from .storage import Store
         staged = Store(temporary)
         with staged._connect() as con:
             staged._audit(con, None, 'База данных', 'Восстановление из копии',
                           {'копия': source.name, 'страховая копия': str(safety)})
-        validate_database(temporary)
+        validate_compatible_database(temporary)
         # No app worker may use the target while restoration runs. Checkpoint any
         # existing WAL before swapping the file, so old pages cannot reappear.
         con = sqlite3.connect(store.path, timeout=1)

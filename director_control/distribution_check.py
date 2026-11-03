@@ -12,6 +12,8 @@ def verify_installation(destination):
     from .desktop import app_icon_path, shortcut_spec
     from .storage import Store
     from .backups import create_backup, restore_backup
+    from .recovery import recover_database
+    from .updates import prepare_version_update, record_version
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QIcon
     from PySide6.QtCore import QTimer
@@ -41,10 +43,30 @@ def verify_installation(destination):
         app.setWindowIcon(QIcon(str(app_icon_path())))
         assert not app.windowIcon().isNull()
         store = Store(Path(temporary) / 'test.db')
+        record_version(store)
         eid = store.create_event('Synthetic', 'Работа', actual_start='2026-10-29T09:00:00', actual_end='2026-10-29T10:00:00')
         copy = create_backup(store)
         store.update_event(eid, note='change')
         restore_backup(store, copy)
+        assert prepare_version_update(store.path) is None
+        assert store.get_event(eid).note == ''
+        future = Store(Path(temporary) / 'future.db')
+        future.set_setting('app_last_version', '99.0.0')
+        incompatible = create_backup(future)
+        before = store.path.read_bytes()
+        for restore in (lambda: restore_backup(store, incompatible),
+                        lambda: recover_database(store.path, incompatible)):
+            try:
+                restore()
+            except ValueError as exc:
+                assert 'v99.0.0' in str(exc)
+            else:
+                raise AssertionError('An incompatible backup was accepted')
+            assert store.path.read_bytes() == before
+        store.path.write_bytes(b'synthetic damaged database')
+        recover_database(store.path, copy)
+        assert prepare_version_update(store.path) is None
+        store = Store(store.path)
         assert store.get_event(eid).note == ''
         window = MainWindow(store)
         window.show()
@@ -53,6 +75,7 @@ def verify_installation(destination):
         import sys
         report.update(ok=True, frozen=bool(getattr(sys, 'frozen', False)),
                       shortcut_target=str(shortcut_spec().target), icon=True,
-                      caldav_parse=True, vault=True, backup_restore=True, gui=True)
+                      caldav_parse=True, vault=True, backup_restore=True,
+                      backup_compatibility=True, emergency_restore=True, gui=True)
     destination.write_text(json.dumps(report), encoding='utf-8')
     return 0
