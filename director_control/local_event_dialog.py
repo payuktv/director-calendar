@@ -171,6 +171,8 @@ class LocalEventDialog(QDialog):
             self._saved = True
             self.accept()
         except Exception as exc:
+            from .diagnostics import record_error
+            record_error('ui.action', exc)
             self.error_label.setText(str(exc))
             self.error_label.show()
 
@@ -188,5 +190,8 @@ class LocalEventDialog(QDialog):
             self._saved = True
             self.accept()
         except Exception as exc:
+            from .diagnostics import record_error
+            record_error('ui.action', exc)
             self.error_label.setText(str(exc))
             self.error_label.show()
+

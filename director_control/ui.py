@@ -54,6 +54,8 @@ def interval(start: str | None, end: str | None) -> str:
 
 
 def error_box(parent: QWidget, exc: Exception) -> None:
+    from .diagnostics import record_error
+    record_error('ui.action', exc)
     QMessageBox.warning(parent, "Не удалось выполнить действие", str(exc))
 
 
@@ -662,6 +664,9 @@ class MainWindow(QMainWindow):
         self.backup_panel.notice.connect(self.mail_status.show)
         self.backup_panel.restored.connect(self._after_restore)
         v.addWidget(self.backup_panel)
+        from .diagnostics_ui import DiagnosticsPanel
+        self.diagnostics_panel = DiagnosticsPanel()
+        v.addWidget(self.diagnostics_panel)
         v.addStretch()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -909,6 +914,10 @@ def run_app() -> int:
     import sys
     QLocale.setDefault(QLocale(QLocale.Language.Russian))
     app = QApplication(sys.argv)
+    from . import diagnostics
+    from .diagnostics_ui import ErrorNotice
+    error_notice = ErrorNotice(app)
+    diagnostics.set_notifier(error_notice.raised.emit)
     instance = SingleInstance(default_data_dir() / 'director_control.db')
     if not instance.acquire():
         if not instance.notify():
@@ -923,6 +932,7 @@ def run_app() -> int:
         try:
             prepare_version_update(default_data_dir() / "director_control.db")
         except Exception as exc:
+            diagnostics.record_error('database.startup', exc)
             from .recovery import offer_recovery
             offer_recovery(default_data_dir() / "director_control.db", exc)
             return 1
@@ -940,5 +950,6 @@ def run_app() -> int:
         window.backup_panel.start()
         return app.exec()
     finally:
+        diagnostics.set_notifier(None)
         instance.close()
 

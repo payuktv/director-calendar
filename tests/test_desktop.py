@@ -82,8 +82,9 @@ def test_startup_failure_without_stderr_is_logged_and_shown(tmp_path, monkeypatc
     messages = []
     monkeypatch.setattr(launcher, "show_message", lambda message, **kw: messages.append((message, kw)))
     assert launcher.main() == 1
-    log = data / "startup-error.log"
-    assert "Test missing dependency" in log.read_text(encoding="utf-8")
+    log = data / 'logs' / 'director-calendar.log'
+    assert 'ModuleNotFoundError' in log.read_text(encoding='utf-8')
+    assert 'Test missing dependency' not in log.read_text(encoding='utf-8')
     assert str(log) in messages[0][0] and messages[0][1]["error"]
 
 
@@ -121,3 +122,4 @@ def test_app_icon_contains_small_and_large_valid_images():
     assert not icon.isNull()
     for size in (16, 32, 48, 256):
         assert not icon.pixmap(size, size).isNull()
+

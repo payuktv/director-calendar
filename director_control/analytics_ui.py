@@ -388,6 +388,8 @@ class AnalyticsPage(QScrollArea):
         try:
             self.report = self.store.analytics_report(self.anchor, self.mode, self.only_tracked.isChecked())
         except Exception as exc:
+            from .diagnostics import record_error
+            record_error('analytics.calculate', exc)
             self.report = None
             self.quality.setText('Не удалось рассчитать аналитику: ' + str(exc))
             for card in self.cards.values():
@@ -522,4 +524,7 @@ class AnalyticsPage(QScrollArea):
             try:
                 export_report(self.report, path)
             except Exception as exc:
+                from .diagnostics import record_error
+                record_error('analytics.export', exc)
                 QMessageBox.warning(self, 'Не удалось сохранить аналитику', str(exc))
+

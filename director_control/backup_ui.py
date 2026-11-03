@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from .backups import backup_folder, create_backup, restore_backup, save_backup_settings, scheduled_backup
 from .inspector import plain_label
+from .diagnostics import record_error
 
 
 class BackupWorker(QThread):
@@ -26,6 +27,7 @@ class BackupWorker(QThread):
             else:
                 self.result = scheduled_backup(self.store)
         except Exception as exc:
+            record_error({'restore': 'backup.restore', 'manual': 'backup.manual'}.get(self.action, 'backup.auto'), exc)
             self.error = str(exc)
 
 
@@ -130,6 +132,7 @@ class BackupPanel(QGroupBox):
             self.status.setText('Настройки копирования сохранены.')
             self.check()
         except Exception as exc:
+            record_error('backup.settings', exc)
             QMessageBox.warning(self, 'Резервные копии', str(exc))
 
     def make_manual(self):
@@ -186,3 +189,4 @@ class BackupPanel(QGroupBox):
             QMessageBox.information(self, 'Резервная копия создана', str(result))
         else:
             self.refresh()
+

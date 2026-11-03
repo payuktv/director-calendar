@@ -6,6 +6,7 @@ import tempfile
 from uuid import uuid4
 
 from .backups import validate_compatible_database, _copy_database, _cleanup_temporary
+from .diagnostics import record_error
 
 
 def recover_database(database, source):
@@ -71,6 +72,7 @@ def offer_recovery(database, error):
     try:
         archive = recover_database(database, source)
     except Exception as exc:
+        record_error('recovery.restore', exc)
         QMessageBox.warning(None, 'Восстановление не выполнено', str(exc))
         return False
     QMessageBox.information(None, 'База восстановлена',

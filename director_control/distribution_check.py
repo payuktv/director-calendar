@@ -7,6 +7,7 @@ from uuid import uuid4
 
 
 def verify_installation(destination):
+    from . import diagnostics
     from . import __version__
     from .mail_calendar import CalendarConfig, parse_calendars
     from .desktop import app_icon_path, shortcut_spec
@@ -25,7 +26,7 @@ def verify_installation(destination):
     report = {'version': __version__, 'ok': False}
     # Resolve before any working-directory changes. This command never opens the user's DB.
     destination = Path(destination).resolve()
-    with tempfile.TemporaryDirectory(prefix='DirectorCalendar-check-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='DirectorCalendar-check-') as temporary, diagnostics.session(Path(temporary) / 'logs'):
         os.environ['DIRECTOR_CONTROL_DATA_DIR'] = temporary
         assert ZoneInfo('Europe/Moscow')
         assert Path(certifi.where()).is_file()
@@ -42,6 +43,13 @@ def verify_installation(destination):
         app = QApplication.instance() or QApplication([])
         app.setWindowIcon(QIcon(str(app_icon_path())))
         assert not app.windowIcon().isNull()
+        try:
+            raise RuntimeError('synthetic-password-must-not-be-logged')
+        except RuntimeError as exc:
+            assert diagnostics.record_error('diagnostics.self_test', exc)
+        logged = diagnostics.log_path().read_text(encoding='utf-8')
+        assert 'synthetic-password-must-not-be-logged' not in logged
+        assert json.loads(logged.splitlines()[-1])['exceptions'][0]['type'] == 'RuntimeError'
         store = Store(Path(temporary) / 'test.db')
         record_version(store)
         eid = store.create_event('Synthetic', 'Работа', actual_start='2026-10-29T09:00:00', actual_end='2026-10-29T10:00:00')
@@ -70,12 +78,19 @@ def verify_installation(destination):
         assert store.get_event(eid).note == ''
         window = MainWindow(store)
         window.show()
+        diagnostics.install_hooks()
+        def synthetic_slot_error():
+            raise RuntimeError('synthetic-gui-password-must-not-be-logged')
+        QTimer.singleShot(0, synthetic_slot_error)
         QTimer.singleShot(500, window.close)
         app.exec()
+        logged = diagnostics.log_path().read_text(encoding='utf-8')
+        assert 'synthetic-gui-password-must-not-be-logged' not in logged
+        assert any(json.loads(line)['operation'] == 'uncaught.gui' for line in logged.splitlines())
         import sys
         report.update(ok=True, frozen=bool(getattr(sys, 'frozen', False)),
                       shortcut_target=str(shortcut_spec().target), icon=True,
                       caldav_parse=True, vault=True, backup_restore=True,
-                      backup_compatibility=True, emergency_restore=True, gui=True)
+                      backup_compatibility=True, emergency_restore=True, runtime_logging=True, gui=True)
     destination.write_text(json.dumps(report), encoding='utf-8')
     return 0

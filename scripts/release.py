@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP = {'tag': 'v0.10.0', 'version': '0.10.0',
              'sha': 'a7e524281a3026d501eb7232d68008f09700e3c3', 'bootstrap': True}
 REQUIRED_CHECKS = ('ok', 'frozen', 'icon', 'caldav_parse', 'vault', 'backup_restore',
-                   'backup_compatibility', 'emergency_restore', 'gui', 'source_to_exe',
+                   'backup_compatibility', 'emergency_restore', 'runtime_logging', 'gui', 'source_to_exe',
                    'old_to_new', 'reinstall', 'uninstall_preserves_data', 'running_app_protected',
                    'downgrade_rejected', 'no_python_on_path', 'unicode_install_path')
 
