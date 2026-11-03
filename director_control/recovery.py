@@ -5,9 +5,7 @@ import shutil
 import tempfile
 from uuid import uuid4
 
-from .backups import validate_database, _copy_database, _cleanup_temporary
-from .updates import version_tuple
-from . import __version__
+from .backups import validate_compatible_database, _copy_database, _cleanup_temporary
 
 
 def recover_database(database, source):
@@ -15,24 +13,19 @@ def recover_database(database, source):
     database, source = Path(database).resolve(), Path(source).resolve()
     if source == database:
         raise ValueError('Выбери резервную копию, а не рабочую базу.')
-    validate_database(source)
-    from contextlib import closing
-    import sqlite3
-    with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as con:
-        row = con.execute("SELECT value FROM settings WHERE key='app_last_version'").fetchone()
-    if row and version_tuple(row[0]) > version_tuple(__version__):
-        raise ValueError('Копия создана более новой версией приложения.')
+    validate_compatible_database(source)
     descriptor, name = tempfile.mkstemp(prefix='.recovery-', suffix='.db', dir=database.parent)
     os.close(descriptor)
     staged = Path(name)
     moved = []
     try:
         _copy_database(source, staged)
+        validate_compatible_database(staged)
         store = Store(staged)
         with store._connect() as con:
             store._audit(con, None, 'База данных', 'Восстановление из копии',
                          {'копия': source.name})
-        validate_database(staged)
+        validate_compatible_database(staged)
         archive = database.parent / 'recovery' / uuid4().hex
         archive.mkdir(parents=True)
         # Preserve exact bytes even when SQLite cannot read the damaged database.
