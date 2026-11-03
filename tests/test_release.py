@@ -184,6 +184,22 @@ def test_retry_replaces_only_same_commit_draft_assets(tmp_path):
     assert api.release['draft'] is False
 
 
+@pytest.mark.parametrize('change', ['missing-asset', 'moved-tag'])
+def test_final_remote_state_is_checked_before_publication(tmp_path, change):
+    class Changed(FakeGitHub):
+        def request(self, path, method='GET', data=None, **options):
+            result = super().request(path, method, data, **options)
+            if path == 'releases/1/assets?per_page=100' and len(self.assets) == 8:
+                if change == 'missing-asset':
+                    return result[:-1]
+                self.tags['v' + VERSION] = OLD_SHA
+            return result
+    api = Changed()
+    with pytest.raises(ValueError, match='remains a draft'):
+        publish(api, bundle(tmp_path))
+    assert api.release['draft'] is True
+
+
 @pytest.mark.parametrize('kind', ['tag', 'draft', 'main'])
 def test_source_conflict_prevents_all_writes(tmp_path, kind):
     api = FakeGitHub()
