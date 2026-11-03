@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from .credentials import Credentials
+from .diagnostics import record_error
 from .mail_calendar import CalendarConfig, CalendarError, fetch_snapshot, window_for_day
 
 
@@ -32,8 +33,10 @@ class SyncThread(QThread):
         try:
             self.snapshot_ready.emit(fetch_snapshot(self.config, self.password, *window_for_day(self.day)))
         except CalendarError as exc:
+            record_error('mail.fetch', exc)
             self.failed.emit(str(exc))
         except Exception:
+            record_error('mail.fetch')
             self.failed.emit("Не удалось обновить календарь. Локальные данные сохранены.")
         finally:
             self.password = ""
@@ -120,6 +123,7 @@ class MailPanel(QGroupBox):
             try:
                 self.store.record_sync_failure(config.calendar_key, start, end)
             except Exception:
+                record_error('mail.record_failure')
                 text += ' Не удалось сохранить результат попытки обновления.'
         self.show_status(text)
 
@@ -160,6 +164,7 @@ class MailPanel(QGroupBox):
         except CalendarError as exc:
             self.show_status(str(exc))
         except Exception:
+            record_error('mail.configure')
             self.show_status("Не удалось сохранить подключение. Проверь настройки и повтори.")
 
     def sync(self):
@@ -187,6 +192,7 @@ class MailPanel(QGroupBox):
         except CalendarError as exc:
             self.sync_failed(str(exc))
         except Exception:
+            record_error('mail.start')
             if self.worker is not None and not self.worker.isRunning():
                 self.worker.deleteLater()
                 self.worker = None
@@ -207,6 +213,7 @@ class MailPanel(QGroupBox):
                                  "Прежние записи сохранены, исчезновения не проверялись. " + snapshot.unavailable[0])
             self.changed.emit()
         except Exception:
+            record_error('mail.apply')
             self.sync_failed("Не удалось сохранить обновление. Предыдущие данные сохранены.")
 
     def set_controls(self, enabled):
@@ -219,3 +226,4 @@ class MailPanel(QGroupBox):
         self.worker.deleteLater()
         self.worker = None
         self.busy_changed.emit(False)
+

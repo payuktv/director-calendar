@@ -246,6 +246,8 @@ class HistoryPage(QWidget):
         try:
             self._load_event_options()
         except Exception as exc:
+            from .diagnostics import record_error
+            record_error('history.load', exc)
             self._failed(exc)
             return
         # Keep older pages stable while new entries arrive. At the first page,
@@ -274,6 +276,8 @@ class HistoryPage(QWidget):
                 before_id=self.cursors[self.page_index], ceiling_id=self.ceiling,
                 limit=self.page_size.currentData())
         except Exception as exc:
+            from .diagnostics import record_error
+            record_error('history.load', exc)
             self._failed(exc)
             return
         self.page, self.rows, self.ceiling, self.dirty = page, list(page.rows), page.ceiling_id, False
@@ -367,3 +371,4 @@ class HistoryPage(QWidget):
             dialog.deleteLater()
             if accepted and event_id is not None:
                 self.open_requested.emit(event_id)
+

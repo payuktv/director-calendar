@@ -1,4 +1,4 @@
-# Director Calendar — v0.12.1
+# Director Calendar — v0.13.0
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
@@ -25,16 +25,16 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.12.1](https://github.com/payuktv/director-calendar/releases/tag/v0.12.1)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.0](https://github.com/payuktv/director-calendar/releases/tag/v0.13.0)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.12.1-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-0.13.0-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; temporary Actions artifacts are still retained for **30 days** for CI inspection. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.12.1-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-0.13.0-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -142,7 +142,19 @@ If the startup database check fails, the error dialog offers recovery without op
 
 The application retains its single-instance database lock during this process. Cancellation, invalid copies and preparation/archive failures do not replace the working database. The replacement failure path restores moved sidecar files. Keep preserved originals until the result has been checked. This feature restores a backup; it does not reconstruct records absent from that backup or repair a damaged file in place.
 
-Other startup failures are reported through the normal startup error message and `startup-error.log` when the log can be written.
+Other startup failures are reported through the normal startup error message and the diagnostic log below when it can be written.
+
+## Error diagnostics — v0.13.0
+
+Open **Settings → Diagnostics** to open the local log folder or copy the log path. The default is `%LOCALAPPDATA%\DirectorControl\logs\director-calendar.log`; a custom `DIRECTOR_CONTROL_DATA_DIR` also changes the log location. No files are uploaded automatically.
+
+The log covers startup/database checks, unhandled Python/Qt-slot errors, Python thread and unraisable errors, and handled failures in Mail.ru, credential storage, backup/recovery, history, analytics, exports and event operations. An unhandled runtime error also displays a generic notice: the last action may not have completed, so check its result and restart the application.
+
+Records contain UTC time, application version, OS, a fixed operation code, exception types, numeric OS/SQLite error codes and bounded code locations. Exception messages, source lines, local variables, calendar contents, CalDAV addresses and credentials are deliberately omitted; this reduces diagnostic detail but avoids copying confidential values into the log. Third-party/root logger output is not collected.
+
+Rotation retains the current file and three older files (`.1`–`.3`), each approximately 1 MiB. Logging failures do not interrupt the original operation or print raw exception data to stderr. Settings reports when logging is unavailable. Native process crashes, forced termination and power loss may not produce a Python error record.
+
+The log is separate from the database change history and SQLite backups. Existing `startup-error.log` files from older versions are not rewritten or removed; v0.13.0 stops adding raw tracebacks to that legacy file. Share only the new diagnostic files when investigating a problem.
 
 ## Development and source-based launch
 
@@ -188,9 +200,9 @@ Hosted runners still have Python installed, although the packaged child processe
 
 ## Version conventions
 
-- Use **`vMAJOR.MINOR.PATCH`** in documentation, Git tags and release titles, for example **v0.12.1**.
+- Use **`vMAJOR.MINOR.PATCH`** in documentation, Git tags and release titles, for example **v0.13.0**.
 - Write version descriptions, release notes, commit messages and PR titles/descriptions in English.
-- Keep machine-readable package versions and `__version__` numeric (`0.12.1`). Installer filenames currently follow that numeric form; do not rename them in instructions.
+- Keep machine-readable package versions and `__version__` numeric (`0.13.0`). Installer filenames currently follow that numeric form; do not rename them in instructions.
 - Keep `pyproject.toml`, `director_control/__init__.py` and current-version documentation aligned when releasing an application change.
 - Documentation-only changes do not require an application version bump. Do not label a build **v1.0.0** until release acceptance is complete.
 
@@ -198,6 +210,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v0.13.0 | Bounded runtime error diagnostics with private values omitted and local log access in Settings |
 | v0.12.1 | Shared backup compatibility checks before normal/emergency restoration and on startup |
 | v0.12.0 | Startup recovery from a verified backup with damaged originals preserved separately |
 | v0.11.0 | Standalone Windows installer/portable package and verified update backups |
