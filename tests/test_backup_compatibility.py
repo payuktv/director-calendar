@@ -9,6 +9,9 @@ from director_control import __version__, backups, recovery, storage, updates
 from director_control.storage import Store
 from tests.test_local_events import old_database
 
+MAJOR, MINOR, PATCH = (int(part) for part in __version__.split('.'))
+NEWER_VERSIONS = [f'{MAJOR + 1}.0.0', f'{MAJOR}.{MINOR + 1}.0', f'{MAJOR}.{MINOR}.{PATCH + 1}']
+
 
 def set_marker(path, value):
     with closing(sqlite3.connect(path)) as con:
@@ -23,7 +26,7 @@ def run_restore(mode, store, source):
 
 
 @pytest.mark.parametrize('mode', ['startup', 'normal', 'emergency'])
-@pytest.mark.parametrize('marker', ['99.0.0', '0.99.0', '0.12.999', '', 'invalid', '0.12',
+@pytest.mark.parametrize('marker', NEWER_VERSIONS + ['', 'invalid', '0.12',
                                     'v0.12.0', '0.12.1rc1', b'0.12.0'])
 def test_incompatible_marker_rejected_without_touching_originals(tmp_path, mode, marker):
     source = Store(tmp_path / 'source.db').path
@@ -41,7 +44,7 @@ def test_incompatible_marker_rejected_without_touching_originals(tmp_path, mode,
             updates.prepare_version_update(source)
         else:
             run_restore(mode, store, source)
-    if marker in ('99.0.0', '0.99.0', '0.12.999'):
+    if marker in NEWER_VERSIONS:
         assert f'v{marker}' in str(error.value) and f'v{__version__}' in str(error.value)
     assert source.read_bytes() == source_bytes
     assert {p: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()} == before
