@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: ['releases/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: director-calendar-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Validate version, notes and existing tag
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release.py prepare
+
+  tests:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  distribution:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    uses: ./.github/workflows/windows-build.yml
+
+  publish:
+    needs: [prepare, tests, distribution]
+    if: needs.prepare.outputs.publish == 'true' && needs.tests.result == 'success' && needs.distribution.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v5
+        with:
+          name: DirectorCalendar-Windows-x64
+          path: release-assets
+      - name: Verify files and publish the complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TESTS_RESULT: ${{ needs.tests.result }}
+          RELEASE_DISTRIBUTION_RESULT: ${{ needs.distribution.result }}
+        run: python scripts/release.py publish --assets release-assets
