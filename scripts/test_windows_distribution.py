@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import tomllib
 from time import monotonic, sleep
 from uuid import uuid4
 
@@ -106,6 +107,8 @@ def main(previous_root, output):
     from keyring.backends.Windows import WinVaultKeyring
     from director_control import __version__
     from director_control.storage import default_data_dir
+    previous_version = tomllib.loads((previous_root / 'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
+    previous_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=previous_root, text=True).strip()
     old_setup = next((previous_root / 'dist/artifacts').glob('*Setup-x64.exe'))
     new_setup = ROOT / f'dist/artifacts/DirectorCalendar-{__version__}-Setup-x64.exe'
     vault = WinVaultKeyring()
@@ -126,7 +129,9 @@ def main(previous_root, output):
             # Seed with the actual previous revision's storage, like an existing Python installation.
             seed = """
 from director_control.storage import Store
+from director_control import __version__
 s=Store()
+s.set_setting('app_last_version', __version__)
 e=s.create_event('Synthetic plan', 'Работа', '2026-10-29T09:00:00','2026-10-29T10:00:00',actual_start='2026-10-29T09:05:00',actual_end='2026-10-29T10:05:00',status='done',note='preserve')
 s.freeze_day('2026-10-29')
 s.create_event('Synthetic unplanned','Работа',actual_start='2026-10-29T12:00:00',actual_end='2026-10-29T12:30:00')
@@ -186,7 +191,8 @@ s.set_setting('ui_calendar_view','month')
             uninstall(install, env)
             report.update(check, source_to_exe=True, old_to_new=True, reinstall=True, uninstall_preserves_data=True,
                           running_app_protected=True, downgrade_rejected=True, no_python_on_path=True,
-                          default_data_directory=str(default_data_dir()), unicode_install_path=True)
+                          default_data_directory=str(default_data_dir()), unicode_install_path=True,
+                          previous_version=previous_version, previous_commit=previous_commit)
     finally:
         vault.delete_password('DirectorControl.CalDAV', key)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')

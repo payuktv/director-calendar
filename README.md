@@ -25,14 +25,14 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [Windows distribution in GitHub Actions](https://github.com/payuktv/director-calendar/actions/workflows/windows-build.yml).
-2. Select a successful run for the intended version on `main`. Also check that the **Tests** workflow passed for the same commit.
-3. Download the **DirectorCalendar-Windows-x64** artifact and extract it. Access to this private repository is required.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.12.1](https://github.com/payuktv/director-calendar/releases/tag/v0.12.1)**.
+2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
+3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
 5. Run `DirectorCalendar-0.12.1-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
-The artifact includes the installer, portable ZIP, SHA-256 checksums, build/dependency information and a distribution acceptance report. Actions artifacts are retained for **30 days**; this is not yet a permanent release-download channel. Installers are not currently Authenticode-signed.
+Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; temporary Actions artifacts are still retained for **30 days** for CI inspection. Installers are not currently Authenticode-signed.
 
 For portable use, extract the **entire** `DirectorCalendar-0.12.1-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
@@ -180,7 +180,9 @@ Build on Windows x64 with Python 3.13 and Inno Setup 6:
 
 Build dependencies are pinned in `packaging/requirements-windows.lock`. PyInstaller uses `packaging/director-calendar.spec`; Inno Setup uses `packaging/installer.iss`. Outputs are written to `dist/artifacts`.
 
-**Windows distribution** builds the current source and actual v0.10.0 source for upgrade acceptance. It checks installation, GUI startup, update/reinstallation, downgrade/running-app protection, Unicode paths, backup behavior and preservation of data/credentials after uninstall. Bundled Qt, calendar parsing, time zones, TLS certificates and Vault are exercised. Artifacts are uploaded only after distribution acceptance passes; the separate Tests workflow must also be checked.
+**Windows distribution** builds the current source and the highest published version below it for upgrade acceptance, including published pre-releases. Until the first release, it uses the pinned v0.10.0 bootstrap revision. It checks installation, GUI startup, update/reinstallation, downgrade/running-app protection, Unicode paths, backup behavior and preservation of data/credentials after uninstall. Bundled Qt, calendar parsing, time zones, TLS certificates and Vault are exercised. Artifacts are uploaded only after distribution acceptance passes.
+
+**Release** reuses both the Tests and Windows distribution workflows at its own source commit and publishes their verified Windows artifact only when both succeed. Add English notes under `releases/vMAJOR.MINOR.PATCH.md` and merge into `main` to start a release, or run Release manually from Actions on `main`. Tags and published files are never overwritten by this process. See [release procedure and retry rules](docs/RELEASING.md).
 
 Hosted runners still have Python installed, although the packaged child processes run without Python on PATH. These checks do not replace acceptance on a clean target Windows computer and the real Mail.ru account.
 
@@ -215,13 +217,14 @@ Earlier implementation details remain available in the repository's commit and p
 - No periodic Mail.ru polling or automatic application update download.
 - Secondly/minutely recurrences and timed events with zero/undefined duration are unsupported. Invalid input stops parsing without applying the import. Series changes can require manual review of old occurrences.
 - The database stores local display-zone times without offsets; changing the zone after events exist is blocked.
-- No permanent release channel or Authenticode signing is configured yet. Clean Windows acceptance and real-account checks remain required before v1.0.0.
+- Authenticode signing is not configured yet. Clean Windows acceptance and real-account checks remain required before v1.0.0.
 
 ## Data privacy and further documentation
 
 The SQLite database, audit history, CSV exports, backups and preserved recovery files can contain confidential schedule information. They are not encrypted by the application. Protect the Windows account, disk and backup location according to company policy. Passwords are not stored in SQLite; never commit databases, credentials or real calendar exports.
 
 - [Windows distribution details](docs/WINDOWS-DISTRIBUTION.md) — additional operational/build notes, currently in Russian.
+- [Release procedure](docs/RELEASING.md) — publication gates, previous-version selection and retries.
 - [Original stack decision](docs/ADR-0001-stack.md) — historical rationale; the current packaging implementation uses PyInstaller.
 - [Mail.ru integration decision](docs/ADR-0002-mail-calendar.md) — protocol rationale and historical implementation notes.
 
