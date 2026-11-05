@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterator
+from zoneinfo import ZoneInfo
 
 from .provenance import work_origin
 
@@ -666,7 +667,7 @@ class Store:
 
     def apply_calendar_snapshot(self, snapshot) -> dict[str, int]:
         """Atomically upsert source data; baseline, local fact, category and notes survive."""
-        stats = {"added": 0, "updated": 0, "missing": 0}
+        stats = {"added": 0, "updated": 0, "missing": 0, "withdrawn": 0}
         seen = set()
         # Validate before starting; on any failure the transaction also rolls back.
         for event in snapshot.events:
@@ -675,6 +676,9 @@ class Store:
                 raise ValueError("Повторный идентификатор события в ответе календаря")
             seen.add(event.key)
         with self._connect() as con:
+            con.execute('BEGIN IMMEDIATE')
+            zone = con.execute("SELECT value FROM settings WHERE key='mail_timezone'").fetchone()
+            calendar_now = datetime.now(ZoneInfo(zone[0] if zone else 'Europe/Moscow')).replace(tzinfo=None).isoformat()
             con.execute("INSERT OR IGNORE INTO categories VALUES ('Mail.ru', '#55A7D9', 1)")
             con.execute("INSERT OR IGNORE INTO categories VALUES ('Весь день (Mail.ru)', '#8B9EA4', 0)")
             for event in snapshot.events:
@@ -713,12 +717,31 @@ class Store:
                     con.execute("UPDATE calendar_events SET missing=0, cancelled=?, all_day=? WHERE event_id=?",
                                 (int(event.cancelled), int(event.all_day), event_id))
             # Absence in a bounded query does not prove deletion (e.g. moved outside the window).
-            rows = con.execute("""SELECT e.id, e.title, e.external_key FROM events e
-                JOIN calendar_events m ON m.event_id=e.id WHERE m.calendar_key=? AND m.missing=0
+            rows = con.execute("""SELECT e.*, m.missing, m.local_status FROM events e
+                JOIN calendar_events m ON m.event_id=e.id WHERE m.calendar_key=?
                 AND e.current_start>=? AND e.current_start<?""",
                 (snapshot.calendar_key, snapshot.start, snapshot.end)).fetchall() if snapshot.complete else []
             for row in rows:
                 if row["external_key"] not in seen:
+                    frozen = con.execute('''SELECT 1 FROM day_freezes
+                        WHERE day>=substr(?,1,10) AND day || 'T00:00:00'<? LIMIT 1''',
+                        (row['current_start'], row['current_end'])).fetchone()
+                    if (row['source'] == 'caldav' and row['current_start'] > calendar_now
+                            and not frozen and not row['baseline_start'] and not row['baseline_end']
+                            and not row['actual_start'] and not row['actual_end']
+                            and not row['local_status'] and row['status'] in ('pending', 'cancelled')
+                            and not row['note']):
+                        # Retain identity and audit; a later source response restores this row.
+                        con.execute('''UPDATE events SET current_start=NULL, current_end=NULL,
+                            revision=revision+1, updated_at=? WHERE id=?''', (now_iso(), row['id']))
+                        con.execute('UPDATE calendar_events SET missing=1 WHERE event_id=?', (row['id'],))
+                        self._audit(con, row['id'], row['title'], 'Убрано из актуального плана Mail.ru', {
+                            'current_start': {'было': row['current_start'], 'стало': None},
+                            'current_end': {'было': row['current_end'], 'стало': None}})
+                        stats['withdrawn'] += 1
+                        continue
+                    if row['missing']:
+                        continue
                     con.execute("UPDATE calendar_events SET missing=1 WHERE event_id=?", (row["id"],))
                     con.execute('UPDATE events SET revision=revision+1 WHERE id=?', (row['id'],))
                     self._audit(con, row["id"], row["title"], "Нет в ответе Mail.ru", {"требует проверки": True})
@@ -729,7 +752,9 @@ class Store:
                          'complete' if snapshot.complete else 'partial', now_iso()))
             con.execute("INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                         (sync_key, now_iso()))
-            stats["missing"] = con.execute("SELECT count(*) FROM calendar_events WHERE calendar_key=? AND missing=1",
+            stats["missing"] = con.execute("""SELECT count(*) FROM calendar_events m JOIN events e ON e.id=m.event_id
+                WHERE calendar_key=? AND missing=1 AND (current_start IS NOT NULL
+                OR baseline_start IS NOT NULL OR actual_start IS NOT NULL)""",
                                            (snapshot.calendar_key,)).fetchone()[0]
         return stats
 

@@ -54,8 +54,15 @@ def validate_database(path):
             for table, required_columns in columns.items():
                 if not required_columns <= {row[1] for row in con.execute('PRAGMA table_info(' + table + ')')}:
                     raise ValueError('В копии отсутствуют обязательные поля приложения.')
-            for row in con.execute('SELECT current_start,current_end,baseline_start,baseline_end,actual_start,actual_end,status,source FROM events'):
-                if not row[0] and not row[4]:
+            withdrawn = {r[0] for r in con.execute('''SELECT e.id FROM events e
+                JOIN calendar_events m ON m.event_id=e.id WHERE e.source='caldav' AND m.missing=1
+                AND e.current_start IS NULL AND e.current_end IS NULL
+                AND e.baseline_start IS NULL AND e.baseline_end IS NULL
+                AND e.actual_start IS NULL AND e.actual_end IS NULL
+                AND EXISTS (SELECT 1 FROM audit a WHERE a.event_id=e.id
+                    AND a.action='Убрано из актуального плана Mail.ru')''')} if 'calendar_events' in tables else set()
+            for row in con.execute('SELECT current_start,current_end,baseline_start,baseline_end,actual_start,actual_end,status,source,id FROM events'):
+                if not row[0] and not row[4] and row[8] not in withdrawn:
                     raise ValueError('В копии есть событие без планового и фактического времени.')
                 for start, end in zip(row[:6:2], row[1:6:2]):
                     if bool(start) != bool(end):

@@ -98,7 +98,7 @@ def test_idempotent_import_preserves_baseline_fact_notes_category_and_local_stat
     assert final.status == "done" and final.actual_start == "2026-10-22T12:10:00"
     assert final.note == "local note" and final.category == "Работа"
     history = len(store.audit_log())
-    assert store.apply_calendar_snapshot(moved) == {"added": 0, "updated": 0, "missing": 0}
+    assert store.apply_calendar_snapshot(moved) == {"added": 0, "updated": 0, "missing": 0, "withdrawn": 0}
     assert len(store.audit_log()) == history
     assert store.calendar_info()[ev.id]["cancelled"]
 
@@ -392,3 +392,4 @@ def test_fallback_request_limit_marks_partial_without_unbounded_requests(monkeyp
     snapshot = fetch_snapshot(CONFIG, "test-only-secret", START, END)
     assert len(calls) == 2 and not snapshot.complete and len(snapshot.events) == 2
     assert "лимит" in snapshot.unavailable[0]
+
