@@ -34,6 +34,8 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.publish == 'true'
     uses: ./.github/workflows/ci.yml
+    with:
+      suite: full
 
   distribution:
     needs: prepare
