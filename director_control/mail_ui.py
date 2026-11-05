@@ -101,7 +101,7 @@ class MailPanel(QGroupBox):
         layout.addWidget(self.status)
         note = QLabel("Загружаем 30 дней до и 90 дней после выбранной даты. Время отображается в выбранном часовом поясе. "
                       "Название и плановое время меняй в Mail.ru; категорию, факт и итоги — здесь. "
-                      "Пропавшие записи сохраняются с отметкой «Проверить Mail.ru». Пароль не хранится в базе или GitHub.")
+                      "Исчезнувшие будущие события без фиксации и локальных отметок убираются из плана; остальные требуют проверки. Пароль не хранится в базе или GitHub.")
         note.setWordWrap(True)
         note.setObjectName("Muted")
         layout.addWidget(note)
@@ -206,7 +206,7 @@ class MailPanel(QGroupBox):
             last = self.store.get_setting("mail_last_sync").replace("T", " ")
             if snapshot.complete:
                 self.show_status(f"Mail.ru обновлён {last}: новых {result['added']}, изменено {result['updated']}, "
-                                 f"требуют проверки {result['missing']}.")
+                                 f"убрано из плана {result['withdrawn']}, требуют проверки {result['missing']}.")
             else:
                 self.show_status(f"Mail.ru загружен частично: новых {result['added']}, изменено {result['updated']}; "
                                  f"недоступных записей {len(snapshot.unavailable)}. "
