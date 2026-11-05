@@ -76,6 +76,21 @@ class EventDialog(QDialog):
         outer.setSpacing(18)
         heading = plain_label("Карточка события", "EventTitle")
         outer.addWidget(heading)
+        if event.source == 'caldav' and not (event.current_start or event.baseline_start or event.actual_start):
+            # Withdrawn records retain their identity and history, but have no
+            # editable interval. Opening them must not invent a current time.
+            for value in (event.title, event.category + ' · Mail.ru',
+                          'Событие убрано из актуального расписания: его нет в загруженном периоде Mail.ru. '
+                          'Прежнее время и изменения сохранены в Истории.'):
+                label = plain_label(value)
+                label.setWordWrap(True)
+                outer.addWidget(label)
+            outer.addStretch()
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+            buttons.button(QDialogButtonBox.StandardButton.Close).setText('Закрыть')
+            buttons.rejected.connect(self.reject)
+            outer.addWidget(buttons)
+            return
         content = QWidget()
         content.setObjectName("DialogContent")
         form = QFormLayout(content)
