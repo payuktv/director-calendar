@@ -678,7 +678,7 @@ class Store:
         with self._connect() as con:
             con.execute('BEGIN IMMEDIATE')
             zone = con.execute("SELECT value FROM settings WHERE key='mail_timezone'").fetchone()
-            calendar_now = datetime.now(ZoneInfo(zone[0] if zone else 'Europe/Moscow')).replace(tzinfo=None).isoformat()
+            calendar_today = datetime.now(ZoneInfo(zone[0] if zone else 'Europe/Moscow')).date().isoformat()
             con.execute("INSERT OR IGNORE INTO categories VALUES ('Mail.ru', '#55A7D9', 1)")
             con.execute("INSERT OR IGNORE INTO categories VALUES ('Весь день (Mail.ru)', '#8B9EA4', 0)")
             for event in snapshot.events:
@@ -726,7 +726,7 @@ class Store:
                     frozen = con.execute('''SELECT 1 FROM day_freezes
                         WHERE day>=substr(?,1,10) AND day || 'T00:00:00'<? LIMIT 1''',
                         (row['current_start'], row['current_end'])).fetchone()
-                    if (row['source'] == 'caldav' and row['current_start'] > calendar_now
+                    if (row['source'] == 'caldav' and row['current_start'][:10] >= calendar_today
                             and not frozen and not row['baseline_start'] and not row['baseline_end']
                             and not row['actual_start'] and not row['actual_end']
                             and not row['local_status'] and row['status'] in ('pending', 'cancelled')

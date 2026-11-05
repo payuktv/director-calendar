@@ -108,6 +108,39 @@ def _resource_url(config: CalendarConfig, href: str) -> str | None:
         return None
 
 
+def _is_calendar_collection(result, config: CalendarConfig) -> bool:
+    """Recognize only the selected collection with successful explicit type data.
+
+    Mail.ru includes the collection itself in a Depth: 1 calendar-query result.
+    Its calendar-data property is absent because a collection is not an event.
+    An untyped/foreign/unreadable resource must still make the import partial.
+    """
+    href = result.findtext(f"{{{DAV}}}href", "")
+    if not href or any(ord(char) < 32 or char == "\\" for char in href):
+        return False
+    try:
+        target, selected = urlsplit(urljoin(config.url, href)), urlsplit(config.url)
+        if (target.scheme != "https" or target.hostname != "calendar.mail.ru"
+                or target.port not in (None, 443) or target.username or target.password
+                or target.query or target.fragment):
+            return False
+        paths = [unquote(parts.path) for parts in (target, selected)]
+        if any("%" in path or "\\" in path or any(ord(char) < 32 for char in path) for path in paths):
+            return False
+        if posixpath.normpath(paths[0]) != posixpath.normpath(paths[1]):
+            return False
+    except ValueError:
+        return False
+    for group in result.findall(f"{{{DAV}}}propstat"):
+        if _status_code(group.findtext(f"{{{DAV}}}status", "")) != 200:
+            continue
+        resource_type = group.find(f"{{{DAV}}}prop/{{{DAV}}}resourcetype")
+        if (resource_type is not None and resource_type.find(f"{{{DAV}}}collection") is not None
+                and resource_type.find(f"{{{CALDAV}}}calendar") is not None):
+            return True
+    return False
+
+
 def _read_limited(response, budget: dict) -> bytes:
     chunks = []
     for chunk in response.iter_content(65536):
@@ -249,6 +282,7 @@ def fetch_snapshot(config: CalendarConfig, password: str, start: date, end: date
     query = Element(f"{{{CALDAV}}}calendar-query")
     prop = SubElement(query, f"{{{DAV}}}prop")
     SubElement(prop, f"{{{CALDAV}}}calendar-data")
+    SubElement(prop, f"{{{DAV}}}resourcetype")
     filtering = SubElement(query, f"{{{CALDAV}}}filter")
     outer = SubElement(filtering, f"{{{CALDAV}}}comp-filter", name="VCALENDAR")
     inner = SubElement(outer, f"{{{CALDAV}}}comp-filter", name="VEVENT")
@@ -293,6 +327,8 @@ def fetch_snapshot(config: CalendarConfig, password: str, start: date, end: date
                             values.append(data.text)
                     # Other property failures (e.g. getetag=404) do not invalidate calendar-data=200.
                 if not values and data_codes and set(data_codes) == {"404"}:
+                    if _is_calendar_collection(result, config):
+                        continue
                     recovered, reason = _fallback_get(session, config, password,
                                                       result.findtext(f"{{{DAV}}}href", ""), budget)
                     if recovered is not None:

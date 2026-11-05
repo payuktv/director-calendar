@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import datetime
 import pytest
 from director_control.storage import Store
 from director_control.backups import validate_database, create_backup, restore_backup
@@ -78,3 +79,55 @@ def test_unexplained_empty_event_still_fails_backup_validation(tmp_path):
         con.execute('UPDATE events SET current_start=NULL,current_end=NULL')
     with pytest.raises(ValueError):
         validate_database(store.path)
+
+
+@pytest.mark.parametrize('start,end', [('09:00:00', '10:00:00'), ('13:00:00', '15:00:00'),
+                                     ('16:00:00', '17:00:00'), ('00:00:00', '23:59:00')])
+def test_missing_unprotected_event_is_withdrawn_throughout_unfrozen_current_day(tmp_path, monkeypatch, start, end):
+    class CurrentDay(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 5, 14, 0, tzinfo=tz)
+    monkeypatch.setattr('director_control.storage.datetime', CurrentDay)
+    initial = snapshot('old')
+    initial = replace(initial, start='2026-11-01T00:00:00', end='2026-12-01T00:00:00',
+        events=(replace(initial.events[0], start='2026-11-05T'+start, end='2026-11-05T'+end),))
+    store = Store(tmp_path/'db')
+    store.apply_calendar_snapshot(initial)
+    original = store.daily_events('2026-11-05')[0]
+    assert store.apply_calendar_snapshot(replace(initial, events=()))['withdrawn'] == 1
+    assert not store.daily_events('2026-11-05')
+    assert store.get_event(original.id).current_start is None
+    validate_database(store.path)
+    store.apply_calendar_snapshot(initial)
+    assert store.daily_events('2026-11-05')[0].id == original.id
+
+
+@pytest.mark.parametrize('protection', ['past_day', 'baseline', 'fact', 'manual_status', 'note', 'frozen_day', 'partial'])
+def test_current_day_reconciliation_keeps_history_and_local_protection(tmp_path, monkeypatch, protection):
+    class CurrentDay(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 5, 14, 0, tzinfo=tz)
+    monkeypatch.setattr('director_control.storage.datetime', CurrentDay)
+    day = '2026-11-04' if protection == 'past_day' else '2026-11-05'
+    initial = snapshot('old')
+    initial = replace(initial, start='2026-11-01T00:00:00', end='2026-12-01T00:00:00',
+        events=(replace(initial.events[0], start=day+'T09:00:00', end=day+'T10:00:00'),))
+    store = Store(tmp_path/'db')
+    store.apply_calendar_snapshot(initial)
+    original = store.daily_events(day)[0]
+    if protection == 'baseline':
+        store.freeze_day(day)
+    elif protection == 'frozen_day':
+        with store._connect() as con:
+            con.execute('INSERT INTO day_freezes VALUES (?,?)', (day,day+'T07:00:00'))
+    elif protection == 'fact':
+        store.update_event(original.id, actual_start=original.current_start, actual_end=original.current_end)
+    elif protection == 'manual_status':
+        store.update_event(original.id, status='done')
+    elif protection == 'note':
+        store.update_event(original.id, note='Keep this')
+    missing = replace(initial, events=(), unavailable=('unreadable child',) if protection == 'partial' else ())
+    assert store.apply_calendar_snapshot(missing)['withdrawn'] == 0
+    assert store.get_event(original.id).current_start == original.current_start

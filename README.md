@@ -1,4 +1,4 @@
-# Director Calendar — v0.13.1
+# Director Calendar — v0.13.2
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
@@ -25,16 +25,16 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.1](https://github.com/payuktv/director-calendar/releases/tag/v0.13.1)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.2](https://github.com/payuktv/director-calendar/releases/tag/v0.13.2)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.13.1-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-0.13.2-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; temporary Actions artifacts are still retained for **30 days** for CI inspection. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.13.1-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-0.13.2-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -67,7 +67,9 @@ The application imports 30 days before and 90 days after the selected date. On t
 
 Change imported titles, scheduled times and recurrence rules in Mail.ru. Categories, local execution status, actual time and comments are maintained here and survive synchronization. Repeated imports preserve event identity. The original plan is never overwritten by synchronization.
 
-A missing event in a bounded server response is **not proof of deletion**. After a complete sync, a future event without a frozen plan, actual time, manual status or comment is withdrawn from the current schedule. Its identity and history remain; reappearance restores the same record. Past events and locally protected records retain a source warning. Previously flagged future events are reconciled on the next complete sync. Network, authorization and parse failures preserve the previous data. A recoverable `calendar-data 404` can produce an explicitly marked partial import; disappearance detection is disabled for that import.
+A missing event in a bounded server response is **not proof of deletion**. After a complete sync, an event starting today or later without a frozen plan, actual time, manual status or comment is withdrawn from the current schedule. Today uses the selected display time zone; an unfrozen event earlier today is eligible too. Its identity and history remain; reappearance restores the same record. Events starting on an earlier calendar date and locally protected records retain a source warning. Previously flagged eligible events are reconciled on the next complete sync. Network, authorization and parse failures preserve the previous data. A recoverable `calendar-data 404` can produce an explicitly marked partial import; disappearance detection is disabled for that import.
+
+Mail.ru may include the selected calendar collection itself in a query response. The client requests resource types and ignores that collection's `calendar-data 404` only when a successful response explicitly identifies the exact selected address as both a collection and a calendar. Unreadable event resources still make the import partial. Withdrawn records can be opened from History in a read-only card without inventing a current time.
 
 After importing a calendar, switching accounts/collections is blocked. The display time zone cannot be changed once schedule events exist. UTC/TZID values are converted on import; floating times use the selected zone.
 
@@ -210,6 +212,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v0.13.2 | Recognize Mail.ru collection metadata and reconcile missing events throughout the current unfrozen day |
 | v0.13.0 | Bounded runtime error diagnostics with private values omitted and local log access in Settings |
 | v0.12.1 | Shared backup compatibility checks before normal/emergency restoration and on startup |
 | v0.12.0 | Startup recovery from a verified backup with damaged originals preserved separately |
