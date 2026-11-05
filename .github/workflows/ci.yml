@@ -1,9 +1,17 @@
 name: Tests
 
 on:
-  push:
   pull_request:
+  workflow_dispatch:
   workflow_call:
+    inputs:
+      suite:
+        type: string
+        default: full
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -13,16 +21,20 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: ${{ fromJSON((inputs.suite == 'full' || github.event_name == 'workflow_dispatch') && '["windows-latest","ubuntu-latest"]' || '["windows-latest"]') }}
         python-version: ['3.13']
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Install Linux Qt runtime libraries
         if: runner.os == 'Linux'
         run: |
@@ -32,10 +44,23 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Basic static checks
         run: python -m ruff check director_control tests scripts --select F
-      - name: Unit and GUI smoke tests
+      - name: Run selected or full tests
         env:
           DIRECTOR_CONTROL_DATA_DIR: ${{ runner.temp }}/director-control-tests
-        run: python -m pytest -q --junitxml=pytest-results.xml
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TEST_SUITE: ${{ github.event_name == 'workflow_dispatch' && 'full' || inputs.suite || 'focused' }}
+        run: python scripts/run_ci_tests.py --platform ${{ runner.os }}
       - name: Verify zero skips and required platform coverage
         if: always()
         run: python scripts/verify_test_results.py pytest-results.xml --platform ${{ runner.os }}
+      - name: Save test scope, timing and results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-results-${{ runner.os }}
+          path: |
+            pytest-results.xml
+            ci-test-plan.json
+          if-no-files-found: warn
+          retention-days: 14

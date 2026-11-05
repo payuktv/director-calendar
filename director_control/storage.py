@@ -13,6 +13,7 @@ from typing import Iterator
 from zoneinfo import ZoneInfo
 
 from .provenance import work_origin
+from .source_state import source_state
 
 STATUSES = {
     "pending": "Не подтверждено",
@@ -744,7 +745,10 @@ class Store:
                         continue
                     con.execute("UPDATE calendar_events SET missing=1 WHERE event_id=?", (row["id"],))
                     con.execute('UPDATE events SET revision=revision+1 WHERE id=?', (row['id'],))
-                    self._audit(con, row["id"], row["title"], "Нет в ответе Mail.ru", {"требует проверки": True})
+                    state = source_state(self._as_event(row), {'missing': 1})
+                    action = ('Отменённое событие отсутствует в Mail.ru' if state.code == 'cancelled_missing'
+                              else 'Нет в ответе Mail.ru')
+                    self._audit(con, row["id"], row["title"], action, {"требует проверки": state.needs_review})
                     stats["missing"] += 1
             sync_key = "mail_last_sync" if snapshot.complete else "mail_last_partial"
             con.execute("INSERT INTO calendar_syncs(calendar_key,start,end,status,finished_at) VALUES (?,?,?,?,?)",
@@ -752,10 +756,12 @@ class Store:
                          'complete' if snapshot.complete else 'partial', now_iso()))
             con.execute("INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                         (sync_key, now_iso()))
-            stats["missing"] = con.execute("""SELECT count(*) FROM calendar_events m JOIN events e ON e.id=m.event_id
-                WHERE calendar_key=? AND missing=1 AND (current_start IS NOT NULL
-                OR baseline_start IS NOT NULL OR actual_start IS NOT NULL)""",
-                                           (snapshot.calendar_key,)).fetchone()[0]
+            review_rows = con.execute("""SELECT e.*,m.missing,m.cancelled,m.local_status FROM events e
+                JOIN calendar_events m ON e.id=m.event_id WHERE m.calendar_key=?
+                AND (m.missing=1 OR m.cancelled=1) AND (e.current_start IS NOT NULL
+                OR e.baseline_start IS NOT NULL OR e.actual_start IS NOT NULL)""",
+                (snapshot.calendar_key,)).fetchall()
+            stats['missing'] = sum(source_state(self._as_event(row), dict(row)).needs_review for row in review_rows)
         return stats
 
 

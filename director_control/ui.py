@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from .storage import Event, STATUSES, Store, default_data_dir
+from .source_state import source_state
 from .mail_ui import MailPanel
 
 
@@ -755,11 +756,9 @@ class MainWindow(QMainWindow):
                             (abs(start_delta) > event_tolerance or abs(duration_delta) > event_tolerance))
             status_label = STATUSES[ev.status] + (" · отклонение" if ev.status == "done" and deviates else "")
             remote = source_info.get(ev.id)
-            if remote:
-                if remote["missing"]:
-                    status_label += " · проверить Mail.ru"
-                elif remote["cancelled"] and ev.status != "cancelled":
-                    status_label += " · отменено в Mail.ru"
+            state = source_state(ev, remote)
+            if state.suffix:
+                status_label += ' · ' + state.suffix
             values = [ev.title, ev.category, interval(ev.baseline_start, ev.baseline_end),
                       interval(ev.current_start, ev.current_end), interval(ev.actual_start, ev.actual_end),
                       status_label, ev.source_label + (" · вне плана" if ev.is_postfactum else "")

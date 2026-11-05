@@ -118,9 +118,10 @@ def test_menu_changes_only_target_status_and_refreshes_ui_and_audit(app, tmp_pat
         assert event.revision > before.revision
         assert store.get_event(other) == untouched
         assert window.selected_event_id() == target
-        assert window.inspector.status.text() == STATUSES[status]
+        source_suffix = " · есть в Mail.ru" if status == "cancelled" else ""
+        assert window.inspector.status.text() == STATUSES[status] + source_suffix
         expected_label = STATUSES[status] + (" · отклонение" if has_fact and status == "done" else "")
-        assert window.table.item(window.row_ids.index(target), 5).text() == expected_label
+        assert window.table.item(window.row_ids.index(target), 5).text() == expected_label + source_suffix
         assert window.cards["done"].value.text() == ("1" if status == "done" else "0")
         assert len(store.audit_log()) == count + 1
         last = store.audit_log()[0]

@@ -98,7 +98,7 @@ def test_idempotent_import_preserves_baseline_fact_notes_category_and_local_stat
     assert final.status == "done" and final.actual_start == "2026-10-22T12:10:00"
     assert final.note == "local note" and final.category == "Работа"
     history = len(store.audit_log())
-    assert store.apply_calendar_snapshot(moved) == {"added": 0, "updated": 0, "missing": 0, "withdrawn": 0}
+    assert store.apply_calendar_snapshot(moved) == {"added": 0, "updated": 0, "missing": 1, "withdrawn": 0}
     assert len(store.audit_log()) == history
     assert store.calendar_info()[ev.id]["cancelled"]
 

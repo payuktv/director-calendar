@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .calendar_view import text
 from .storage import STATUSES
+from .source_state import source_state
 from .theme import color as theme_color
 
 
@@ -74,10 +75,9 @@ class EventInspector(QFrame):
         status = STATUSES[event.status]
         if event.is_postfactum:
             status = "Вне плана · " + status
-        if info and info.get("missing"):
-            status += " · проверить Mail.ru"
-        elif info and info.get("cancelled") and event.status != "cancelled":
-            status += " · отменено в Mail.ru"
+        state = source_state(event, info)
+        if state.suffix:
+            status += ' · ' + state.suffix
         self.status.setText(status)
         self.status.show()
         for key, (start, end) in {

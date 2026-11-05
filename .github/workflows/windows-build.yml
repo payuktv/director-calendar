@@ -1,10 +1,20 @@
 name: Windows distribution
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths:
+      - 'packaging/**'
+      - 'scripts/build_windows.ps1'
+      - 'scripts/test_windows_distribution.py'
+      - 'scripts/release.py'
+      - 'director_control/distribution_check.py'
+      - 'director_control/desktop.py'
+      - 'director_control/windows_lifecycle.py'
+      - '.github/workflows/windows-build.yml'
   workflow_dispatch:
   workflow_call:
+concurrency:
+  group: distribution-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
@@ -17,6 +27,8 @@ jobs:
         with:
           python-version: '3.13'
           architecture: x64
+          cache: pip
+          cache-dependency-path: packaging/requirements-windows.lock
       - name: Select previous published version
         id: previous
         env:

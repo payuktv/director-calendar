@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .storage import Event
 from .provenance import work_origin
+from .source_state import source_state
 
 
 def period_bounds(anchor: date, mode: str) -> tuple[date, date]:
@@ -187,8 +188,7 @@ def build_report(anchor, mode, only_tracked, events, categories, rules, metadata
             category_time.setdefault(baseline_category, [0., 0.])[0] += plan_time / 60
         if fact_time:
             category_time.setdefault(event.category, [0., 0.])[1] += fact_time / 60
-        warning = ('Не найдено в Mail.ru' if meta.get('missing') else
-                   'Отменено в Mail.ru' if meta.get('cancelled') and event.status != 'cancelled' else '')
+        warning = source_state(event, meta).warning
         measures.append(EventMeasure(event, origin, baseline_category, plan_time, fact_time,
                                      start_delta, duration_delta, tolerance, missing, comparable, all_day, warning))
 

@@ -8,7 +8,9 @@
 
 ## Publication gates
 
-**Release** calls the existing **Tests** and **Windows distribution** workflows at its own source commit. Both Windows and Linux tests must pass without skips; the Windows shortcut test remains mandatory. The distribution must pass installation, upgrade, launch, reinstallation, uninstall/data-preservation and backup/recovery checks.
+**Release** calls **Tests** with `suite: full` and **Windows distribution** at its own source commit. Both Windows and Linux tests must pass without skips; the Windows shortcut test remains mandatory. The distribution must pass installation, upgrade, launch, reinstallation, uninstall/data-preservation and backup/recovery checks. Focused PR success cannot replace these full release checks.
+
+PR tests run on Windows with affected-area selection and a conservative full-suite fallback. Ordinary branch pushes do not duplicate them, and main pushes do not independently duplicate Release's tests or package build. Packaging/native lifecycle changes also run distribution acceptance on the PR. Other changes receive that check once at release. PR concurrency cancels superseded runs; release publication is never cancelled by that policy. See [testing policy](TESTING.md).
 
 The publish job depends on both complete workflows. It downloads only the artifact from that same Release workflow run, checks its exact file set, version, source commit, binary checksums and all required acceptance flags, and matches the recorded upgrade source with the acceptance report. No files are rebuilt for publication.
 
