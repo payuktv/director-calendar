@@ -8,7 +8,7 @@ def test_sync_change_keeps_related_domains_without_unrelated_theme_rendering():
     paths, reason = select_tests(['director_control/mail_calendar.py'], 'Windows')
     assert 'focused' in reason
     assert {'tests/test_mail_calendar.py', 'tests/test_mail_withdrawal.py', 'tests/test_source_state.py',
-            'tests/test_analytics.py', 'tests/windows/test_shortcut.py'} <= set(paths)
+            'tests/test_analytics.py', 'tests/test_context_menu.py', 'tests/windows/test_shortcut.py'} <= set(paths)
     assert 'tests/test_theme.py' not in paths
 
 
