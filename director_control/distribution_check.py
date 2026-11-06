@@ -11,6 +11,7 @@ from uuid import uuid4
 def verify_installation(destination):
     from . import diagnostics
     from . import __version__
+    from .runtime_versions import runtime_versions, verify_runtime
     from .mail_calendar import CalendarConfig
     from .sync_process import parse_isolated
     from .desktop import app_icon_path, shortcut_spec
@@ -26,7 +27,17 @@ def verify_installation(destination):
     from datetime import date
     from zoneinfo import ZoneInfo
     from keyring.backends.Windows import WinVaultKeyring
+    # Resolve before any working-directory changes. This command never opens the user's DB.
+    destination = Path(destination).resolve()
     report = {'version': __version__, 'ok': False}
+    report.update(runtime_versions())
+    try:
+        verify_runtime(report)
+    except ValueError:
+        # Native version numbers are safe diagnostic data, including on failure.
+        destination.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+        return 1
+    report['runtime_patched'] = True
     sqlite_source = sqlite3.connect(':memory:')
     try:
         source_id = sqlite_source.execute('SELECT sqlite_source_id()').fetchone()[0]
@@ -35,8 +46,6 @@ def verify_installation(destination):
     assert sqlite3.sqlite_version == '3.54.1'
     assert source_id == '2026-10-16 14:45:20 555e07ef33f69a0957d24d8e555b702464a131d6f1607f4c3c1e4551e8e6ca76'
     report.update(sqlite_patched=True, sqlite_version=sqlite3.sqlite_version, sqlite_source_id=source_id)
-    # Resolve before any working-directory changes. This command never opens the user's DB.
-    destination = Path(destination).resolve()
     with tempfile.TemporaryDirectory(prefix='DirectorCalendar-check-') as temporary, diagnostics.session(Path(temporary) / 'logs'):
         os.environ['DIRECTOR_CONTROL_DATA_DIR'] = temporary
         assert ZoneInfo('Europe/Moscow')

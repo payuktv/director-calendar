@@ -5,6 +5,7 @@ import json
 import pytest
 
 from scripts import release
+from director_control.runtime_versions import PYTHON_VERSION, EXPAT_VERSION, OPENSSL_VERSION
 
 SHA = 'a' * 40
 OLD_SHA = 'b' * 40
@@ -69,6 +70,9 @@ def bundle(tmp_path):
     (folder / 'build-info.txt').write_text('Python: test; Source: ' + SHA + '\n')
     (folder / 'build-dependencies.txt').write_text('synthetic==1.0\n')
     report = {key: True for key in release.REQUIRED_CHECKS}
+    report.update(python_version=PYTHON_VERSION, expat_version=EXPAT_VERSION,
+                  openssl_version=OPENSSL_VERSION, python_bits=64,
+                  python_implementation='CPython', python_free_threaded=False)
     report.update(version=VERSION, previous_version='0.12.0', previous_commit=OLD_SHA,
                   previous_installer_sha256='c' * 64, sqlite_version='3.54.1',
                   sqlite_source_id='2026-10-16 14:45:20 555e07ef33f69a0957d24d8e555b702464a131d6f1607f4c3c1e4551e8e6ca76')

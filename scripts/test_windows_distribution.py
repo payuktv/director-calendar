@@ -33,7 +33,12 @@ def retired_files():
 
 
 def assert_installed_content(install, expected, sentinels):
-    assert program_files(install) == expected | sentinels, 'Stale, missing or modified installed files'
+    actual = program_files(install)
+    wanted = expected | sentinels
+    extra = sorted(actual.keys() - wanted.keys())
+    missing = sorted(wanted.keys() - actual.keys())
+    changed = sorted(path for path in actual.keys() & wanted.keys() if actual[path] != wanted[path])
+    assert actual == wanted, f'Installed files differ: extra={extra}, missing={missing}, changed={changed}'
 
 
 def windows(pid):

@@ -23,3 +23,5 @@ The reusable test workflow defaults to full scope. An explicit manual Tests run 
 ## Updating the map
 
 When introducing a narrow mapping, include affected consumers as well as direct unit tests, and review the mapping together with the feature. New or uncertain modules can remain unmapped and run the full suite. Update `tests/test_ci_selection.py` when changing selection policy. This map is a PR feedback optimization, not a promise that unrelated test modules can never expose a regression.
+
+The interpreter is pinned by `.python-version` (3.14.10) for both platform suites and packaging. Distribution acceptance reads Python, Expat and OpenSSL versions inside the frozen executable; publication rejects missing, older or different runtimes. The previous published 3.13 installer is the upgrade baseline, with complete installed-file hash comparison.

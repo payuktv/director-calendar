@@ -1,4 +1,4 @@
-# Windows x64 / Python 3.13. All runtime and build dependencies pinned.
+# Windows x64 / Python 3.14.10. All runtime and build dependencies pinned.
 altgraph==0.17.5
 certifi==2026.10.23
 charset-normalizer==3.5.2
@@ -16,6 +16,7 @@ pefile==2024.8.26
 pyinstaller==6.22.3
 pyinstaller-hooks-contrib==2026.9
 PySide6_Essentials==6.12.0
+# recurring-ical-events 3.8.2 requires dateutil <3; do not force an incompatible 4.x upgrade.
 python-dateutil==2.9.0.post0
 pywin32-ctypes==0.2.3
 recurring-ical-events==3.8.2

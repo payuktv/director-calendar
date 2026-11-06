@@ -1,4 +1,4 @@
-# Director Calendar — v0.13.6
+# Director Calendar — v0.13.7
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
@@ -25,16 +25,16 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.6](https://github.com/payuktv/director-calendar/releases/tag/v0.13.6)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.7](https://github.com/payuktv/director-calendar/releases/tag/v0.13.7)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.13.6-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-0.13.7-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; temporary Actions artifacts are still retained for **30 days** for CI inspection. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.13.6-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-0.13.7-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -166,19 +166,19 @@ The log is separate from the database change history and SQLite backups. Existin
 
 ## Development and source-based launch
 
-Normal users should use the standalone installer above. Source-based development uses Python **3.13 x64** and a separate virtual environment.
+Normal users should use the standalone installer above. Source-based development uses Python **3.14.10 x64** and a separate virtual environment.
 
 ```powershell
 git clone https://github.com/payuktv/director-calendar.git
 cd director-calendar
-py -3.13 -m venv .venv
+py -3.14 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe main.py
 ```
 
 For a source-based desktop shortcut, run `create_desktop_shortcut.pyw` with the configured environment or use the shortcut button in Settings. If the source directory moves, recreate the shortcut. Source-based and installed launches use the same default database location.
 
-The stack is PySide6/Qt Widgets, SQLite, requests, icalendar, recurring-ical-events and Windows Vault through keyring. PySide6 Essentials provides all Qt modules used by the application and tests; the Addons, PDF and WebEngine packages are unnecessary. Package metadata accepts Python 3.13–3.14, but CI and distribution builds currently use Python 3.13.
+The stack is PySide6/Qt Widgets, SQLite, requests, icalendar, recurring-ical-events and Windows Vault through keyring. PySide6 Essentials provides all Qt modules used by the application and tests; the Addons, PDF and WebEngine packages are unnecessary. Package metadata accepts Python 3.13–3.14, but CI and distribution builds use the exact Python 3.14.10 pin in `.python-version`.
 
 ## Tests and Windows packaging
 
@@ -194,7 +194,7 @@ On pull requests, **Tests** runs smoke checks and affected areas on Windows. The
 
 Before publication, **Release** explicitly requests the full suite on Windows and Linux for its exact commit, alongside distribution acceptance. Missing/empty JUnit reports, failures and skipped tests fail verification for both focused and full runs. Linux excludes the Windows-only module during collection. Scope and JUnit timing reports are retained for 14 days; dependency downloads are cached. Obsolete PR checks are cancelled. There are no duplicate branch-push or standalone main-push test runs.
 
-Build on Windows x64 with Python 3.13 and Inno Setup 6:
+Build on Windows x64 with Python 3.14.10 and Inno Setup 6:
 
 ```powershell
 ./scripts/build_windows.ps1
@@ -220,6 +220,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v0.13.7 | Python 3.14.10, verified native runtime and Python 3.13 file cleanup |
 | v0.13.6 | Protected backup restoration, patched SQLite and obsolete file cleanup |
 | v0.13.5 | Smaller Qt dependency set and verified reuse of published upgrade installers |
 | v0.13.4 | Resource-bounded, cancellable calendar synchronization |
