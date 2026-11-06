@@ -23,6 +23,16 @@ def set_raw(path, key, value):
         con.commit()
 
 
+def dispose_window(app, window):
+    from PySide6.QtCore import QEvent
+    window.close()
+    window.deleteLater()
+    # close() only hides the widget; retained windows make later theme tests
+    # repeatedly restyle every old calendar and can exhaust the CI time budget.
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
+
+
 @pytest.mark.parametrize('mode', ['normal', 'emergency', 'startup'])
 @pytest.mark.parametrize(('key', 'value'), [
     ('backup_keep', 'not-an-integer'), ('backup_keep', '0'), ('backup_keep', '366'),
@@ -102,8 +112,7 @@ def test_restored_app_uses_only_local_backup_policy(tmp_path, mode, enabled):
         assert not (tmp_path / 'imported-destination').exists()
         assert updates.prepare_version_update(live.path) is None
     finally:
-        window.close()
-        app.processEvents()
+        dispose_window(app, window)
 
 
 @pytest.mark.parametrize('mode', ['normal', 'emergency'])
@@ -179,4 +188,4 @@ def test_gui_rejects_bad_settings_and_stays_usable(tmp_path, monkeypatch):
         assert warnings and 'настройк' in warnings[0]
         assert live.path.read_bytes() == before and live.get_event(eid).title == 'Исходное событие'
     finally:
-        window.close()
+        dispose_window(app, window)
