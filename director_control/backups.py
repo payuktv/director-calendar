@@ -12,8 +12,10 @@ from zoneinfo import ZoneInfo
 
 from . import __version__
 from . import database_guard as guard
+from .settings_validation import validate_settings
 
 SCHEMA_VERSION = 4
+BACKUP_DEFAULTS = {'backup_folder': '', 'backup_auto': '1', 'backup_keep': '30'}
 
 
 def _read_only(path, budget=None):
@@ -91,9 +93,7 @@ def validate_database(path):
             if version >= 4 and con.execute('''SELECT 1 FROM events e LEFT JOIN baseline_rules b ON b.event_id=e.id
                     WHERE e.source IN ('local','caldav') AND e.baseline_start IS NOT NULL AND b.event_id IS NULL LIMIT 1''').fetchone():
                 raise ValueError('В копии отсутствуют правила зафиксированного плана.')
-            tolerance = con.execute("SELECT value FROM settings WHERE key='tolerance_minutes'").fetchone()
-            if tolerance and not 0 <= int(tolerance[0]) <= 180:
-                raise ValueError('В копии некорректные настройки контроля времени.')
+            validate_settings(con, budget)
             budget.check()
             return version
     except sqlite3.DatabaseError as exc:
@@ -229,12 +229,30 @@ def scheduled_backup(store, now=None):
     return saved
 
 
+def _local_backup_settings(safety):
+    """Read only the already verified local safety snapshot, never imported paths."""
+    values = BACKUP_DEFAULTS.copy()
+    with closing(_read_only(safety)) as con:
+        values.update(con.execute("SELECT key,value FROM settings WHERE key IN ('backup_folder','backup_auto','backup_keep')"))
+    return values
+
+
+def _restore_backup_settings(con, local=None):
+    """Keep machine-local policy, or safe defaults for emergency recovery."""
+    values = BACKUP_DEFAULTS if local is None else local
+    con.executemany('INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+                    values.items())
+    # A pre-restore copy cannot stand in for a backup of the restored/new data.
+    con.execute("DELETE FROM settings WHERE key='backup_last_auto'")
+
+
 def restore_backup(store, source):
     source = Path(source).resolve()
     if source == store.path.resolve():
         raise ValueError('Выбери резервную копию, а не открытую рабочую базу.')
     validate_compatible_database(source)
     safety = create_backup(store, kind='before-restore')
+    local = _local_backup_settings(safety)
     temporary = _temporary(store.path.parent)
     try:
         _copy_database(source, temporary)
@@ -242,6 +260,7 @@ def restore_backup(store, source):
         from .storage import Store
         staged = Store(temporary)
         with staged._connect() as con:
+            _restore_backup_settings(con, local)
             staged._audit(con, None, 'База данных', 'Восстановление из копии',
                           {'копия': source.name, 'страховая копия': str(safety)})
         validate_compatible_database(temporary)

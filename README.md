@@ -1,4 +1,4 @@
-# Director Calendar — v0.13.7
+# Director Calendar — v0.13.8
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
@@ -25,16 +25,16 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.7](https://github.com/payuktv/director-calendar/releases/tag/v0.13.7)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.8](https://github.com/payuktv/director-calendar/releases/tag/v0.13.8)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.13.7-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-0.13.8-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; temporary Actions artifacts are still retained for **30 days** for CI inspection. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.13.7-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-0.13.8-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -134,6 +134,8 @@ Retention removes only this database's old automatic copies. Manual, migration, 
 
 Normal restoration validates the selected copy, creates a safety backup of the current database, prepares/migrates a separate staging database and replaces the live database only after validation. Restart the application after successful restoration.
 
+Since **v0.13.8**, restoration checks setting types, numeric ranges, time zones and the structure of the last-backup record before replacing data. Normal restoration retains the current backup directory, automatic-copy switch and retention count. Emergency recovery uses the standard local backup directory with daily copying enabled and 30 retained copies. Both paths discard the previous last-copy record so restored/new data receives a fresh copy. Imported settings never select an automatic backup destination; choose another directory explicitly in Settings if needed.
+
 Since **v0.12.1**, startup, normal restoration and emergency recovery use the same compatibility checks. A copy with a newer database schema or a newer recorded application version is rejected **before replacement**, even if its schema has not changed. The message identifies the recorded and installed application versions: update the application first or choose an older compatible copy. Invalid or empty version records are also rejected; legacy copies without a version record remain supported if their structure and data pass validation. Compatible older schemas are migrated only in staging.
 
 The staged database is checked again before migration and after preparation, so the actual file being installed must pass the same gate as startup. A rejected copy does not replace working events, history or settings. Database schema version and application version are separate checks; neither is inferred from the backup filename.
@@ -220,6 +222,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v0.13.8 | Validate restored settings and retain local backup destinations |
 | v0.13.7 | Python 3.14.10, verified native runtime and Python 3.13 file cleanup |
 | v0.13.6 | Protected backup restoration, patched SQLite and obsolete file cleanup |
 | v0.13.5 | Smaller Qt dependency set and verified reuse of published upgrade installers |

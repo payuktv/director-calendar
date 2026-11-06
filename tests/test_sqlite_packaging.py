@@ -42,7 +42,8 @@ def test_release_rejects_old_runtime_even_when_other_checks_pass(tmp_path):
 
 
 @pytest.mark.parametrize('missing', ['untrusted_backup_rejected', 'obsolete_files_removed',
-                                    'installed_file_manifest', 'reparse_path_rejected'])
+                                    'installed_file_manifest', 'reparse_path_rejected',
+                                    'backup_settings_validated', 'backup_destination_local'])
 def test_release_requires_new_security_and_upgrade_checks(tmp_path, missing):
     folder = bundle(tmp_path)
     report_path = folder / 'distribution-check.json'

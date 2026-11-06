@@ -5,7 +5,7 @@ import shutil
 import tempfile
 from uuid import uuid4
 
-from .backups import validate_compatible_database, _copy_database, _cleanup_temporary
+from .backups import validate_compatible_database, _copy_database, _cleanup_temporary, _restore_backup_settings
 from .diagnostics import record_error
 
 
@@ -24,6 +24,7 @@ def recover_database(database, source):
         validate_compatible_database(staged)
         store = Store(staged)
         with store._connect() as con:
+            _restore_backup_settings(con)
             store._audit(con, None, 'База данных', 'Восстановление из копии',
                          {'копия': source.name})
         validate_compatible_database(staged)
@@ -64,7 +65,9 @@ def offer_recovery(database, error):
     if not source:
         return False
     answer = QMessageBox.question(None, 'Подтвердить восстановление',
-        'Рабочие события, история и настройки будут заменены выбранной копией. Продолжить?',
+        'Рабочие события, история и настройки будут заменены выбранной копией. '
+        'Автоматические копии будут сохраняться ежедневно в стандартную папку рядом с базой; хранится 30 копий. '
+        'Другую папку можно выбрать в настройках после восстановления. Продолжить?',
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         QMessageBox.StandardButton.No)
     if answer != QMessageBox.StandardButton.Yes:
