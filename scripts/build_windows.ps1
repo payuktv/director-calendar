@@ -32,6 +32,10 @@ $LockHash | Set-Content -LiteralPath $LockMarker -Encoding ascii
 $Version = (& $Python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])").Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read version.' }
 $env:DIRECTOR_BUILD_ROOT = $SourceRoot
+$SQLiteDir = Join-Path $SourceRoot '.build-sqlite'
+& $Python "$PSScriptRoot/prepare_sqlite.py" $SQLiteDir
+if ($LASTEXITCODE -ne 0) { throw 'Verified SQLite preparation failed.' }
+$env:DIRECTOR_SQLITE_DLL = Join-Path $SQLiteDir 'sqlite3.dll'
 & $Python -m PyInstaller --clean --noconfirm --distpath "$SourceRoot/dist" --workpath "$SourceRoot/build" "$Packaging/director-calendar.spec"
 if ($LASTEXITCODE -ne 0) { throw 'Executable build failed.' }
 $App = "$SourceRoot/dist/DirectorCalendar"
@@ -53,7 +57,8 @@ $BundleBytes = ($BundleFiles | Measure-Object -Property Length -Sum).Sum
 $SetupBytes = (Get-Item -LiteralPath $Setup).Length
 $PortableBytes = (Get-Item -LiteralPath "$Output/DirectorCalendar-$Version-portable-x64.zip").Length
 $Sizes = "Bundle bytes: $BundleBytes; Files: $($BundleFiles.Count); Installer bytes: $SetupBytes; Portable bytes: $PortableBytes"
-"Python: $(& $Python --version); Inno Setup: $CompilerVersion`n$Sizes`nSource: $(git rev-parse HEAD)" | Set-Content "$Output/build-info.txt"
+$SQLiteInfo = Get-Content -LiteralPath (Join-Path $SQLiteDir 'sqlite-build.json') -Raw
+"Python: $(& $Python --version); Inno Setup: $CompilerVersion`n$Sizes`nSQLite: $SQLiteInfo`nSource: $(git rev-parse HEAD)" | Set-Content "$Output/build-info.txt"
 Write-Host $Sizes
 if ($env:GITHUB_STEP_SUMMARY) { "### Distribution size`n`n$Sizes`n" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
 & $Python -m pip freeze | Set-Content "$Output/build-dependencies.txt"

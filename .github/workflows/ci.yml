@@ -42,6 +42,13 @@ jobs:
           sudo apt-get install -y libegl1 libopengl0
       - name: Install
         run: python -m pip install -e ".[dev]"
+      - name: Use the shipped SQLite on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python scripts/prepare_sqlite.py "${{ runner.temp }}/director-sqlite"
+          if ($LASTEXITCODE -ne 0) { throw 'SQLite preparation failed.' }
+          "PYTHONPATH=${{ runner.temp }}/director-sqlite" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Basic static checks
         run: python -m ruff check director_control tests scripts --select F
       - name: Run selected or full tests

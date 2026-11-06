@@ -1,6 +1,7 @@
 """Explicit diagnostic for the shipped bundle; uses only temporary synthetic data."""
 import json
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 from uuid import uuid4
@@ -25,6 +26,14 @@ def verify_installation(destination):
     from zoneinfo import ZoneInfo
     from keyring.backends.Windows import WinVaultKeyring
     report = {'version': __version__, 'ok': False}
+    sqlite_source = sqlite3.connect(':memory:')
+    try:
+        source_id = sqlite_source.execute('SELECT sqlite_source_id()').fetchone()[0]
+    finally:
+        sqlite_source.close()
+    assert sqlite3.sqlite_version == '3.54.1'
+    assert source_id == '2026-10-16 14:45:20 555e07ef33f69a0957d24d8e555b702464a131d6f1607f4c3c1e4551e8e6ca76'
+    report.update(sqlite_patched=True, sqlite_version=sqlite3.sqlite_version, sqlite_source_id=source_id)
     # Resolve before any working-directory changes. This command never opens the user's DB.
     destination = Path(destination).resolve()
     with tempfile.TemporaryDirectory(prefix='DirectorCalendar-check-') as temporary, diagnostics.session(Path(temporary) / 'logs'):
@@ -59,6 +68,27 @@ def verify_installation(destination):
         restore_backup(store, copy)
         assert prepare_version_update(store.path) is None
         assert store.get_event(eid).note == ''
+        # Both restoration entry points must reject active SQL before touching data.
+        for attack in ('trigger', 'fts', 'view'):
+            malicious = create_backup(store)
+            with sqlite3.connect(malicious) as con:
+                if attack == 'fts':
+                    con.execute('CREATE VIRTUAL TABLE foreign_fts USING fts5(content)')
+                elif attack == 'view':
+                    con.execute('CREATE VIEW foreign_view AS SELECT * FROM events')
+                else:
+                    con.execute('CREATE TRIGGER erase AFTER INSERT ON audit BEGIN DELETE FROM events; END')
+            before_attack = store.path.read_bytes()
+            for restore in (lambda: restore_backup(store, malicious),
+                            lambda: recover_database(store.path, malicious)):
+                try:
+                    restore()
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError('An untrusted backup schema was accepted')
+                assert store.path.read_bytes() == before_attack
+        report['untrusted_backup_rejected'] = True
         future = Store(Path(temporary) / 'future.db')
         future.set_setting('app_last_version', '99.0.0')
         incompatible = create_backup(future)

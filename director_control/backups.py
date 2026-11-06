@@ -11,21 +11,35 @@ import tempfile
 from zoneinfo import ZoneInfo
 
 from . import __version__
+from . import database_guard as guard
 
 SCHEMA_VERSION = 4
 
 
-def _read_only(path):
-    return sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, timeout=10)
+def _read_only(path, budget=None):
+    guard.check_file_size(path)
+    budget = budget or guard.Budget(guard.VALIDATION_SECONDS)
+    con = sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, timeout=2)
+    try:
+        guard.configure_connection(con, inspection=True)
+        con.set_progress_handler(budget.expired, 1000)
+        return con
+    except Exception:
+        con.close()
+        raise
 
 
 def validate_database(path):
     """Reject foreign/corrupt/newer files before touching the working database."""
+    budget = guard.Budget(guard.VALIDATION_SECONDS)
     try:
-        with closing(_read_only(path)) as con:
+        with closing(_read_only(path, budget)) as con:
+            con.execute('BEGIN')
             version = con.execute('PRAGMA user_version').fetchone()[0]
             if version > SCHEMA_VERSION:
                 raise ValueError('Копия создана более новой версией приложения. Сначала обнови приложение.')
+            # Never run integrity checks, data queries or migrations on foreign SQL.
+            guard.validate_schema(con)
             tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             required = {'events', 'categories', 'settings', 'audit', 'day_freezes'}
             if version >= 2:
@@ -34,7 +48,7 @@ def validate_database(path):
                 required |= {'baseline_rules', 'calendar_syncs'}
             if not required <= tables:
                 raise ValueError('Это не резервная копия Director Calendar: отсутствуют таблицы приложения.')
-            if con.execute('PRAGMA quick_check').fetchall() != [('ok',)] or con.execute('PRAGMA foreign_key_check').fetchall():
+            if con.execute('PRAGMA quick_check(1)').fetchall() != [('ok',)] or con.execute('PRAGMA foreign_key_check').fetchone():
                 raise ValueError('В копии обнаружены повреждения или нарушенные связи записей.')
             fields = {row[1] for row in con.execute('PRAGMA table_info(events)')}
             if not {'id', 'title', 'category', 'source', 'status', 'note', 'external_key', 'created_at', 'updated_at',
@@ -54,15 +68,16 @@ def validate_database(path):
             for table, required_columns in columns.items():
                 if not required_columns <= {row[1] for row in con.execute('PRAGMA table_info(' + table + ')')}:
                     raise ValueError('В копии отсутствуют обязательные поля приложения.')
-            withdrawn = {r[0] for r in con.execute('''SELECT e.id FROM events e
-                JOIN calendar_events m ON m.event_id=e.id WHERE e.source='caldav' AND m.missing=1
-                AND e.current_start IS NULL AND e.current_end IS NULL
+            withdrawn = '''e.source='caldav' AND e.current_start IS NULL AND e.current_end IS NULL
                 AND e.baseline_start IS NULL AND e.baseline_end IS NULL
                 AND e.actual_start IS NULL AND e.actual_end IS NULL
+                AND EXISTS (SELECT 1 FROM calendar_events m WHERE m.event_id=e.id AND m.missing=1)
                 AND EXISTS (SELECT 1 FROM audit a WHERE a.event_id=e.id
-                    AND a.action='Убрано из актуального плана Mail.ru')''')} if 'calendar_events' in tables else set()
-            for row in con.execute('SELECT current_start,current_end,baseline_start,baseline_end,actual_start,actual_end,status,source,id FROM events'):
-                if not row[0] and not row[4] and row[8] not in withdrawn:
+                    AND a.action='Убрано из актуального плана Mail.ru')''' if 'calendar_events' in tables else '0'
+            for row in con.execute('SELECT current_start,current_end,baseline_start,baseline_end,actual_start,actual_end,'
+                                   'status,source,id,(' + withdrawn + ') FROM events e'):
+                budget.check()
+                if not row[0] and not row[4] and not row[9]:
                     raise ValueError('В копии есть событие без планового и фактического времени.')
                 for start, end in zip(row[:6:2], row[1:6:2]):
                     if bool(start) != bool(end):
@@ -79,15 +94,24 @@ def validate_database(path):
             tolerance = con.execute("SELECT value FROM settings WHERE key='tolerance_minutes'").fetchone()
             if tolerance and not 0 <= int(tolerance[0]) <= 180:
                 raise ValueError('В копии некорректные настройки контроля времени.')
+            budget.check()
             return version
     except sqlite3.DatabaseError as exc:
+        budget.check()
         raise ValueError('Не удалось прочитать резервную копию. Проверь, что выбран исправный файл базы данных.') from exc
 
 
 def _copy_database(source, target):
     # Context managers commit, but sqlite3 connections must also be closed on Windows.
-    with closing(_read_only(source)) as src, closing(sqlite3.connect(target)) as dst:
-        src.backup(dst)
+    budget = guard.Budget(guard.COPY_SECONDS)
+    with closing(_read_only(source, budget)) as src, closing(sqlite3.connect(target)) as dst:
+        guard.validate_schema(src)
+        page_size = src.execute('PRAGMA page_size').fetchone()[0]
+        def progress(status, remaining, total):
+            budget.check()
+            if total * page_size > guard.MAX_DATABASE_BYTES:
+                raise ValueError('Размер базы превышает допустимые 512 МиБ.')
+        src.backup(dst, pages=128, progress=progress)
         # Make every snapshot a self-contained file, including sources in WAL mode.
         if dst.execute('PRAGMA journal_mode=DELETE').fetchone()[0].lower() != 'delete':
             raise ValueError('Не удалось подготовить автономный файл резервной копии.')
@@ -103,8 +127,8 @@ def validate_compatible_database(path, version=__version__):
     """Shared read-only gate for startup and both restore paths; return the stored version.
 
     A missing marker is supported for legacy copies. A present but invalid marker
-    is rejected. Snapshot creation remains structural-only so it can preserve data
-    without treating that snapshot as safe to open in this application version.
+    is rejected. Snapshot creation uses the same schema/data checks, but deliberately does not
+    treat a snapshot as compatible with this application version.
     """
     current = version_tuple(version)
     validate_database(path)

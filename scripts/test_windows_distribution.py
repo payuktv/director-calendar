@@ -4,9 +4,11 @@ import argparse
 from contextlib import closing
 from ctypes import wintypes
 import json
+import hashlib
 import os
 from pathlib import Path
 import sqlite3
+import re
 import subprocess
 import sys
 import tempfile
@@ -16,6 +18,22 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+
+def program_files(folder):
+    return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in folder.rglob('*') if p.is_file()
+            and not re.fullmatch(r'unins[0-9]+\.(exe|dat)', p.name, re.IGNORECASE)}
+
+
+def retired_files():
+    # This is the same explicit list compiled into the installer, not a directory glob.
+    text = (ROOT / 'packaging/retired-files.iss').read_text(encoding='utf-8')
+    return [p.replace('\\', '/') for p in re.findall(r'Name: "\{app\}\\([^"\r\n]+)"', text)]
+
+
+def assert_installed_content(install, expected, sentinels):
+    assert program_files(install) == expected | sentinels, 'Stale, missing or modified installed files'
 
 
 def windows(pid):
@@ -156,11 +174,45 @@ s.set_setting('ui_calendar_view','month')
             subprocess.run([sys.executable, '-c', seed], cwd=previous_root, env=env, check=True, timeout=30)
             expected = snapshot(database)
             setup(old_setup, install, env)
+            expected_files = program_files(ROOT / 'dist/DirectorCalendar')
+            old_files = program_files(install)
             exe = install / 'DirectorCalendar.exe'
             process, hwnd = open_app(exe, env, temp)
             close_app(process, hwnd)
             assert snapshot(database) == expected
+            # Simulate leftovers inherited through v0.13.4 -> v0.13.5 -> current.
+            for relative in retired_files():
+                path = install / relative
+                if relative not in expected_files and not path.exists():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b'owned obsolete file from an earlier release')
+            sentinels = {}
+            for relative in ('personal-notes.txt', '_internal/user-kept-file.txt',
+                             '_internal/PySide6/plugins/imageformats/keep-user-data.txt'):
+                path = install / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'user content must survive update and uninstall')
+                sentinels[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+            # Reject junctions before cleanup/copy, leaving their external target intact.
+            outside = temp / 'external-user-data'
+            outside.mkdir()
+            sentinel = outside / 'keep.db'
+            sentinel.write_bytes(b'not application-owned')
+            junction = install / '_internal' / 'unexpected-junction'
+            junction_env = dict(env, DIRECTOR_TEST_LINK=str(junction), DIRECTOR_TEST_TARGET=str(outside))
+            subprocess.run([str(Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'), '-NoProfile', '-NonInteractive', '-Command',
+                            'New-Item -ItemType Junction -Path $env:DIRECTOR_TEST_LINK -Target $env:DIRECTOR_TEST_TARGET | Out-Null'],
+                           env=junction_env, check=True, timeout=15)
+            before_rejection = database.read_bytes()
+            try:
+                setup(new_setup, install, env, success=False)
+                assert sentinel.read_bytes() == b'not application-owned'
+                assert database.read_bytes() == before_rejection
+            finally:
+                # rmdir removes this temporary junction itself, not its target contents.
+                os.rmdir(junction)
             setup(new_setup, install, env)
+            assert_installed_content(install, expected_files, sentinels)
             assert snapshot(database) == expected  # Installer itself never touches data.
             process, hwnd = open_app(exe, env, temp)
             try:
@@ -177,6 +229,7 @@ s.set_setting('ui_calendar_view','month')
             assert vault.get_password('DirectorControl.CalDAV', key) == 'synthetic-credential'
             # Reinstall and relaunch are idempotent; no duplicate version backup.
             setup(new_setup, install, env)
+            assert_installed_content(install, expected_files, sentinels)
             process, hwnd = open_app(exe, env, temp)
             close_app(process, hwnd)
             assert len(list(database.parent.glob('backups/before-update-*.db'))) == 1
@@ -193,18 +246,23 @@ s.set_setting('ui_calendar_view','month')
             assert Path(check['shortcut_target']).samefile(exe)
             # Uninstall must retain DB/backups/settings/Vault. Then a clean reinstall reuses them.
             uninstall(install, env)
+            assert program_files(install) == sentinels
             assert database.is_file() and snapshot(database) == expected and backups[0].is_file()
             assert vault.get_password('DirectorControl.CalDAV', key) == 'synthetic-credential'
             setup(new_setup, install, env)
+            assert_installed_content(install, expected_files, sentinels)
             process, hwnd = open_app(exe, env, temp)
             close_app(process, hwnd)
             assert snapshot(database) == expected
             uninstall(install, env)
+            assert program_files(install) == sentinels
             report.update(check, source_to_exe=True, old_to_new=True, reinstall=True, uninstall_preserves_data=True,
                           running_app_protected=True, downgrade_rejected=True, no_python_on_path=True,
                           default_data_directory=str(default_data_dir()), unicode_install_path=True,
                           previous_version=previous_version, previous_commit=previous_commit,
-                          previous_installer_sha256=previous_digest)
+                          previous_installer_sha256=previous_digest, obsolete_files_removed=True,
+                          user_files_preserved=True, installed_file_manifest=True, reparse_path_rejected=True,
+                          removed_previous_files=sorted(set(old_files) - set(expected_files)))
     finally:
         vault.delete_password('DirectorControl.CalDAV', key)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
