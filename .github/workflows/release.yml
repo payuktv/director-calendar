@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version-file: '.python-version'
       - name: Validate version, notes and existing tag
         id: release
         env:
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version-file: '.python-version'
       - uses: actions/download-artifact@v5
         with:
           name: DirectorCalendar-Windows-x64

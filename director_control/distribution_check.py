@@ -11,6 +11,7 @@ from uuid import uuid4
 def verify_installation(destination):
     from . import diagnostics
     from . import __version__
+    from .runtime_versions import runtime_versions, verify_runtime
     from .mail_calendar import CalendarConfig
     from .sync_process import parse_isolated
     from .desktop import app_icon_path, shortcut_spec
@@ -27,6 +28,9 @@ def verify_installation(destination):
     from zoneinfo import ZoneInfo
     from keyring.backends.Windows import WinVaultKeyring
     report = {'version': __version__, 'ok': False}
+    report.update(runtime_versions())
+    verify_runtime(report)
+    report['runtime_patched'] = True
     sqlite_source = sqlite3.connect(':memory:')
     try:
         source_id = sqlite_source.execute('SELECT sqlite_source_id()').fetchone()[0]

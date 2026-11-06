@@ -1,4 +1,4 @@
-; Exact files shipped before v0.13.5 and removed from the bundle.
+; Exact files shipped by earlier versions and removed from the current bundle.
 ; Never use wildcards or recursive directory deletion here.
 [InstallDelete]
 Type: files; Name: "{app}\_internal\PySide6\plugins\imageformats\qpdf.dll"; Check: RetiredFileIsSafe('_internal\PySide6\plugins\imageformats\qpdf.dll')
@@ -25,3 +25,7 @@ Type: files; Name: "{app}\_internal\pyside6_addons-6.12.0.dist-info\RECORD"; Che
 Type: files; Name: "{app}\_internal\pyside6_addons-6.12.0.dist-info\REQUESTED"; Check: RetiredFileIsSafe('_internal\pyside6_addons-6.12.0.dist-info\REQUESTED')
 Type: files; Name: "{app}\_internal\pyside6_addons-6.12.0.dist-info\top_level.txt"; Check: RetiredFileIsSafe('_internal\pyside6_addons-6.12.0.dist-info\top_level.txt')
 Type: files; Name: "{app}\_internal\pyside6_addons-6.12.0.dist-info\WHEEL"; Check: RetiredFileIsSafe('_internal\pyside6_addons-6.12.0.dist-info\WHEEL')
+; Python 3.13 ABI files replaced by the 3.14 build in v0.13.7.
+Type: files; Name: "{app}\_internal\python313.dll"; Check: RetiredFileIsSafe('_internal\python313.dll')
+Type: files; Name: "{app}\_internal\charset_normalizer\cd.cp313-win_amd64.pyd"; Check: RetiredFileIsSafe('_internal\charset_normalizer\cd.cp313-win_amd64.pyd')
+Type: files; Name: "{app}\_internal\charset_normalizer\md.cp313-win_amd64.pyd"; Check: RetiredFileIsSafe('_internal\charset_normalizer\md.cp313-win_amd64.pyd')
