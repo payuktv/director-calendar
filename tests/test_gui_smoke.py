@@ -36,7 +36,7 @@ def test_mail_panel_syncs_in_background_and_updates_window(tmp_path, monkeypatch
     monkeypatch.setattr(Credentials, "can_remember", property(lambda self: False))
     seen = []
     config = CalendarConfig("https://calendar.mail.ru/principals/test/calendars/example/", "demo@example.test")
-    def fetch(config, password, start, end):
+    def fetch(config, password, start, end, **kwargs):
         seen.append(QThread.currentThread() != app.thread())
         assert password == "test-only-password"
         return parse_calendars(["BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:gui\r\n"

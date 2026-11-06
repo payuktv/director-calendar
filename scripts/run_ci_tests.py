@@ -16,7 +16,7 @@ SMOKE = {'test_gui_smoke', 'test_storage', 'test_runtime_services'}
 SYNC = {'test_mail_calendar', 'test_mail_collection', 'test_mail_only', 'test_mail_withdrawal',
         'test_mail_withdrawal_ui', 'test_source_state', 'test_source_state_ui', 'test_credentials',
         'test_edit_conflicts', 'test_freeze_readiness', 'test_analytics', 'test_analytics_ui',
-        'test_baseline_rules', 'test_history', 'test_history_ui', 'test_focused_day', 'test_context_menu'}
+        'test_baseline_rules', 'test_history', 'test_history_ui', 'test_focused_day', 'test_context_menu', 'test_sync_limits'}
 ANALYTICS = {'test_analytics', 'test_analytics_ui', 'test_baseline_rules', 'test_source_state', 'test_source_state_ui'}
 HISTORY = {'test_history', 'test_history_ui', 'test_source_state', 'test_source_state_ui'}
 CALENDAR = {'test_calendar_view', 'test_context_menu', 'test_focused_day', 'test_schedule_layers',

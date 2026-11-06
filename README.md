@@ -1,4 +1,4 @@
-# Director Calendar — v0.13.3
+# Director Calendar — v0.13.4
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
@@ -25,16 +25,16 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.3](https://github.com/payuktv/director-calendar/releases/tag/v0.13.3)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.4](https://github.com/payuktv/director-calendar/releases/tag/v0.13.4)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.13.3-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-0.13.4-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; temporary Actions artifacts are still retained for **30 days** for CI inspection. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.13.3-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-0.13.4-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -74,6 +74,10 @@ Mail.ru may include the selected calendar collection itself in a query response.
 Cancelling an event locally and then removing it in Mail.ru is an expected workflow. After a complete query confirms its absence in the loaded period, the retained cancelled record has no source warning. It remains cancelled in the calendar, original plan, analytics and History; no actual work time is invented. An unfrozen record without a baseline remains available as the record of the cancellation. If the source event reappears, the local cancellation is preserved and the interface indicates that the event is present in Mail.ru. Undoing the local cancellation while the source remains missing restores the warning. Missing non-cancelled events and source cancellations conflicting with a local completion still require review. The synchronization result, agenda, inspector and analytics use the same source-state rules.
 
 After importing a calendar, switching accounts/collections is blocked. The display time zone cannot be changed once schedule events exist. UTC/TZID values are converted on import; floating times use the selected zone.
+
+Synchronization runs in a disposable process: 512 MiB OS memory limit, a 20-second CPU budget and a 60-second overall deadline cover network reads, parsing, recurrence expansion and result serialization. Input is limited to 16 MiB and accepted snapshots to 20,000 instances. Results are consumed incrementally, but the process boundary also contains the recurrence library's internal buffering. Limits fail closed: an error, timeout or cancellation never applies a partial snapshot or interprets it as an empty calendar. Credentials travel only through private pipes. The child never opens the application database or diagnostic log.
+
+Use **Cancel update** to stop synchronization. Closing the window cancels the worker and closes after cleanup; queued results from that cancelled attempt are discarded. The installed worker uses the same executable as the application, preserving VPN executable exclusions. When running from source, the Python executable requires the same network access.
 
 Before relying on a connection, use a synthetic appointment to verify initial import, duplicate-free reimport, rescheduling after plan fixation, preservation of actual time/comments, and a recurring event with one moved occurrence.
 
@@ -216,6 +220,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v0.13.4 | Resource-bounded, cancellable calendar synchronization |
 | v0.13.3 | Expected local cancellation/source-removal states and focused PR checks with full release validation |
 | v0.13.2 | Recognize Mail.ru collection metadata and reconcile missing events throughout the current unfrozen day |
 | v0.13.0 | Bounded runtime error diagnostics with private values omitted and local log access in Settings |
