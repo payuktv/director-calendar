@@ -20,9 +20,9 @@ The uploaded set contains the installer, portable ZIP, checksums for all attachm
 
 ## Upgrade baseline
 
-The Windows workflow selects the highest published version strictly below the candidate, including published pre-releases but excluding drafts and non-version tags. It resolves the source tag to a fixed commit and records both the selected version and the commit in the output. The previous source is built with the current packaging toolchain and used for real installation/upgrade testing.
+The Windows workflow selects the highest published version strictly below the candidate, including published pre-releases but excluding drafts and non-version tags. It resolves the source tag to a fixed commit and checks out that source to seed the old database. For upgrade acceptance it downloads the actual published installer instead of rebuilding the old application. The API asset digest/size and the verified release manifest must agree with the selected version and commit; the tag is checked again after download. The installer is rehashed immediately before execution. Its digest, asset ID and release ID are recorded in `upgrade-source.json`; publication also verifies that acceptance used this digest. A download/metadata/checksum failure stops the workflow, without silently substituting a rebuilt binary. GitHub authorization is removed on cross-host asset redirects.
 
-Before the first release only, the bootstrap baseline is v0.10.0 at `a7e524281a3026d501eb7232d68008f09700e3c3`. A network/API failure does not silently select that baseline. Once v0.12.1 is published, a later version uses it (or a newer intervening published version) automatically.
+Before the first release only, the bootstrap baseline is v0.10.0 at `a7e524281a3026d501eb7232d68008f09700e3c3`; that baseline is built with the current packaging toolchain because no published installer exists. A network/API failure does not silently select that baseline. Once v0.12.1 is published, a later version uses it (or a newer intervening published version) automatically.
 
 ## Retry and preservation
 

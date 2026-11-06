@@ -35,7 +35,7 @@ jobs:
         id: previous
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/release.py previous --output "${{ runner.temp }}/upgrade-source.json"
+        run: python scripts/release.py previous --output "${{ runner.temp }}/upgrade-source.json" --installer-dir "${{ runner.temp }}/previous-installer"
       - name: Build current Windows executable and installer
         shell: pwsh
         run: ./scripts/build_windows.ps1
@@ -44,13 +44,19 @@ jobs:
         with:
           ref: ${{ steps.previous.outputs.sha }}
           path: previous-version
-      - name: Build previous application with the same packaging toolchain
+      - name: Build bootstrap application only when no release exists
+        if: steps.previous.outputs.bootstrap == 'true'
         shell: pwsh
         run: ./scripts/build_windows.ps1 -SourceRoot ./previous-version
       - name: Install, launch, upgrade and preserve data
         shell: pwsh
+        env:
+          PREVIOUS_INSTALLER: ${{ steps.previous.outputs.installer }}
+          UPGRADE_SOURCE: ${{ runner.temp }}/upgrade-source.json
         run: |
-          & ./.build-venv/Scripts/python.exe scripts/test_windows_distribution.py previous-version dist/artifacts/distribution-check.json
+          $AcceptanceArgs = @('scripts/test_windows_distribution.py', 'previous-version', 'dist/artifacts/distribution-check.json', '--upgrade-source', $env:UPGRADE_SOURCE)
+          if ($env:PREVIOUS_INSTALLER) { $AcceptanceArgs += @('--previous-installer', $env:PREVIOUS_INSTALLER) }
+          & ./.build-venv/Scripts/python.exe @AcceptanceArgs
           if ($LASTEXITCODE -ne 0) { throw 'Distribution acceptance failed.' }
           Copy-Item "${{ runner.temp }}/upgrade-source.json" dist/artifacts/upgrade-source.json
       - name: Publish verified Windows distribution
