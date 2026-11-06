@@ -9,7 +9,8 @@ from uuid import uuid4
 def verify_installation(destination):
     from . import diagnostics
     from . import __version__
-    from .mail_calendar import CalendarConfig, parse_calendars
+    from .mail_calendar import CalendarConfig
+    from .sync_process import parse_isolated
     from .desktop import app_icon_path, shortcut_spec
     from .storage import Store
     from .backups import create_backup, restore_backup
@@ -32,7 +33,7 @@ def verify_installation(destination):
         assert Path(certifi.where()).is_file()
         config = CalendarConfig('https://calendar.mail.ru/test/', 'synthetic@example.test')
         sample = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:bundle-check\r\nDTSTART:20261029T090000Z\r\nDTEND:20261029T100000Z\r\nSUMMARY:Test\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'
-        assert len(parse_calendars([sample], config, date(2026, 10, 29), date(2026, 10, 30)).events) == 1
+        assert len(parse_isolated([sample], config, date(2026, 10, 29), date(2026, 10, 30)).events) == 1
         backend = WinVaultKeyring()
         account = str(uuid4())
         try:

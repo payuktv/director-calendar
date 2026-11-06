@@ -916,7 +916,10 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self.mail_panel.busy:
-            QMessageBox.information(self, "Обновление календаря", "Дождись окончания обновления Mail.ru и закрой окно ещё раз.")
+            if not getattr(self, '_close_after_sync', False):
+                self._close_after_sync = True
+                self.mail_panel.busy_changed.connect(lambda busy: self.close() if not busy else None)
+            self.mail_panel.cancel_sync()
             event.ignore()
             return
         self.backup_panel.timer.stop()

@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
 
 from .credentials import Credentials
 from .diagnostics import record_error
-from .mail_calendar import CalendarConfig, CalendarError, fetch_snapshot, window_for_day
+from .mail_calendar import CalendarConfig, CalendarError, window_for_day
+from .sync_process import fetch_snapshot_isolated as fetch_snapshot
 
 
 class SyncThread(QThread):
@@ -31,7 +32,10 @@ class SyncThread(QThread):
 
     def run(self):
         try:
-            self.snapshot_ready.emit(fetch_snapshot(self.config, self.password, *window_for_day(self.day)))
+            snapshot = fetch_snapshot(self.config, self.password, *window_for_day(self.day),
+                                      cancelled=self.isInterruptionRequested)
+            if not self.isInterruptionRequested():
+                self.snapshot_ready.emit(snapshot)
         except CalendarError as exc:
             record_error('mail.fetch', exc)
             self.failed.emit(str(exc))
@@ -93,6 +97,10 @@ class MailPanel(QGroupBox):
         self.sync_button = QPushButton("Обновить из Mail.ru")
         self.sync_button.clicked.connect(self.sync)
         actions.addWidget(self.sync_button)
+        self.cancel_button = QPushButton('Отменить обновление')
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_sync)
+        actions.addWidget(self.cancel_button)
         actions.addStretch()
         layout.addLayout(actions)
         layout.addSpacing(4)
@@ -170,6 +178,7 @@ class MailPanel(QGroupBox):
     def sync(self):
         if self.busy:
             return
+        self._cancel_requested = False
         self._sync_context = None
         try:
             config = CalendarConfig(self.store.get_setting("mail_url"), self.store.get_setting("mail_login"),
@@ -201,6 +210,8 @@ class MailPanel(QGroupBox):
             self.sync_failed("Не удалось начать обновление. Проверь настройки подключения.")
 
     def apply_snapshot(self, snapshot):
+        if getattr(self, '_cancel_requested', False):
+            return  # A queued success must not commit after the user cancelled.
         try:
             result = self.store.apply_calendar_snapshot(snapshot)
             last = self.store.get_setting("mail_last_sync").replace("T", " ")
@@ -217,9 +228,17 @@ class MailPanel(QGroupBox):
             self.sync_failed("Не удалось сохранить обновление. Предыдущие данные сохранены.")
 
     def set_controls(self, enabled):
+        self.cancel_button.setEnabled(not enabled)
         for control in (self.url, self.login, self.password, self.zone, self.auto, self.save_button, self.sync_button):
             control.setEnabled(enabled)
         self.remember.setEnabled(enabled and self.credentials.can_remember)
+
+    def cancel_sync(self):
+        if self.worker is not None:
+            self._cancel_requested = True
+            self.worker.requestInterruption()
+            self.cancel_button.setEnabled(False)
+            self.show_status('Отменяем обновление Mail.ru…')
 
     def finished(self):
         self.set_controls(True)

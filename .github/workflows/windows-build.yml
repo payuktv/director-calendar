@@ -9,6 +9,8 @@ on:
       - 'director_control/distribution_check.py'
       - 'director_control/desktop.py'
       - 'director_control/windows_lifecycle.py'
+      - 'director_control/sync_process.py'
+      - 'main.py'
       - '.github/workflows/windows-build.yml'
   workflow_dispatch:
   workflow_call:

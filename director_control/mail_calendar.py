@@ -203,6 +203,8 @@ def parse_calendars(blobs: list[str | bytes], config: CalendarConfig, start: dat
     components = {}
     series = set()
     try:
+        if sum(len(blob.encode('utf-8') if isinstance(blob, str) else blob) for blob in blobs) > MAX_BYTES:
+            raise CalendarError('Ответ календаря слишком большой. Данные не изменены.')
         for blob in blobs:
             cal = Calendar.from_ical(blob)
             if cal.name != "VCALENDAR":
@@ -221,6 +223,8 @@ def parse_calendars(blobs: list[str | bytes], config: CalendarConfig, start: dat
                     if identity in components and components[identity].to_ical() != component.to_ical():
                         raise ValueError("Conflicting duplicate UID")
                     components[identity] = component
+                    if len(components) > MAX_OCCURRENCES:
+                        raise CalendarError('Слишком много событий календаря. Данные не изменены.')
         for component in components.values():
             rule = component.get("RRULE")
             if rule and str(rule.get("FREQ", [""])[0]).upper() in {"SECONDLY", "MINUTELY"}:
@@ -233,10 +237,11 @@ def parse_calendars(blobs: list[str | bytes], config: CalendarConfig, start: dat
                     if isinstance(dt, datetime) and dt.tzinfo is None:
                         raise ValueError("Unknown TZID")
             merged.add_component(component)
-        occurrences = recurring_ical_events.of(merged, keep_recurrence_attributes=True).between(lower, upper)
-        if len(occurrences) > MAX_OCCURRENCES:
-            raise ValueError("Too many occurrences")
+        # Stop consuming as soon as the window/count is exhausted. The library
+        # still buffers internally: untrusted imports MUST run in sync_process.
+        occurrences = recurring_ical_events.of(merged, keep_recurrence_attributes=True).after(lower)
         events = {}
+        count = 0
         for component in occurrences:
             uid = str(component["UID"])
             dtstart = component.decoded("DTSTART")
@@ -250,10 +255,15 @@ def parse_calendars(blobs: list[str | bytes], config: CalendarConfig, start: dat
                     duration = timedelta(days=1)
                 dtend = dtstart + duration
             begin, finish = _aware(dtstart, zone), _aware(dtend, zone)
+            if begin >= upper:
+                break  # after() yields instances ordered by start time.
             if finish <= begin:
                 raise ValueError("Invalid interval")
             if begin >= upper or finish <= lower:
                 continue
+            count += 1
+            if count > MAX_OCCURRENCES:
+                raise CalendarError('Слишком много повторов календаря. Данные не изменены.')
             rid = component.decoded("RECURRENCE-ID", dtstart) if uid in series else None
             recurrence_id = _identity(rid, zone) if rid is not None else "single"
             key = hashlib.sha256((config.calendar_key + "\n" + uid + "\n" + recurrence_id).encode()).hexdigest()

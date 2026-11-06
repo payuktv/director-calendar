@@ -162,7 +162,7 @@ def test_handled_sync_and_backup_failures_keep_ui_error_signals(logs, monkeypatc
     from director_control import mail_ui, backup_ui
     from director_control.mail_calendar import CalendarConfig
     from director_control.storage import Store
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise RuntimeError('PRIVATE-CALENDAR-PASSWORD')
     monkeypatch.setattr(mail_ui, 'fetch_snapshot', fail)
     worker = mail_ui.SyncThread(CalendarConfig('https://calendar.mail.ru/private/', 'private@test.test'),
