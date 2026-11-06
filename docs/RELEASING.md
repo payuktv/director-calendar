@@ -33,3 +33,7 @@ Before the first release only, the bootstrap baseline is v0.10.0 at `a7e524281a3
 - Release jobs are serialized without cancelling an in-progress publication.
 
 Before v1.0.0, complete real Windows/Mail.ru acceptance and the agreed operational checks. Authenticode signing and automatic update downloads are separate work.
+
+## Native security and installed contents
+
+Publication requires `sqlite_patched`, `untrusted_backup_rejected`, `obsolete_files_removed`, `user_files_preserved`, `installed_file_manifest` and `reparse_path_rejected`, plus the pinned SQLite runtime version and source ID. The packaged executable exercises both restore paths against foreign schemas. Installer acceptance compares all installed file hashes, simulates historical retired files, retains unrelated user files, and rejects a junction without changing its external target. Update the explicit retired-file list when packaging removes files. Upstream SQLite archive hashes are pinned in `scripts/prepare_sqlite.py`; an unexpected archive or runtime fails the build.

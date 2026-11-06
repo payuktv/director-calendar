@@ -161,16 +161,23 @@ def test_wal_pages_are_included_in_backup_and_active_connections_block_restore(t
     assert not list(tmp_path.rglob('.director-snapshot-*'))
 
 
-def test_schema4_migration_failure_rolls_back_added_columns_and_keeps_v3_copy(tmp_path):
+def test_schema4_migration_failure_rolls_back_added_columns_and_keeps_v3_copy(tmp_path, monkeypatch):
     from tests.test_local_events import V2_SCHEMA, START, END
     path = tmp_path / 'v3.db'
     with sqlite3.connect(path) as con:
-        con.executescript(V2_SCHEMA.replace('TEXT NOT NULL', 'TEXT').replace('user_version=2', 'user_version=3'))
+        con.executescript(V2_SCHEMA.replace('current_start TEXT NOT NULL', 'current_start TEXT')
+                         .replace('current_end TEXT NOT NULL', 'current_end TEXT').replace('user_version=2', 'user_version=3'))
         con.execute("INSERT INTO categories VALUES ('Работа','#123456',1)")
         con.execute('INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     (1, 'Событие', 'Работа', START, END, START, END, None, None, 'pending', '', 'local', None, START, START))
-        con.executescript('''CREATE TABLE baseline_rules (event_id INTEGER PRIMARY KEY REFERENCES events(id),category TEXT,track INTEGER,tolerance_minutes INTEGER);
-            CREATE TRIGGER migration_failure BEFORE INSERT ON baseline_rules BEGIN SELECT RAISE(ABORT,'simulated storage failure'); END;''')
+    # Simulate a storage failure without embedding now-forbidden SQL in a backup.
+    connect = sqlite3.connect
+    class FailingConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql.startswith('INSERT OR IGNORE INTO baseline_rules SELECT'):
+                raise sqlite3.IntegrityError('simulated storage failure')
+            return super().execute(sql, *args, **kwargs)
+    monkeypatch.setattr(sqlite3, 'connect', lambda *a, **kw: connect(*a, **dict(kw, factory=FailingConnection)))
     with pytest.raises(sqlite3.IntegrityError, match='simulated storage failure'):
         Store(path)
     with sqlite3.connect(path) as con:

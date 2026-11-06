@@ -19,7 +19,9 @@ BOOTSTRAP = {'tag': 'v0.10.0', 'version': '0.10.0',
 REQUIRED_CHECKS = ('ok', 'frozen', 'icon', 'caldav_parse', 'vault', 'backup_restore',
                    'backup_compatibility', 'emergency_restore', 'runtime_logging', 'gui', 'source_to_exe',
                    'old_to_new', 'reinstall', 'uninstall_preserves_data', 'running_app_protected',
-                   'downgrade_rejected', 'no_python_on_path', 'unicode_install_path')
+                   'downgrade_rejected', 'no_python_on_path', 'unicode_install_path',
+                   'sqlite_patched', 'untrusted_backup_rejected', 'obsolete_files_removed',
+                   'user_files_preserved', 'installed_file_manifest', 'reparse_path_rejected')
 
 
 def version_key(version):
@@ -251,6 +253,9 @@ def verify_bundle(folder, version, sha):
     report = json.loads((folder / 'distribution-check.json').read_text(encoding='utf-8-sig'))
     if report.get('version') != version or any(report.get(key) is not True for key in REQUIRED_CHECKS):
         raise ValueError('Distribution acceptance is incomplete or belongs to another version.')
+    if (report.get('sqlite_version') != '3.54.1' or
+            report.get('sqlite_source_id') != '2026-10-16 14:45:20 555e07ef33f69a0957d24d8e555b702464a131d6f1607f4c3c1e4551e8e6ca76'):
+        raise ValueError('The distribution did not load the pinned SQLite library.')
     previous = json.loads((folder / 'upgrade-source.json').read_text(encoding='utf-8-sig'))
     if (previous.get('tag') != 'v' + previous['version'] or
             version_key(previous['version']) >= version_key(version) or

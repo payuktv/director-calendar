@@ -99,10 +99,12 @@ class Store:
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
+        from .database_guard import configure_connection
         con = sqlite3.connect(self.path, timeout=10)
         con.row_factory = sqlite3.Row
-        con.execute("PRAGMA foreign_keys=ON")
         try:
+            configure_connection(con)
+            con.execute("PRAGMA foreign_keys=ON")
             yield con
             con.commit()
         except Exception:

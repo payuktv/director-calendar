@@ -70,7 +70,8 @@ def bundle(tmp_path):
     (folder / 'build-dependencies.txt').write_text('synthetic==1.0\n')
     report = {key: True for key in release.REQUIRED_CHECKS}
     report.update(version=VERSION, previous_version='0.12.0', previous_commit=OLD_SHA,
-                  previous_installer_sha256='c' * 64)
+                  previous_installer_sha256='c' * 64, sqlite_version='3.54.1',
+                  sqlite_source_id='2026-10-16 14:45:20 555e07ef33f69a0957d24d8e555b702464a131d6f1607f4c3c1e4551e8e6ca76')
     (folder / 'distribution-check.json').write_text(json.dumps(report))
     previous = dict(tag='v0.12.0', version='0.12.0', sha=OLD_SHA, bootstrap=False,
                     installer={'name': 'DirectorCalendar-0.12.0-Setup-x64.exe', 'sha256': 'c'*64, 'size': 20})

@@ -1,5 +1,7 @@
 # Run only on Windows. The source root can point at the previous revision in CI.
 import os
+import hashlib
+import json
 from pathlib import Path
 import tomllib
 from PyInstaller.utils.hooks import collect_data_files, copy_metadata
@@ -21,6 +23,13 @@ for package in ('keyring', 'icalendar', 'recurring-ical-events', 'PySide6_Essent
 a = Analysis([str(root / 'main.py')], pathex=[str(root)], datas=datas,
              hiddenimports=['keyring.backends.Windows'], excludes=['tkinter', 'pytest'],
              binaries=[], hookspath=[], runtime_hooks=[])
+# Replace the DLL collected from CPython, never ship both old and new copies.
+sqlite_dll = Path(os.environ['DIRECTOR_SQLITE_DLL']).resolve()
+sqlite_info = json.loads((sqlite_dll.parent / 'sqlite-build.json').read_text(encoding='utf-8'))
+assert hashlib.sha256(sqlite_dll.read_bytes()).hexdigest() == sqlite_info['dll_sha256']
+assert sum(Path(item[0]).name.lower() == 'sqlite3.dll' for item in a.binaries) == 1
+a.binaries = [(name, str(sqlite_dll), kind) if Path(name).name.lower() == 'sqlite3.dll'
+              else (name, source, kind) for name, source, kind in a.binaries]
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='DirectorCalendar', console=False,
           icon=str(root / 'director_control/assets/director-calendar.ico'), version=info, upx=False)
