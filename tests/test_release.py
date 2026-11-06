@@ -71,7 +71,7 @@ def bundle(tmp_path):
     (folder / 'build-dependencies.txt').write_text('synthetic==1.0\n')
     report = {key: True for key in release.REQUIRED_CHECKS}
     report.update(python_version=PYTHON_VERSION, expat_version=EXPAT_VERSION,
-                  openssl_version=list(OPENSSL_VERSION), python_bits=64,
+                  openssl_version=OPENSSL_VERSION, python_bits=64,
                   python_implementation='CPython', python_free_threaded=False)
     report.update(version=VERSION, previous_version='0.12.0', previous_commit=OLD_SHA,
                   previous_installer_sha256='c' * 64, sqlite_version='3.54.1',

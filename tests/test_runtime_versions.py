@@ -14,7 +14,7 @@ from tests.test_release import bundle, SHA, VERSION
     ('python_version', None), ('python_implementation', 'PyPy'),
     ('python_bits', 32), ('python_free_threaded', True),
     ('python_free_threaded', 0), ('expat_version', 'expat_2.8.5'),
-    ('openssl_version', [3, 5, 8]), ('openssl_version', None),
+    ('openssl_version', 'OpenSSL 3.5.8 1 Jul 2026'), ('openssl_version', None),
 ])
 def test_publication_rejects_wrong_native_runtime(tmp_path, field, value):
     folder = bundle(tmp_path)
@@ -48,4 +48,11 @@ def test_runtime_report_is_json_serializable_and_reads_actual_interpreter():
     report = json.loads(json.dumps(runtime_versions()))
     assert report['python_version'] == platform.python_version()
     assert report['expat_version'] == pyexpat.EXPAT_VERSION
-    assert report['openssl_version'] == list(ssl.OPENSSL_VERSION_INFO[:3])
+    assert report['openssl_version'] == ssl.OPENSSL_VERSION
+
+
+def test_openssl_3_patch_number_is_preserved(monkeypatch):
+    import ssl
+    monkeypatch.setattr(ssl, 'OPENSSL_VERSION_INFO', (3, 5, 0, 9, 0))
+    monkeypatch.setattr(ssl, 'OPENSSL_VERSION', 'OpenSSL 3.5.9 29 Sep 2026')
+    assert runtime_versions()['openssl_version'] == 'OpenSSL 3.5.9 29 Sep 2026'
