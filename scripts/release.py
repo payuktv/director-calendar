@@ -25,7 +25,8 @@ REQUIRED_CHECKS = ('ok', 'frozen', 'icon', 'caldav_parse', 'vault', 'backup_rest
                    'old_to_new', 'reinstall', 'uninstall_preserves_data', 'running_app_protected',
                    'downgrade_rejected', 'no_python_on_path', 'unicode_install_path',
                    'sqlite_patched', 'untrusted_backup_rejected', 'obsolete_files_removed',
-                   'user_files_preserved', 'installed_file_manifest', 'reparse_path_rejected', 'runtime_patched')
+                   'user_files_preserved', 'installed_file_manifest', 'reparse_path_rejected', 'runtime_patched',
+                   'backup_settings_validated', 'backup_destination_local')
 
 
 def version_key(version):

@@ -1,8 +1,7 @@
 from pathlib import Path
-from time import monotonic
+from time import monotonic, sleep
 
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
-from PySide6.QtTest import QTest
 
 from director_control import backups
 from director_control.storage import Store
@@ -13,7 +12,8 @@ def settle(app, panel):
     deadline = monotonic()+5
     while panel.busy and monotonic() < deadline:
         app.processEvents()
-        QTest.qWait(10)
+        # Release Python's GIL so this polling loop cannot starve BackupWorker.
+        sleep(.01)
     assert not panel.busy
 
 

@@ -8,6 +8,58 @@ import tempfile
 from uuid import uuid4
 
 
+def _verify_restored_settings(folder):
+    from datetime import datetime
+    from . import __version__
+    from .storage import Store
+    from .backups import restore_backup, save_backup_settings, scheduled_backup
+    from .recovery import recover_database
+    from .updates import prepare_version_update
+
+    folder = folder.resolve()
+    source = Store(folder / 'settings-source.db')
+    source.set_setting('app_last_version', __version__)
+    imported_folder = folder / 'imported-destination'
+    source.set_setting('backup_folder', str(imported_folder))
+    source.set_setting('backup_keep', '1')
+    now = datetime(2026, 11, 6, 12)
+    source.set_setting('backup_last_auto', json.dumps({
+        'day': now.date().isoformat(), 'folder': str(imported_folder),
+        'path': str(imported_folder / 'old.db')}))
+    source_bytes = source.path.read_bytes()
+    for emergency in (False, True):
+        live = Store(folder / f'settings-target-{emergency}.db')
+        selected = folder / 'locally-selected-destination'
+        save_backup_settings(live, True, str(selected), 7)
+        if emergency:
+            live.path.write_bytes(b'synthetic damaged database')
+            recover_database(live.path, source.path)
+        else:
+            restore_backup(live, source.path)
+        assert prepare_version_update(live.path) is None
+        live = Store(live.path)
+        assert live.get_setting('backup_keep') == ('30' if emergency else '7')
+        assert not live.get_setting('backup_last_auto')
+        eid = live.create_event('New after restore', 'Работа', '2026-11-07T09:00:00', '2026-11-07T10:00:00')
+        saved = scheduled_backup(live, now)
+        assert saved.parent == (folder / 'backups' if emergency else selected)
+        with closing(sqlite3.connect(saved)) as con:
+            assert con.execute('SELECT title FROM events WHERE id=?', (eid,)).fetchone()[0] == 'New after restore'
+    assert source.path.read_bytes() == source_bytes and not imported_folder.exists()
+    source.set_setting('backup_keep', 'not-an-integer')
+    before = live.path.read_bytes()
+    for restore in (lambda: restore_backup(live, source.path),
+                    lambda: recover_database(live.path, source.path),
+                    lambda: prepare_version_update(source.path)):
+        try:
+            restore()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Invalid backup settings were accepted')
+        assert live.path.read_bytes() == before
+
+
 def verify_installation(destination):
     from . import diagnostics
     from . import __version__
@@ -48,6 +100,8 @@ def verify_installation(destination):
     report.update(sqlite_patched=True, sqlite_version=sqlite3.sqlite_version, sqlite_source_id=source_id)
     with tempfile.TemporaryDirectory(prefix='DirectorCalendar-check-') as temporary, diagnostics.session(Path(temporary) / 'logs'):
         os.environ['DIRECTOR_CONTROL_DATA_DIR'] = temporary
+        _verify_restored_settings(Path(temporary))
+        report.update(backup_settings_validated=True, backup_destination_local=True)
         assert ZoneInfo('Europe/Moscow')
         assert Path(certifi.where()).is_file()
         config = CalendarConfig('https://calendar.mail.ru/test/', 'synthetic@example.test')

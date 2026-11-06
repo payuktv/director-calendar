@@ -147,6 +147,7 @@ class BackupPanel(QGroupBox):
             return
         answer = QMessageBox.question(self, 'Восстановить базу данных?',
             'Текущие события, история и настройки будут заменены данными из выбранной копии. '
+            'Текущая папка резервных копий, включение автокопирования и число хранимых копий сохранятся. '
             'Перед заменой сохраним отдельную копию текущей базы. После успешного восстановления приложение закроется; открой его снова.',
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if answer == QMessageBox.StandardButton.Yes:
