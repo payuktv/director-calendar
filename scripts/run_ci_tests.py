@@ -34,7 +34,7 @@ AREAS = {
     'director_control/input_wheel.py': {'test_input_wheel', 'test_date_pickers', 'test_local_event_ui'},
     'director_control/diagnostics.py': {'test_diagnostics', 'test_desktop', 'test_gui_smoke'},
     'director_control/diagnostics_ui.py': {'test_diagnostics', 'test_gui_smoke'},
-    'scripts/release.py': {'test_release'},
+    'scripts/release.py': {'test_release', 'test_upgrade_download'},
     'scripts/verify_test_results.py': {'test_ci_results'},
 }
 

@@ -69,9 +69,11 @@ def bundle(tmp_path):
     (folder / 'build-info.txt').write_text('Python: test; Source: ' + SHA + '\n')
     (folder / 'build-dependencies.txt').write_text('synthetic==1.0\n')
     report = {key: True for key in release.REQUIRED_CHECKS}
-    report.update(version=VERSION, previous_version='0.12.0', previous_commit=OLD_SHA)
+    report.update(version=VERSION, previous_version='0.12.0', previous_commit=OLD_SHA,
+                  previous_installer_sha256='c' * 64)
     (folder / 'distribution-check.json').write_text(json.dumps(report))
-    previous = dict(tag='v0.12.0', version='0.12.0', sha=OLD_SHA, bootstrap=False)
+    previous = dict(tag='v0.12.0', version='0.12.0', sha=OLD_SHA, bootstrap=False,
+                    installer={'name': 'DirectorCalendar-0.12.0-Setup-x64.exe', 'sha256': 'c'*64, 'size': 20})
     (folder / 'upgrade-source.json').write_text(json.dumps(previous))
     binaries = sorted(list(folder.glob('*.exe')) + list(folder.glob('*.zip')))
     (folder / 'SHA256SUMS.txt').write_text(''.join(f'{release.digest(p)}  {p.name}\n' for p in binaries))

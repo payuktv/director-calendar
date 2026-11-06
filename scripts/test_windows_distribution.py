@@ -1,5 +1,6 @@
 """Real old-exe -> new-installer acceptance on a disposable Windows CI runner."""
 import ctypes
+import argparse
 from contextlib import closing
 from ctypes import wintypes
 import json
@@ -103,13 +104,23 @@ def uninstall(folder, env):
     raise AssertionError('Uninstall did not finish removing program files')
 
 
-def main(previous_root, output):
+def main(previous_root, output, upgrade_source, previous_installer=None):
     from keyring.backends.Windows import WinVaultKeyring
     from director_control import __version__
     from director_control.storage import default_data_dir
     previous_version = tomllib.loads((previous_root / 'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
     previous_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=previous_root, text=True).strip()
-    old_setup = next((previous_root / 'dist/artifacts').glob('*Setup-x64.exe'))
+    from scripts.release import verify_previous_installer
+    selected = json.loads(upgrade_source.read_text(encoding='utf-8-sig'))
+    assert selected['version'] == previous_version and selected['sha'] == previous_commit
+    if selected['bootstrap']:
+        assert previous_installer is None
+        old_setup = next((previous_root / 'dist/artifacts').glob('*Setup-x64.exe'))
+        previous_digest = None
+    else:
+        assert previous_installer is not None
+        old_setup = previous_installer
+        previous_digest = verify_previous_installer(old_setup, selected)
     new_setup = ROOT / f'dist/artifacts/DirectorCalendar-{__version__}-Setup-x64.exe'
     vault = WinVaultKeyring()
     key = 'distribution-upgrade-' + str(uuid4())
@@ -192,7 +203,8 @@ s.set_setting('ui_calendar_view','month')
             report.update(check, source_to_exe=True, old_to_new=True, reinstall=True, uninstall_preserves_data=True,
                           running_app_protected=True, downgrade_rejected=True, no_python_on_path=True,
                           default_data_directory=str(default_data_dir()), unicode_install_path=True,
-                          previous_version=previous_version, previous_commit=previous_commit)
+                          previous_version=previous_version, previous_commit=previous_commit,
+                          previous_installer_sha256=previous_digest)
     finally:
         vault.delete_password('DirectorControl.CalDAV', key)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -200,4 +212,11 @@ s.set_setting('ui_calendar_view','month')
 
 
 if __name__ == '__main__':
-    main(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('previous_root', type=Path)
+    parser.add_argument('output', type=Path)
+    parser.add_argument('--upgrade-source', required=True, type=Path)
+    parser.add_argument('--previous-installer', default='')
+    args = parser.parse_args()
+    main(args.previous_root.resolve(), args.output.resolve(), args.upgrade_source.resolve(),
+         Path(args.previous_installer).resolve() if args.previous_installer else None)

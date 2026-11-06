@@ -1,4 +1,4 @@
-# Director Calendar — v0.13.4
+# Director Calendar — v0.13.5
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
@@ -25,16 +25,16 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.4](https://github.com/payuktv/director-calendar/releases/tag/v0.13.4)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.5](https://github.com/payuktv/director-calendar/releases/tag/v0.13.5)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.13.4-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-0.13.5-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; temporary Actions artifacts are still retained for **30 days** for CI inspection. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.13.4-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-0.13.5-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -178,7 +178,7 @@ py -3.13 -m venv .venv
 
 For a source-based desktop shortcut, run `create_desktop_shortcut.pyw` with the configured environment or use the shortcut button in Settings. If the source directory moves, recreate the shortcut. Source-based and installed launches use the same default database location.
 
-The stack is PySide6/Qt Widgets, SQLite, requests, icalendar, recurring-ical-events and Windows Vault through keyring. Package metadata accepts Python 3.13–3.14, but CI and distribution builds currently use Python 3.13.
+The stack is PySide6/Qt Widgets, SQLite, requests, icalendar, recurring-ical-events and Windows Vault through keyring. PySide6 Essentials provides all Qt modules used by the application and tests; the Addons, PDF and WebEngine packages are unnecessary. Package metadata accepts Python 3.13–3.14, but CI and distribution builds currently use Python 3.13.
 
 ## Tests and Windows packaging
 
@@ -200,9 +200,9 @@ Build on Windows x64 with Python 3.13 and Inno Setup 6:
 ./scripts/build_windows.ps1
 ```
 
-Build dependencies are pinned in `packaging/requirements-windows.lock`. PyInstaller uses `packaging/director-calendar.spec`; Inno Setup uses `packaging/installer.iss`. Outputs are written to `dist/artifacts`.
+Build dependencies are pinned in `packaging/requirements-windows.lock`. When that lock changes, the build script recreates its dedicated `.build-venv` so removed packages cannot leave unwanted plugins in the bundle. PyInstaller uses `packaging/director-calendar.spec`; Inno Setup uses `packaging/installer.iss`. Outputs are written to `dist/artifacts`; `build-info.txt` and the CI summary record bundle, installer and ZIP sizes.
 
-**Windows distribution** runs within Release, manually, or for PRs changing packaging and native lifecycle files. It builds the current source and the highest published version below it for upgrade acceptance, including published pre-releases. Until the first release, it uses the pinned v0.10.0 bootstrap revision. It checks installation, GUI startup, update/reinstallation, downgrade/running-app protection, Unicode paths, backup behavior and preservation of data/credentials after uninstall. Bundled Qt, calendar parsing, time zones, TLS certificates and Vault are exercised. Artifacts are uploaded only after distribution acceptance passes.
+**Windows distribution** runs within Release, manually, or for PRs changing packaging and native lifecycle files. It builds the current source and downloads the actual installer of the highest published version below it for upgrade acceptance, including published pre-releases. The download must match its published SHA-256, size, release manifest and source tag; any mismatch fails the check. Only before the first release is the pinned v0.10.0 bootstrap revision built locally. It checks installation, GUI startup, update/reinstallation, downgrade/running-app protection, Unicode paths, backup behavior and preservation of data/credentials after uninstall. Bundled Qt, calendar parsing, time zones, TLS certificates and Vault are exercised. Artifacts are uploaded only after distribution acceptance passes.
 
 **Release** reuses both the Tests and Windows distribution workflows at its own source commit and publishes their verified Windows artifact only when both succeed. Add English notes under `releases/vMAJOR.MINOR.PATCH.md` and merge into `main` to start a release, or run Release manually from Actions on `main`. Tags and published files are never overwritten by this process. See [release procedure and retry rules](docs/RELEASING.md).
 
@@ -220,6 +220,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v0.13.5 | Smaller Qt dependency set and verified reuse of published upgrade installers |
 | v0.13.4 | Resource-bounded, cancellable calendar synchronization |
 | v0.13.3 | Expected local cancellation/source-removal states and focused PR checks with full release validation |
 | v0.13.2 | Recognize Mail.ru collection metadata and reconcile missing events throughout the current unfrozen day |

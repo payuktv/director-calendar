@@ -6,12 +6,14 @@ import json
 import os
 from pathlib import Path
 import re
+import tempfile
 import tomllib
 from urllib.error import HTTPError
-from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+MAX_UPGRADE_ASSET = 512 * 1024 * 1024
 BOOTSTRAP = {'tag': 'v0.10.0', 'version': '0.10.0',
              'sha': 'a7e524281a3026d501eb7232d68008f09700e3c3', 'bootstrap': True}
 REQUIRED_CHECKS = ('ok', 'frozen', 'icon', 'caldav_parse', 'vault', 'backup_restore',
@@ -88,6 +90,102 @@ class GitHub:
             obj = self.request('git/tags/' + obj['sha'])['object']
         raise ValueError('The release tag must resolve to a commit.')
 
+    def download_asset(self, asset, destination):
+        """Authenticated API download; never forward the token to asset storage."""
+        class AssetRedirect(HTTPRedirectHandler):
+            def redirect_request(self, request, fp, code, msg, headers, newurl):
+                parts = urlsplit(newurl)
+                if parts.scheme != 'https' or parts.username or parts.password or parts.port not in (None, 443):
+                    raise ValueError('Invalid release asset redirect.')
+                redirected = super().redirect_request(request, fp, code, msg, headers, newurl)
+                if redirected is not None and parts.hostname != 'api.github.com':
+                    redirected.remove_header('Authorization')
+                return redirected
+
+        validate_asset(asset)
+        request = Request(f"https://api.github.com/repos/{self.repository}/releases/assets/{asset['id']}",
+                          headers={'Authorization': f'Bearer {self.token}', 'Accept': 'application/octet-stream',
+                                   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'DirectorCalendar-Release'})
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with build_opener(AssetRedirect()).open(request, timeout=60) as response:
+                with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as file:
+                    temporary = Path(file.name)
+                    hasher, size = hashlib.sha256(), 0
+                    while chunk := response.read(1024 * 1024):
+                        size += len(chunk)
+                        if size > asset['size']:
+                            raise ValueError('Downloaded asset exceeds its published size.')
+                        hasher.update(chunk)
+                        file.write(chunk)
+            if size != asset['size'] or 'sha256:' + hasher.hexdigest() != asset['digest']:
+                raise ValueError('Downloaded asset failed SHA-256/size verification.')
+            temporary.replace(destination)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+
+def validate_asset(asset):
+    if (type(asset.get('id')) is not int or asset['id'] <= 0 or asset.get('state') != 'uploaded'
+            or type(asset.get('size')) is not int or not 0 < asset['size'] <= MAX_UPGRADE_ASSET
+            or not re.fullmatch(r'sha256:[0-9a-f]{64}', asset.get('digest') or '')):
+        raise ValueError('A release asset must have a bounded size and published SHA-256.')
+
+
+def download_previous_installer(api, previous, folder):
+    """Use exactly the installer users received, bound to its tag and manifest."""
+    folder = Path(folder)
+    version_key(previous['version'])
+    if (previous['tag'] != 'v' + previous['version']
+            or not re.fullmatch(r'[0-9a-f]{40}', previous['sha'])):
+        raise ValueError('Invalid previous source identity.')
+    if previous['bootstrap']:
+        return None
+    published = api.request('releases/tags/' + previous['tag'])
+    if (published['draft'] or published['tag_name'] != previous['tag']
+            or previous['tag'] != 'v' + previous['version'] or api.tag_sha(previous['tag']) != previous['sha']):
+        raise ValueError('Previous release/tag changed before download.')
+    installer_name = f"DirectorCalendar-{previous['version']}-Setup-x64.exe"
+    def asset_named(name):
+        matches = [a for a in published['assets'] if a['name'] == name]
+        if len(matches) != 1:
+            raise ValueError('Missing or duplicate published upgrade asset.')
+        validate_asset(matches[0])
+        return matches[0]
+    installer, manifest_asset = asset_named(installer_name), asset_named('release-manifest.json')
+    if manifest_asset['size'] > 2 * 1024 * 1024:
+        raise ValueError('Previous release manifest is too large.')
+    manifest_path = folder / 'release-manifest.json'
+    api.download_asset(manifest_asset, manifest_path)
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    recorded = manifest['files'].get(installer_name)
+    if (manifest.get('version') != previous['version'] or manifest.get('tag') != previous['tag']
+            or manifest.get('commit') != previous['sha']
+            or manifest.get('tests') != 'success' or manifest.get('distribution') != 'success'
+            or recorded != {'sha256': installer['digest'].removeprefix('sha256:'), 'size': installer['size']}):
+        raise ValueError('Previous installer does not match its verified release manifest.')
+    path = folder / installer_name
+    api.download_asset(installer, path)
+    if api.tag_sha(previous['tag']) != previous['sha']:
+        raise ValueError('Previous source tag moved during download.')
+    previous['installer'] = {'name': installer_name, 'sha256': recorded['sha256'], 'size': recorded['size'],
+                             'asset_id': installer['id'], 'release_id': published['id']}
+    return path
+
+
+def verify_previous_installer(path, previous):
+    """Recheck immediately before executing the old installer in acceptance."""
+    info = previous['installer']
+    path = Path(path)
+    if (info['name'] != f"DirectorCalendar-{previous['version']}-Setup-x64.exe"
+            or path.name != info['name'] or path.is_symlink() or not path.is_file()
+            or path.stat().st_size != info['size'] or digest(path) != info['sha256']):
+        raise ValueError('Previous installer changed before upgrade acceptance.')
+    return info['sha256']
+
 
 def previous_release(api, version):
     current = version_key(version)
@@ -159,6 +257,13 @@ def verify_bundle(folder, version, sha):
             not re.fullmatch(r'[0-9a-f]{40}', previous['sha']) or
             report.get('previous_version') != previous['version'] or report.get('previous_commit') != previous['sha']):
         raise ValueError('Upgrade acceptance does not match its selected previous version.')
+    if not previous.get('bootstrap'):
+        installer = previous.get('installer', {})
+        if (installer.get('name') != f"DirectorCalendar-{previous['version']}-Setup-x64.exe"
+                or not re.fullmatch(r'[0-9a-f]{64}', installer.get('sha256') or '')
+                or not isinstance(installer.get('size'), int) or installer['size'] <= 0
+                or report.get('previous_installer_sha256') != installer['sha256']):
+            raise ValueError('Upgrade acceptance is not bound to the published previous installer.')
     return previous
 
 
@@ -225,13 +330,16 @@ def main():
     parser.add_argument('command', choices=['prepare', 'previous', 'publish'])
     parser.add_argument('--assets', type=Path)
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--installer-dir', type=Path)
     args = parser.parse_args()
     version = release_version()
     api = GitHub(os.environ['GITHUB_REPOSITORY'], os.environ['GH_TOKEN'])
     if args.command == 'previous':
         previous = previous_release(api, version)
+        installer = download_previous_installer(api, previous, args.installer_dir) if args.installer_dir else None
         args.output.write_text(json.dumps(previous, indent=2) + '\n', encoding='utf-8')
-        output(sha=previous['sha'], tag=previous['tag'])
+        output(sha=previous['sha'], tag=previous['tag'], bootstrap=str(previous['bootstrap']).lower(),
+               installer=str(installer.resolve()) if installer else '')
         return
     notes = release_notes(version)
     sha = os.environ['GITHUB_SHA']

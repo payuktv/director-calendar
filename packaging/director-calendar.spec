@@ -16,7 +16,7 @@ info = VSVersionInfo(ffi=FixedFileInfo(filevers=version4, prodvers=version4, mas
 datas = [(str(root / 'director_control/assets/director-calendar.ico'), 'director_control/assets')]
 for package in ('tzdata', 'certifi'):
     datas += collect_data_files(package)
-for package in ('keyring', 'icalendar', 'recurring-ical-events', 'PySide6', 'PySide6_Essentials', 'PySide6_Addons', 'shiboken6', 'requests', 'certifi', 'tzdata'):
+for package in ('keyring', 'icalendar', 'recurring-ical-events', 'PySide6_Essentials', 'shiboken6', 'requests', 'certifi', 'tzdata'):
     datas += copy_metadata(package)
 a = Analysis([str(root / 'main.py')], pathex=[str(root)], datas=datas,
              hiddenimports=['keyring.backends.Windows'], excludes=['tkinter', 'pytest'],
