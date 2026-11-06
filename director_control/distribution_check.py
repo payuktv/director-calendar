@@ -1,5 +1,6 @@
 """Explicit diagnostic for the shipped bundle; uses only temporary synthetic data."""
 import json
+from contextlib import closing
 import os
 import sqlite3
 from pathlib import Path
@@ -71,13 +72,14 @@ def verify_installation(destination):
         # Both restoration entry points must reject active SQL before touching data.
         for attack in ('trigger', 'fts', 'view'):
             malicious = create_backup(store)
-            with sqlite3.connect(malicious) as con:
+            with closing(sqlite3.connect(malicious)) as con:
                 if attack == 'fts':
                     con.execute('CREATE VIRTUAL TABLE foreign_fts USING fts5(content)')
                 elif attack == 'view':
                     con.execute('CREATE VIEW foreign_view AS SELECT * FROM events')
                 else:
                     con.execute('CREATE TRIGGER erase AFTER INSERT ON audit BEGIN DELETE FROM events; END')
+                con.commit()
             before_attack = store.path.read_bytes()
             for restore in (lambda: restore_backup(store, malicious),
                             lambda: recover_database(store.path, malicious)):
