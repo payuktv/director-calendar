@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   test:
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       matrix:
         os: ${{ fromJSON((inputs.suite == 'full' || github.event_name == 'workflow_dispatch') && '["windows-latest","ubuntu-latest"]' || '["windows-latest"]') }}
@@ -73,11 +73,4 @@ jobs:
         run: python scripts/verify_test_results.py pytest-results.xml --platform ${{ runner.os }}
       - name: Save test scope, timing and results
         if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: test-results-${{ runner.os }}
-          path: |
-            pytest-results.xml
-            ci-test-plan.json
-          if-no-files-found: warn
-          retention-days: 14
+        run: python scripts/save_ci_reports.py

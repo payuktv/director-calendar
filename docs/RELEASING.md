@@ -8,15 +8,15 @@
 
 ## Publication gates
 
-**Release** calls **Tests** with `suite: full` and **Windows distribution** at its own source commit. Both Windows and Linux tests must pass without skips; the Windows shortcut test remains mandatory. The distribution must pass installation, upgrade, launch, reinstallation, uninstall/data-preservation and backup/recovery checks. Focused PR success cannot replace these full release checks.
+**Release** calls **Tests** with `suite: full` at its own source commit. Both Windows and Linux tests must pass without skips; the Windows shortcut test remains mandatory. After these pass, a Windows job builds and checks the distribution using the same composite action as PR acceptance. Installation, upgrade, launch, reinstallation, uninstall/data-preservation and backup/recovery checks remain mandatory. Focused PR success cannot replace these full release checks.
 
 PR tests run on Windows with affected-area selection and a conservative full-suite fallback. Ordinary branch pushes do not duplicate them, and main pushes do not independently duplicate Release's tests or package build. Packaging/native lifecycle changes also run distribution acceptance on the PR. Other changes receive that check once at release. PR concurrency cancels superseded runs; release publication is never cancelled by that policy. See [testing policy](TESTING.md).
 
-The publish job depends on both complete workflows. It downloads only the artifact from that same Release workflow run, checks its exact file set, version, source commit, binary checksums and all required acceptance flags, and matches the recorded upgrade source with the acceptance report. No files are rebuilt for publication.
+The publish job depends on the complete platform test workflow. It builds and verifies the Windows files in that same job, then checks their exact file set, version, source commit, binary checksums and all required acceptance flags, and matches the recorded upgrade source with the acceptance report. Publication receives the actual composite-action outcome and cannot run after a failed build or acceptance step. The exact tested files are uploaded directly to Releases, without an intermediate Actions artifact or another rebuild.
 
 Only the publish job has `contents: write`. It creates the exact `vMAJOR.MINOR.PATCH` tag on the tested commit, uploads the full set into a **draft**, verifies the uploaded sizes and SHA-256 digests, then publishes. A changed `main` or tag aborts publication. Releases below v1.0.0 are marked **Pre-release**; the workflow does not declare production readiness or advance versions itself.
 
-The uploaded set contains the installer, portable ZIP, checksums for all attachments, dependency/build information, distribution acceptance report, previous-version record and release manifest. GitHub adds its source-code archives separately. The download channel is the repository's **Releases** page; Actions artifacts are temporary CI outputs, not the permanent installation source.
+The uploaded set contains the installer, portable ZIP, checksums for all attachments, dependency/build information, distribution acceptance report, previous-version record and release manifest. GitHub adds its source-code archives separately. The download channel is the repository's **Releases** page. CI stores scope and JUnit reports in logs and job summaries instead of accumulating duplicate installer artifacts. Exhausted Actions artifact storage cannot block this delivery path; no checks are optional and no paid storage is enabled.
 
 ## Upgrade baseline
 
@@ -26,8 +26,8 @@ Before the first release only, the bootstrap baseline is v0.10.0 at `a7e524281a3
 
 ## Retry and preservation
 
-- A failed test or packaging job prevents the publish job from running. Resolve the failure and rerun the workflow.
-- An upload/verification failure leaves an unpublished draft. Rerun **Release** from the same commit; it may replace only that draft's assets. Each retry downloads a fresh CI artifact.
+- A failed test prevents the Windows publish job from starting; a failed build or acceptance step prevents its publication step. Resolve the failure and rerun the failed job.
+- An upload/verification failure leaves an unpublished draft. Rerun the failed publish job from the same commit; it rebuilds and revalidates the distribution and may replace only that draft's assets. Successful platform test jobs do not need another run.
 - A published release is never replaced by this workflow. Rerunning its exact commit is a no-op; reusing its version on another commit fails. For application changes, choose a new version.
 - Do not manually move release tags. If `main` advanced before publication, run Release from the current main revision. If the old attempt already created a tag/draft, investigate it and use a new version rather than moving a tag automatically.
 - Release jobs are serialized without cancelling an in-progress publication.

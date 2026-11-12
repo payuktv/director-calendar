@@ -15,6 +15,8 @@ on:
       - 'director_control/sync_process.py'
       - 'main.py'
       - '.github/workflows/windows-build.yml'
+      - '.github/workflows/release.yml'
+      - '.github/actions/windows-distribution/**'
   workflow_dispatch:
   workflow_call:
 concurrency:
@@ -28,46 +30,5 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version-file: '.python-version'
-          architecture: x64
-          cache: pip
-          cache-dependency-path: |
-            packaging/requirements-windows.lock
-            packaging/build-tools.lock
-      - name: Select previous published version
-        id: previous
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/release.py previous --output "${{ runner.temp }}/upgrade-source.json" --installer-dir "${{ runner.temp }}/previous-installer"
-      - name: Build current Windows executable and installer
-        shell: pwsh
-        run: ./scripts/build_windows.ps1
-      - name: Check out previous application for real upgrade acceptance
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ steps.previous.outputs.sha }}
-          path: previous-version
-      - name: Build bootstrap application only when no release exists
-        if: steps.previous.outputs.bootstrap == 'true'
-        shell: pwsh
-        run: ./scripts/build_windows.ps1 -SourceRoot ./previous-version
-      - name: Install, launch, upgrade and preserve data
-        shell: pwsh
-        env:
-          PREVIOUS_INSTALLER: ${{ steps.previous.outputs.installer }}
-          UPGRADE_SOURCE: ${{ runner.temp }}/upgrade-source.json
-        run: |
-          $AcceptanceArgs = @('scripts/test_windows_distribution.py', 'previous-version', 'dist/artifacts/distribution-check.json', '--upgrade-source', $env:UPGRADE_SOURCE)
-          if ($env:PREVIOUS_INSTALLER) { $AcceptanceArgs += @('--previous-installer', $env:PREVIOUS_INSTALLER) }
-          & ./.build-venv/Scripts/python.exe @AcceptanceArgs
-          if ($LASTEXITCODE -ne 0) { throw 'Distribution acceptance failed.' }
-          Copy-Item "${{ runner.temp }}/upgrade-source.json" dist/artifacts/upgrade-source.json
-      - name: Publish verified Windows distribution
-        uses: actions/upload-artifact@v6
-        with:
-          name: DirectorCalendar-Windows-x64
-          path: dist/artifacts/
-          if-no-files-found: error
-          retention-days: 30
+      - name: Build and verify the Windows distribution
+        uses: ./.github/actions/windows-distribution
