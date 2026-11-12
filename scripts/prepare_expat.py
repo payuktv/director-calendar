@@ -102,9 +102,15 @@ def build_extensions(python_source, expat_source, build):
     common = dict(include_dirs=[str(path) for path in includes],
                   define_macros=[('XML_STATIC', '1'), ('PYEXPAT_EXPORTS', '1')],
                   extra_compile_args=compile_args, extra_link_args=link_args)
+    expat_sources = ['xmlparse.c', 'xmlrole.c', 'xmltok.c', 'xcs.c']
+    # Expat 2.10 moved entropy implementations out of xmlparse.c. CPython's
+    # expat_config.h disables the Unix sources because Python supplies the salt;
+    # Windows still requires rand_s, as in upstream Expat's CMake source list.
+    if sys.platform == 'win32':
+        expat_sources.append('random_rand_s.c')
     extensions = [
         Extension('pyexpat', [str(python_source / 'Modules/pyexpat.c')]
-                  + [str(expat_source / 'lib' / name) for name in ('xmlparse.c', 'xmlrole.c', 'xmltok.c', 'xcs.c')],
+                  + [str(expat_source / 'lib' / name) for name in expat_sources],
                   **common),
         Extension('_elementtree', [str(python_source / 'Modules/_elementtree.c')], **common),
     ]
