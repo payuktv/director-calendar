@@ -1,4 +1,4 @@
-"""Read-only validation of application records, including SQLite storage types.
+"""Shared write/startup validation, including SQLite storage types.
 
 An approved SQL schema is not enough: SQLite affinity still permits BLOBs in
 TEXT columns and strings in INTEGER columns. Keep this gate independent of Qt
@@ -20,7 +20,7 @@ def _require(condition):
         raise ValueError(ERROR)
 
 
-def _text(value, *, nullable=False, nonempty=False, maximum=None):
+def validate_text(value, *, nullable=False, nonempty=False, maximum=None):
     if nullable and value is None:
         return
     _require(isinstance(value, str) and '\0' not in value)
@@ -35,7 +35,7 @@ def _integer(value, low=0, high=MAX_INTEGER, *, nullable=False):
 
 
 def _timestamp(value, *, local=False):
-    _text(value, nonempty=True, maximum=64)
+    validate_text(value, nonempty=True, maximum=64)
     stamp = datetime.fromisoformat(value)
     # Application queries use an ISO date prefix; compact/week-date forms are
     # accepted by fromisoformat but are not compatible with those queries.
@@ -52,8 +52,36 @@ def _interval(start, end):
     _require(_timestamp(start, local=True) < _timestamp(end, local=True))
 
 
+def validate_event_content(row):
+    """Validate editable fields before a write and when opening a saved copy."""
+    validate_text(row['title'], nonempty=True, maximum=200)
+    validate_text(row['category'], nonempty=True, maximum=60)
+    validate_text(row['note'])
+    _require(row['status'] in ('pending', 'done', 'partial', 'cancelled', 'moved'))
+    for layer in ('current', 'baseline', 'actual'):
+        _interval(row.get(layer + '_start'), row.get(layer + '_end'))
+
+
+def validate_calendar_window(calendar_key, start, end):
+    validate_text(calendar_key, nonempty=True)
+    _require(start is not None and end is not None)
+    _interval(start, end)
+
+
+def validate_remote_event(event):
+    """Keep source metadata and event fields compatible with saved records."""
+    validate_text(event.key, nonempty=True)
+    validate_text(event.uid, nonempty=True)
+    validate_text(event.recurrence_id)
+    validate_text(event.title, nonempty=True, maximum=200)
+    _require(event.start is not None and event.end is not None)
+    _interval(event.start, event.end)
+    for flag in (event.cancelled, event.all_day):
+        _require(type(flag) in (bool, int) and flag in (0, 1))
+
+
 def _history_details(raw, budget):
-    _text(raw)
+    validate_text(raw)
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -77,12 +105,12 @@ def _history_details(raw, budget):
             budget.check()
         if isinstance(value, dict):
             for key in value:
-                _text(key)
+                validate_text(key)
             stack.append((iter(value.values()), depth + 1))
         elif isinstance(value, list):
             stack.append((iter(value), depth + 1))
         elif isinstance(value, str):
-            _text(value)
+            validate_text(value)
         elif isinstance(value, float):
             _require(math.isfinite(value))
 
@@ -100,63 +128,56 @@ def _rows(con, table, budget):
 def validate_records(con, tables, budget):
     try:
         for row in _rows(con, 'categories', budget):
-            _text(row['name'], nonempty=True, maximum=60)
-            _text(row['color'], nonempty=True, maximum=128)
+            validate_text(row['name'], nonempty=True, maximum=60)
+            validate_text(row['color'], nonempty=True, maximum=128)
             _integer(row['track'], 0, 1)
         for row in _rows(con, 'events', budget):
             _integer(row['id'], 1)
-            _text(row['title'], nonempty=True, maximum=200)
-            _text(row['category'], nonempty=True, maximum=60)
-            _text(row['note'])
-            _text(row['external_key'], nullable=True)
+            validate_event_content(row)
+            validate_text(row['external_key'], nullable=True)
             for field in ('created_at', 'updated_at'):
                 _timestamp(row[field])
-            for layer in ('current', 'baseline', 'actual'):
-                _interval(row[layer + '_start'], row[layer + '_end'])
-            _require(row['status'] in ('pending', 'done', 'partial', 'cancelled', 'moved'))
             _require(row['source'] in ('local', 'caldav', 'manual'))
             if 'revision' in row:
                 _integer(row['revision'])
         for row in _rows(con, 'day_freezes', budget):
-            _text(row['day'], maximum=10)
+            validate_text(row['day'], maximum=10)
             _require(date.fromisoformat(row['day']).isoformat() == row['day'])
             _timestamp(row['frozen_at'])
         for row in _rows(con, 'audit', budget):
             _integer(row['id'], 1)
             # Deleted events deliberately keep their history; this is not an FK.
             _integer(row['event_id'], 1, nullable=True)
-            _text(row['title'])
-            _text(row['action'], nonempty=True)
+            validate_text(row['title'])
+            validate_text(row['action'], nonempty=True)
             _timestamp(row['changed_at'])
             _history_details(row['details'], budget)
         if 'calendar_events' in tables:
             for row in _rows(con, 'calendar_events', budget):
                 _integer(row['event_id'], 1)
-                _text(row['calendar_key'], nonempty=True)
-                _text(row['uid'], nonempty=True)
+                validate_text(row['calendar_key'], nonempty=True)
+                validate_text(row['uid'], nonempty=True)
                 # An empty recurrence ID is valid in older application copies.
-                _text(row['recurrence_id'])
+                validate_text(row['recurrence_id'])
                 for field in ('missing', 'cancelled', 'all_day', 'local_status'):
                     _integer(row[field], 0, 1)
                 _integer(row['baseline_all_day'], 0, 1, nullable=True)
         if 'baseline_rules' in tables:
             for row in _rows(con, 'baseline_rules', budget):
                 _integer(row['event_id'], 1)
-                _text(row['category'], nonempty=True, maximum=60)
+                validate_text(row['category'], nonempty=True, maximum=60)
                 _integer(row['track'], 0, 1)
                 _integer(row['tolerance_minutes'], 0, 180)
         if 'calendar_syncs' in tables:
             for row in _rows(con, 'calendar_syncs', budget):
                 _integer(row['id'], 1)
-                _text(row['calendar_key'], nonempty=True)
-                _require(row['start'] is not None and row['end'] is not None)
-                _interval(row['start'], row['end'])
+                validate_calendar_window(row['calendar_key'], row['start'], row['end'])
                 _require(row['status'] in ('complete', 'partial', 'failed'))
                 _timestamp(row['finished_at'], local=True)
         if 'sqlite_sequence' in tables:
             seen = set()
             for row in _rows(con, 'sqlite_sequence', budget):
-                _text(row['name'])
+                validate_text(row['name'])
                 _require(row['name'] in {'events', 'audit', 'calendar_syncs'} and row['name'] not in seen)
                 seen.add(row['name'])
                 _integer(row['seq'])

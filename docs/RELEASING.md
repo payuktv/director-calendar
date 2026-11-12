@@ -32,7 +32,21 @@ Before the first release only, the bootstrap baseline is v0.10.0 at `a7e524281a3
 - Do not manually move release tags. If `main` advanced before publication, run Release from the current main revision. If the old attempt already created a tag/draft, investigate it and use a new version rather than moving a tag automatically.
 - Release jobs are serialized without cancelling an in-progress publication.
 
-Before v1.0.0, complete real Windows/Mail.ru acceptance and the agreed operational checks. Authenticode signing and automatic update downloads are separate work.
+## Frozen v1.0 acceptance
+
+The v0.13.10 candidate closes the two findings from the v0.13.9 audit. The v1.0 feature scope is frozen: the current single-user Windows application, read-only Mail.ru import, plan/fact tracking, history and backup/recovery. Another general audit is not a publication gate.
+
+Required automated acceptance is the full Windows/Linux suite and the distribution gates above. The candidate adds a shipped-worker check for invalid UIDs, rejected writes leaving the original database unchanged, and successful reopening after accepted writes. CalDAV and the XML runtime acceptance use one policy that rejects DTDs, entities and external references.
+
+Finish the already-required target-system acceptance once on the frozen candidate:
+
+1. Install/update and reopen on the supported Windows target, retaining events, plan, facts, history and settings. The owner installs the application. Verify a clean Windows profile without development-runtime paths; record the OS and actual environment rather than claiming an unperformed clean-OS test.
+2. Complete one real-account Mail.ru synchronization and reopen. Use separate test events to check an unfrozen source removal, retention of a frozen plan, local cancellation followed by source removal, and a changed recurrence instance. Do not alter ordinary user events for acceptance.
+3. Check cancellation or connection failure preserves the prior schedule, then check a successful retry. Restore a synthetic backup in a separate test profile and reopen it.
+
+Record pass/fail evidence against the candidate version. After these checks and required automated gates pass, promote the same functional scope to v1.0.0; run the mandatory release gates for that version. The checklist is finite and is not extended by cosmetic issues or new feature requests. Reopen a release blocker only for a reproduced critical vulnerability, data loss/corruption, failed required gate or failure of a core acceptance scenario.
+
+Post-v1.0 work: Authenticode signing, automated advisory monitoring, stronger dependency/action pinning, automatic update downloads, additional platform/display coverage and new features. These items do not block the agreed initial scope. Fresh security disclosures still receive a reachability/severity assessment; a version difference alone is not a reason to postpone publication.
 
 ## Native security and installed contents
 

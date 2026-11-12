@@ -1,4 +1,4 @@
 """Director Control — local plan/fact desktop prototype."""
 
-__version__ = "0.13.9"
+__version__ = "0.13.10"
 

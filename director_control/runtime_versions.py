@@ -40,20 +40,21 @@ def verify_xml_runtime():
     """Exercise both rebuilt modules, including the fixed empty subparser path."""
     import _elementtree
     from xml.etree import ElementTree
-    from defusedxml.ElementTree import fromstring
     from defusedxml.common import DefusedXmlException
+    from .xml_policy import parse_untrusted_xml
 
     if (pyexpat.EXPAT_VERSION != EXPAT_VERSION or ElementTree.XMLParser is not _elementtree.XMLParser
             or ElementTree.XMLParser().version != 'Expat 2.10.0'):
         raise ValueError('The paired XML runtime was not updated')
     body = '<r xmlns="urn:test"><title>Календарь &amp; план</title></r>'.encode('utf-8')
-    for parse in (ElementTree.fromstring, fromstring):
+    for parse in (ElementTree.fromstring, parse_untrusted_xml):
         if parse(body).findtext('{urn:test}title') != 'Календарь & план':
             raise ValueError('XML runtime failed Unicode/namespace parsing')
-    for body in (b'<!DOCTYPE r [<!ENTITY a "blocked">]><r>&a;</r>',
+    for body in (b'<!DOCTYPE r [<!ELEMENT r ANY>]><r/>',
+                 b'<!DOCTYPE r [<!ENTITY a "blocked">]><r>&a;</r>',
                  b'<!DOCTYPE r SYSTEM "file:///must-not-be-opened"><r/>'):
         try:
-            fromstring(body, forbid_dtd=True)
+            parse_untrusted_xml(body)
         except DefusedXmlException:
             pass
         else:

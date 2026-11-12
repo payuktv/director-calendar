@@ -12,8 +12,10 @@ from zoneinfo import ZoneInfo
 
 import recurring_ical_events
 import requests
-from defusedxml.ElementTree import fromstring
 from icalendar import Calendar
+
+from .record_validation import validate_remote_event, validate_text
+from .xml_policy import parse_untrusted_xml
 
 DAV = "DAV:"
 CALDAV = "urn:ietf:params:xml:ns:caldav"
@@ -214,7 +216,8 @@ def parse_calendars(blobs: list[str | bytes], config: CalendarConfig, start: dat
                     merged.add_component(component)
                 elif component.name == "VEVENT":
                     uid = str(component.get("UID", ""))
-                    if not uid or component.errors:
+                    validate_text(uid, nonempty=True)
+                    if component.errors:
                         raise ValueError("Invalid event")
                     if any(field in component for field in ("RRULE", "RDATE", "RECURRENCE-ID")):
                         series.add(uid)
@@ -267,13 +270,15 @@ def parse_calendars(blobs: list[str | bytes], config: CalendarConfig, start: dat
             rid = component.decoded("RECURRENCE-ID", dtstart) if uid in series else None
             recurrence_id = _identity(rid, zone) if rid is not None else "single"
             key = hashlib.sha256((config.calendar_key + "\n" + uid + "\n" + recurrence_id).encode()).hexdigest()
-            events[key] = RemoteEvent(
+            event = RemoteEvent(
                 key=key, uid=uid, recurrence_id=recurrence_id,
                 title=(str(component.get("SUMMARY", "Без названия")).strip() or "Без названия")[:200],
                 start=begin.replace(tzinfo=None).isoformat(timespec="seconds"),
                 end=finish.replace(tzinfo=None).isoformat(timespec="seconds"),
                 cancelled=str(component.get("STATUS", "")).upper() == "CANCELLED", all_day=all_day,
             )
+            validate_remote_event(event)
+            events[key] = event
     except CalendarError:
         raise
     except Exception:
@@ -313,7 +318,7 @@ def fetch_snapshot(config: CalendarConfig, password: str, start: date, end: date
                 if response.status_code != 207:
                     raise CalendarError(f"Mail.ru вернул код {response.status_code}. Проверь ссылку и повтори позже.")
                 body = _read_limited(response, budget)
-            root = fromstring(body)
+            root = parse_untrusted_xml(body)
             if root.tag != f"{{{DAV}}}multistatus":
                 raise CalendarError("Mail.ru вернул неожиданный формат. Данные не изменены.")
             blobs = []
