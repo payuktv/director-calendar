@@ -28,7 +28,8 @@ def test_publication_rejects_wrong_native_runtime(tmp_path, field, value):
         release.verify_bundle(folder, VERSION, SHA)
 
 
-@pytest.mark.parametrize('field', ['runtime_patched', 'xml_runtime_verified', 'backup_records_validated'])
+@pytest.mark.parametrize('field', ['runtime_patched', 'xml_runtime_verified', 'backup_records_validated',
+                                   'calendar_writes_validated'])
 def test_missing_runtime_acceptance_is_not_publishable(tmp_path, field):
     folder = bundle(tmp_path)
     path = folder / 'distribution-check.json'

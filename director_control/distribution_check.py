@@ -94,6 +94,48 @@ def _verify_restored_records(folder):
             assert (live.path.read_bytes(), source.path.read_bytes()) == before
 
 
+def _verify_calendar_writes(folder):
+    """Exercise write/reopen consistency using the shipped child process."""
+    from dataclasses import replace
+    from datetime import date
+    from . import __version__
+    from .mail_calendar import CalendarConfig, CalendarError
+    from .storage import Store
+    from .sync_process import parse_isolated
+    from .updates import prepare_version_update
+
+    store = Store(folder / 'calendar-writes.db')
+    store.set_setting('app_last_version', __version__)
+    config = CalendarConfig('https://calendar.mail.ru/test/', 'synthetic@example.test')
+    start, end = date(2026, 11, 12), date(2026, 11, 13)
+    sample = ('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:valid\r\n'
+              'DTSTART:20261112T090000Z\r\nDTEND:20261112T100000Z\r\n'
+              'SUMMARY:Synthetic\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n')
+    snapshot = parse_isolated([sample], config, start, end)
+    assert store.apply_calendar_snapshot(snapshot)['added'] == 1
+    assert prepare_version_update(store.path) is None
+    before = store.path.read_bytes()
+    for uid in ('   ', r'\n'):
+        try:
+            parse_isolated([sample.replace('UID:valid', 'UID:' + uid)], config, start, end)
+        except CalendarError:
+            pass
+        else:
+            raise AssertionError('Invalid UID accepted by the shipped worker')
+    invalid = replace(snapshot, events=(replace(snapshot.events[0], uid='   '),))
+    for write in (lambda: store.apply_calendar_snapshot(invalid),
+                  lambda: store.update_event(store.daily_events('2026-11-12')[0].id, note='invalid\0note')):
+        try:
+            write()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Write accepted data rejected at startup')
+        assert store.path.read_bytes() == before
+    store.apply_calendar_snapshot(replace(snapshot, events=()))
+    assert prepare_version_update(store.path) is None
+
+
 def verify_installation(destination):
     from . import diagnostics
     from . import __version__
@@ -138,8 +180,10 @@ def verify_installation(destination):
         os.environ['DIRECTOR_CONTROL_DATA_DIR'] = temporary
         _verify_restored_settings(Path(temporary))
         _verify_restored_records(Path(temporary))
+        _verify_calendar_writes(Path(temporary))
         report.update(backup_settings_validated=True, backup_destination_local=True)
         report['backup_records_validated'] = True
+        report['calendar_writes_validated'] = True
         assert ZoneInfo('Europe/Moscow')
         assert Path(certifi.where()).is_file()
         config = CalendarConfig('https://calendar.mail.ru/test/', 'synthetic@example.test')

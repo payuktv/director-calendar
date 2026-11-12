@@ -13,6 +13,9 @@ from typing import Iterator
 from zoneinfo import ZoneInfo
 
 from .provenance import work_origin
+from .record_validation import (
+    validate_calendar_window, validate_event_content, validate_remote_event, validate_text,
+)
 from .source_state import source_state
 
 STATUSES = {
@@ -259,14 +262,22 @@ class Store:
             return [dict(r) for r in con.execute("SELECT * FROM categories ORDER BY name")]
 
     def add_category(self, name: str, track: bool = True) -> None:
+        try:
+            validate_text(name)
+        except ValueError:
+            raise ValueError("Недопустимое название категории") from None
         name = name.strip()
         if not name or len(name) > 60:
             raise ValueError("Название категории должно содержать 1–60 символов")
+        if type(track) not in (bool, int) or track not in (0, 1):
+            raise ValueError("Укажи, контролировать ли категорию")
         with self._connect() as con:
             con.execute("INSERT INTO categories VALUES (?, ?, ?)", (name, "#6A8DB8", int(track)))
             self._audit(con, None, name, 'Создание категории', {'контролировать': bool(track)})
 
     def set_category_tracking(self, name: str, track: bool) -> None:
+        if type(track) not in (bool, int) or track not in (0, 1):
+            raise ValueError("Укажи, контролировать ли категорию")
         with self._connect() as con:
             con.execute('BEGIN IMMEDIATE')
             old = con.execute('SELECT track FROM categories WHERE name=?', (name,)).fetchone()
@@ -333,6 +344,10 @@ class Store:
                 data[start] = data[end] = None
         if not data.get("current_start") and not data.get("actual_start"):
             raise ValueError("Укажи фактическое время внепланового события или интервал плана")
+        try:
+            validate_event_content(data)
+        except ValueError:
+            raise ValueError("Некорректные данные события. Проверь название, примечание и время.") from None
 
     def create_event(self, title: str, category: str, current_start: str | None = None,
                      current_end: str | None = None, *, actual_start: str | None = None,
@@ -411,7 +426,7 @@ class Store:
             con.execute("DELETE FROM events WHERE id=?", (event_id,))
 
     def freeze_day(self, day: str) -> int:
-        date.fromisoformat(day)
+        day = date.fromisoformat(day).isoformat()
         with self._connect() as con:
             con.execute('BEGIN IMMEDIATE')
             if con.execute("SELECT 1 FROM day_freezes WHERE day=?", (day,)).fetchone():
@@ -643,9 +658,11 @@ class Store:
         def stamp(value):
             value = value.isoformat() if isinstance(value, date) else value
             return value + 'T00:00:00' if len(value) == 10 else value
+        start, end = stamp(start), stamp(end)
+        validate_calendar_window(calendar_key, start, end)
         with self._connect() as con:
             con.execute("INSERT INTO calendar_syncs(calendar_key,start,end,status,finished_at) VALUES (?,?,?,'failed',?)",
-                        (calendar_key, stamp(start), stamp(end), now_iso()))
+                        (calendar_key, start, end, now_iso()))
 
     def sync_warning(self, day, calendar_key):
         start = day + 'T00:00:00'
@@ -673,8 +690,13 @@ class Store:
         stats = {"added": 0, "updated": 0, "missing": 0, "withdrawn": 0}
         seen = set()
         # Validate before starting; on any failure the transaction also rolls back.
+        try:
+            validate_calendar_window(snapshot.calendar_key, snapshot.start, snapshot.end)
+            for event in snapshot.events:
+                validate_remote_event(event)
+        except ValueError:
+            raise ValueError("Некорректные данные календаря. Данные не изменены.") from None
         for event in snapshot.events:
-            validate_interval(event.start, event.end)
             if event.key in seen:
                 raise ValueError("Повторный идентификатор события в ответе календаря")
             seen.add(event.key)
