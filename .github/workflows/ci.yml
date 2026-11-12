@@ -45,14 +45,20 @@ jobs:
         run: |
           python -m pip install --require-hashes --only-binary=:all: --no-deps -r packaging/build-tools.lock
       - name: Install
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install "setuptools==84.2.1" -e ".[dev]"
+      - name: Build and test the paired XML runtime
+        shell: pwsh
+        run: |
+          python scripts/prepare_expat.py "${{ runner.temp }}/director-xml"
+          if ($LASTEXITCODE -ne 0) { throw 'Expat preparation or upstream tests failed.' }
+          "PYTHONPATH=${{ runner.temp }}/director-xml" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Use the shipped SQLite on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           python scripts/prepare_sqlite.py "${{ runner.temp }}/director-sqlite"
           if ($LASTEXITCODE -ne 0) { throw 'SQLite preparation failed.' }
-          "PYTHONPATH=${{ runner.temp }}/director-sqlite" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PYTHONPATH=${{ runner.temp }}/director-sqlite$([IO.Path]::PathSeparator)$env:PYTHONPATH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Basic static checks
         run: python -m ruff check director_control tests scripts --select F
       - name: Run selected or full tests

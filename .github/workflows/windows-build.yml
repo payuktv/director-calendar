@@ -6,6 +6,7 @@ on:
       - 'packaging/**'
       - 'director_control/runtime_versions.py'
       - 'scripts/build_windows.ps1'
+      - 'scripts/prepare_expat.py'
       - 'scripts/test_windows_distribution.py'
       - 'scripts/release.py'
       - 'director_control/distribution_check.py'

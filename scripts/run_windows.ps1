@@ -9,7 +9,12 @@ if (-not (Test-Path ".venv/Scripts/python.exe")) {
 if ($LASTEXITCODE -ne 0) { throw "Recreate .venv with Python 3.14.10 x64; this script does not delete existing environments." }
 & .venv/Scripts/python.exe -m pip install --require-hashes --only-binary=:all: --no-deps -r packaging/build-tools.lock
 if ($LASTEXITCODE -ne 0) { throw "Verified pip bootstrap failed." }
-& .venv/Scripts/python.exe -m pip install -e .
+& .venv/Scripts/python.exe -m pip install "setuptools==84.2.1" -e .
 if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed. See the error above." }
+& .venv/Scripts/python.exe scripts/prepare_expat.py .build-expat
+if ($LASTEXITCODE -ne 0) { throw "Patched XML runtime preparation failed. MSVC C++ build tools are required." }
+& .venv/Scripts/python.exe scripts/prepare_sqlite.py .build-sqlite
+if ($LASTEXITCODE -ne 0) { throw "Patched SQLite preparation failed." }
+$env:PYTHONPATH = "$(Join-Path (Get-Location) '.build-expat');$(Join-Path (Get-Location) '.build-sqlite')"
 & .venv/Scripts/python.exe main.py
 if ($LASTEXITCODE -ne 0) { throw "Director Control exited with an error. See the error above." }

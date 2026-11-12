@@ -927,6 +927,31 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
+def _open_database_window(database):
+    """Keep recovery reachable even if opening/migrating/rendering the DB fails."""
+    from PySide6.QtCore import QEvent
+    from . import diagnostics
+    from .updates import prepare_version_update, record_version
+    from .recovery import offer_recovery
+    app = QApplication.instance()
+    existing = set(app.topLevelWidgets())
+    try:
+        prepare_version_update(database)
+        store = Store(database)
+        window = MainWindow(store)
+        record_version(store)
+        return window
+    except Exception as exc:
+        # A partially constructed window may own timers and signal connections.
+        # Dispose it before entering the recovery dialog's event loop.
+        for widget in set(app.topLevelWidgets()) - existing:
+            widget.deleteLater()
+        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        diagnostics.record_error('database.startup', exc)
+        offer_recovery(database, exc)
+        return None
+
+
 def run_app() -> int:
     import sys
     QLocale.setDefault(QLocale(QLocale.Language.Russian))
@@ -945,17 +970,9 @@ def run_app() -> int:
     install_input_wheel_guard(app)
     app.setStyle("Fusion")
     try:
-        from .updates import prepare_version_update, record_version
-        try:
-            prepare_version_update(default_data_dir() / "director_control.db")
-        except Exception as exc:
-            diagnostics.record_error('database.startup', exc)
-            from .recovery import offer_recovery
-            offer_recovery(default_data_dir() / "director_control.db", exc)
+        window = _open_database_window(default_data_dir() / 'director_control.db')
+        if window is None:
             return 1
-        store = Store()
-        window = MainWindow(store)
-        record_version(store)
         def activate():
             if window.isMinimized():
                 window.showNormal()
