@@ -9,14 +9,14 @@ During development, run tests for the behavior being changed and its related sto
 - Broad changes, storage/schema, runtime entry points, shared fixtures, dependencies, the selector/CI configuration, removed tests and unmapped files select the complete Windows suite. An unknown change cannot silently receive a narrow selection.
 - A plain version bump in `pyproject.toml` and `director_control/__init__.py` preserves focused selection only after comparing both commit versions and confirming that all other metadata and Python code are unchanged. Dependency or runtime changes still select the full suite.
 - UI/visual changes select the relevant rendering tests. Isolated calendar transport changes do not run theme rendering tests.
-- Superseded runs for the same PR are cancelled. Dependency packages are cached. The selected paths, slowest test timings and JUnit report are retained so performance and coverage can be inspected.
+- Superseded runs for the same PR are cancelled. Dependency packages are cached. The selected paths, slowest test timings and complete JUnit report are retained in the job log and summary, without Actions artifact storage. Oversized summaries link readers to the full JSON-encoded report in the log.
 - Packaging/native lifecycle PRs also run Windows distribution acceptance. Other PRs do not build two installers just to check a source change.
 
 For example, changes to Mail.ru transport select transport, recurrence, withdrawal, cancellation, freeze protection, analytics, history and related UI checks, plus smoke/native coverage. Changes to the main Store deliberately select the full Windows suite because its effects are broad.
 
 ## Releases
 
-Release explicitly invokes the full Windows and Linux suites on the final main commit. It also builds the Windows distribution and validates installation, previous-version upgrade, preservation of data, backups and recovery. Publication requires all of these jobs to pass. A focused PR report never substitutes for the full release result.
+Release explicitly invokes the full Windows and Linux suites on the final main commit. After these pass, it builds the Windows distribution and validates installation, previous-version upgrade, preservation of data, backups and recovery before uploading those same files directly to Releases. Publication requires all tests and distribution checks to pass. A focused PR report never substitutes for the full release result.
 
 The reusable test workflow defaults to full scope. An explicit manual Tests run also runs both complete platform suites. Main does not separately repeat the same jobs while Release runs them. Linux omits native Windows collection; skips, failures, empty reports and missing native Windows coverage are rejected as before.
 
@@ -24,4 +24,6 @@ The reusable test workflow defaults to full scope. An explicit manual Tests run 
 
 When introducing a narrow mapping, include affected consumers as well as direct unit tests, and review the mapping together with the feature. New or uncertain modules can remain unmapped and run the full suite. Update `tests/test_ci_selection.py` when changing selection policy. This map is a PR feedback optimization, not a promise that unrelated test modules can never expose a regression.
 
-The interpreter is pinned by `.python-version` (3.14.10) for both platform suites and packaging. Distribution acceptance reads Python, Expat and OpenSSL versions inside the frozen executable; publication rejects missing, older or different runtimes. The previous published 3.13 installer is the upgrade baseline, with complete installed-file hash comparison.
+The interpreter is pinned by `.python-version` (3.14.10) for both platform suites and packaging. Distribution acceptance reads Python, Expat and OpenSSL versions inside the frozen executable; publication rejects missing, older or different runtimes. The highest earlier published installer is the upgrade baseline, with complete installed-file hash comparison.
+
+Both platform jobs prepare the Expat 2.10.0 overlay before pytest. This compiles the paired `pyexpat`/`_elementtree` modules from verified upstream sources and runs CPython's XML regression suites. Local native-runtime tests also require this overlay on `PYTHONPATH`; an old parser is a failure, not a skipped test. See README for preparation commands. Distribution acceptance exercises record validation and the actual bundled XML modules, including the fixed empty-subparser case.

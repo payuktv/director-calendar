@@ -14,6 +14,8 @@ from tests.test_release import bundle, SHA, VERSION
     ('python_version', None), ('python_implementation', 'PyPy'),
     ('python_bits', 32), ('python_free_threaded', True),
     ('python_free_threaded', 0), ('expat_version', 'expat_2.8.5'),
+    ('expat_version', 'expat_2.9.0'), ('elementtree_version', 'Expat 2.9.0'),
+    ('elementtree_accelerated', False), ('elementtree_accelerated', 1),
     ('openssl_version', 'OpenSSL 3.5.8 1 Jul 2026'), ('openssl_version', None),
 ])
 def test_publication_rejects_wrong_native_runtime(tmp_path, field, value):
@@ -26,11 +28,12 @@ def test_publication_rejects_wrong_native_runtime(tmp_path, field, value):
         release.verify_bundle(folder, VERSION, SHA)
 
 
-def test_missing_runtime_acceptance_is_not_publishable(tmp_path):
+@pytest.mark.parametrize('field', ['runtime_patched', 'xml_runtime_verified', 'backup_records_validated'])
+def test_missing_runtime_acceptance_is_not_publishable(tmp_path, field):
     folder = bundle(tmp_path)
     path = folder / 'distribution-check.json'
     report = json.loads(path.read_text())
-    report.pop('runtime_patched')
+    report.pop(field)
     path.write_text(json.dumps(report))
     with pytest.raises(ValueError, match='acceptance'):
         release.verify_bundle(folder, VERSION, SHA)

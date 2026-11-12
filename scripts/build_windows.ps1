@@ -46,6 +46,10 @@ $SQLiteDir = Join-Path $SourceRoot '.build-sqlite'
 & $Python "$PSScriptRoot/prepare_sqlite.py" $SQLiteDir
 if ($LASTEXITCODE -ne 0) { throw 'Verified SQLite preparation failed.' }
 $env:DIRECTOR_SQLITE_DLL = Join-Path $SQLiteDir 'sqlite3.dll'
+$ExpatDir = Join-Path $SourceRoot '.build-expat'
+& $Python "$PSScriptRoot/prepare_expat.py" $ExpatDir
+if ($LASTEXITCODE -ne 0) { throw 'Verified Expat preparation or upstream tests failed.' }
+$env:DIRECTOR_EXPAT_DIR = $ExpatDir
 & $Python -m PyInstaller --clean --noconfirm --distpath "$SourceRoot/dist" --workpath "$SourceRoot/build" "$Packaging/director-calendar.spec"
 if ($LASTEXITCODE -ne 0) { throw 'Executable build failed.' }
 $App = "$SourceRoot/dist/DirectorCalendar"
@@ -68,7 +72,8 @@ $SetupBytes = (Get-Item -LiteralPath $Setup).Length
 $PortableBytes = (Get-Item -LiteralPath "$Output/DirectorCalendar-$Version-portable-x64.zip").Length
 $Sizes = "Bundle bytes: $BundleBytes; Files: $($BundleFiles.Count); Installer bytes: $SetupBytes; Portable bytes: $PortableBytes"
 $SQLiteInfo = Get-Content -LiteralPath (Join-Path $SQLiteDir 'sqlite-build.json') -Raw
-"Python: $(& $Python --version); Inno Setup: $CompilerVersion`n$Sizes`nSQLite: $SQLiteInfo`nSource: $(git rev-parse HEAD)" | Set-Content "$Output/build-info.txt"
+$ExpatInfo = Get-Content -LiteralPath (Join-Path $ExpatDir 'expat-build.json') -Raw
+"Python: $(& $Python --version); Inno Setup: $CompilerVersion`n$Sizes`nSQLite: $SQLiteInfo`nExpat: $ExpatInfo`nSource: $(git rev-parse HEAD)" | Set-Content "$Output/build-info.txt"
 Write-Host $Sizes
 if ($env:GITHUB_STEP_SUMMARY) { "### Distribution size`n`n$Sizes`n" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
 & $Python -m pip freeze --all | Set-Content "$Output/build-dependencies.txt"

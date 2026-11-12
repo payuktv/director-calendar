@@ -29,3 +29,4 @@ ci-test-plan.json
 
 .build-venv/
 .build-sqlite/
+.build-expat/

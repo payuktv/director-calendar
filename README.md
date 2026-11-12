@@ -1,4 +1,4 @@
-# Director Calendar — v0.13.8
+# Director Calendar — v0.13.9
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
@@ -25,16 +25,16 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.8](https://github.com/payuktv/director-calendar/releases/tag/v0.13.8)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.9](https://github.com/payuktv/director-calendar/releases/tag/v0.13.9)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.13.8-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-0.13.9-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
-Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; temporary Actions artifacts are still retained for **30 days** for CI inspection. Installers are not currently Authenticode-signed.
+Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; verified files are uploaded directly without intermediate Actions artifact storage. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.13.8-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-0.13.9-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -134,6 +134,8 @@ Retention removes only this database's old automatic copies. Manual, migration, 
 
 Normal restoration validates the selected copy, creates a safety backup of the current database, prepares/migrates a separate staging database and replaces the live database only after validation. Restart the application after successful restoration.
 
+Since **v0.13.9**, the same read-only gate also checks application record types and ranges, event/category text, timestamps, numeric flags and tolerances, synchronization metadata and bounded history JSON. A valid SQLite schema alone does not make a copy acceptable. Invalid records are rejected before replacement and on startup; prepared staging data is rechecked. Supported older schemas, historical plain-text descriptions and deleted-event history remain readable. Recovery is also offered if opening the database or constructing the main window fails.
+
 Since **v0.13.8**, restoration checks setting types, numeric ranges, time zones and the structure of the last-backup record before replacing data. Normal restoration retains the current backup directory, automatic-copy switch and retention count. Emergency recovery uses the standard local backup directory with daily copying enabled and 30 retained copies. Both paths discard the previous last-copy record so restored/new data receives a fresh copy. Imported settings never select an automatic backup destination; choose another directory explicitly in Settings if needed.
 
 Since **v0.12.1**, startup, normal restoration and emergency recovery use the same compatibility checks. A copy with a newer database schema or a newer recorded application version is rejected **before replacement**, even if its schema has not changed. The message identifies the recorded and installed application versions: update the application first or choose an older compatible copy. Invalid or empty version records are also rejected; legacy copies without a version record remain supported if their structure and data pass validation. Compatible older schemas are migrated only in staging.
@@ -168,17 +170,20 @@ The log is separate from the database change history and SQLite backups. Existin
 
 ## Development and source-based launch
 
-Normal users should use the standalone installer above. Source-based development uses Python **3.14.10 x64** and a separate virtual environment.
+Normal users should use the standalone installer above. Source-based development uses Python **3.14.10 x64**, MSVC C++ build tools and a separate virtual environment. The native preparation below rebuilds both XML extensions with Expat 2.10.0 and tests them; it does not modify the system Python.
 
 ```powershell
 git clone https://github.com/payuktv/director-calendar.git
 cd director-calendar
 py -3.14 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install "setuptools==84.2.1" -e ".[dev]"
+.\.venv\Scripts\python.exe scripts/prepare_expat.py .build-expat
+.\.venv\Scripts\python.exe scripts/prepare_sqlite.py .build-sqlite
+$env:PYTHONPATH = "$(Join-Path $PWD '.build-expat');$(Join-Path $PWD '.build-sqlite')"
 .\.venv\Scripts\python.exe main.py
 ```
 
-For a source-based desktop shortcut, run `create_desktop_shortcut.pyw` with the configured environment or use the shortcut button in Settings. If the source directory moves, recreate the shortcut. Source-based and installed launches use the same default database location.
+Source launches, including developer shortcuts, need the prepared native overlay on `PYTHONPATH`. The `scripts/run_windows.ps1` helper prepares it for a source launch. Source-based and installed launches use the same default database location; the packaged application contains its own XML modules and needs no environment configuration.
 
 The stack is PySide6/Qt Widgets, SQLite, requests, icalendar, recurring-ical-events and Windows Vault through keyring. PySide6 Essentials provides all Qt modules used by the application and tests; the Addons, PDF and WebEngine packages are unnecessary. Package metadata accepts Python 3.13–3.14, but CI and distribution builds use the exact Python 3.14.10 pin in `.python-version`.
 
@@ -194,7 +199,7 @@ $env:DIRECTOR_CONTROL_DATA_DIR = Join-Path $env:TEMP 'director-calendar-tests'
 
 On pull requests, **Tests** runs smoke checks and affected areas on Windows. The explicit map in `scripts/run_ci_tests.py` falls back to the entire Windows suite for broad or unmapped changes, shared fixtures, dependencies and CI changes. Every Windows run includes the native shortcut integration test. During editing, run the affected modules locally; a cosmetic or isolated synchronization change does not require every platform test after each edit. See [test scope and release gates](docs/TESTING.md).
 
-Before publication, **Release** explicitly requests the full suite on Windows and Linux for its exact commit, alongside distribution acceptance. Missing/empty JUnit reports, failures and skipped tests fail verification for both focused and full runs. Linux excludes the Windows-only module during collection. Scope and JUnit timing reports are retained for 14 days; dependency downloads are cached. Obsolete PR checks are cancelled. There are no duplicate branch-push or standalone main-push test runs.
+Before publication, **Release** explicitly requests the full suite on Windows and Linux for its exact commit, alongside distribution acceptance. Missing/empty JUnit reports, failures and skipped tests fail verification for both focused and full runs. Linux excludes the Windows-only module during collection. Complete scope and JUnit timing reports are retained in CI logs and job summaries; dependency downloads are cached. Obsolete PR checks are cancelled. There are no duplicate branch-push or standalone main-push test runs.
 
 Build on Windows x64 with Python 3.14.10 and Inno Setup 6:
 
@@ -204,9 +209,9 @@ Build on Windows x64 with Python 3.14.10 and Inno Setup 6:
 
 Build dependencies are pinned in `packaging/requirements-windows.lock`. When that lock changes, the build script recreates its dedicated `.build-venv` so removed packages cannot leave unwanted plugins in the bundle. PyInstaller uses `packaging/director-calendar.spec`; Inno Setup uses `packaging/installer.iss`. Outputs are written to `dist/artifacts`; `build-info.txt` and the CI summary record bundle, installer and ZIP sizes.
 
-**Windows distribution** runs within Release, manually, or for PRs changing packaging and native lifecycle files. It builds the current source and downloads the actual installer of the highest published version below it for upgrade acceptance, including published pre-releases. The download must match its published SHA-256, size, release manifest and source tag; any mismatch fails the check. Only before the first release is the pinned v0.10.0 bootstrap revision built locally. It checks installation, GUI startup, update/reinstallation, downgrade/running-app protection, Unicode paths, backup behavior and preservation of data/credentials after uninstall. Bundled Qt, calendar parsing, time zones, TLS certificates and Vault are exercised. Artifacts are uploaded only after distribution acceptance passes.
+**Windows distribution** runs within Release, manually, or for PRs changing packaging and native lifecycle files. It builds the current source and downloads the actual installer of the highest published version below it for upgrade acceptance, including published pre-releases. The download must match its published SHA-256, size, release manifest and source tag; any mismatch fails the check. Only before the first release is the pinned v0.10.0 bootstrap revision built locally. It checks installation, GUI startup, update/reinstallation, downgrade/running-app protection, Unicode paths, backup behavior and preservation of data/credentials after uninstall. Bundled Qt, calendar parsing, time zones, TLS certificates and Vault are exercised. The PR workflow and Release use the same composite distribution action; every acceptance check must pass.
 
-**Release** reuses both the Tests and Windows distribution workflows at its own source commit and publishes their verified Windows artifact only when both succeed. Add English notes under `releases/vMAJOR.MINOR.PATCH.md` and merge into `main` to start a release, or run Release manually from Actions on `main`. Tags and published files are never overwritten by this process. See [release procedure and retry rules](docs/RELEASING.md).
+**Release** runs the full Windows/Linux Tests workflow at its own source commit, then builds and verifies the Windows distribution and publishes those exact files from the same Windows job. Uploads begin only after all tests and acceptance checks pass; Actions artifact quotas cannot block this path. Add English notes under `releases/vMAJOR.MINOR.PATCH.md` and merge into `main` to start a release, or run Release manually from Actions on `main`. Tags and published files are never overwritten by this process. See [release procedure and retry rules](docs/RELEASING.md).
 
 Hosted runners still have Python installed, although the packaged child processes run without Python on PATH. These checks do not replace acceptance on a clean target Windows computer and the real Mail.ru account.
 

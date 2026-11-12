@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from . import __version__
 from . import database_guard as guard
 from .settings_validation import validate_settings
+from .record_validation import validate_records
 
 SCHEMA_VERSION = 4
 BACKUP_DEFAULTS = {'backup_folder': '', 'backup_auto': '1', 'backup_keep': '30'}
@@ -70,26 +71,16 @@ def validate_database(path):
             for table, required_columns in columns.items():
                 if not required_columns <= {row[1] for row in con.execute('PRAGMA table_info(' + table + ')')}:
                     raise ValueError('В копии отсутствуют обязательные поля приложения.')
+            validate_records(con, tables, budget)
             withdrawn = '''e.source='caldav' AND e.current_start IS NULL AND e.current_end IS NULL
                 AND e.baseline_start IS NULL AND e.baseline_end IS NULL
                 AND e.actual_start IS NULL AND e.actual_end IS NULL
                 AND EXISTS (SELECT 1 FROM calendar_events m WHERE m.event_id=e.id AND m.missing=1)
                 AND EXISTS (SELECT 1 FROM audit a WHERE a.event_id=e.id
                     AND a.action='Убрано из актуального плана Mail.ru')''' if 'calendar_events' in tables else '0'
-            for row in con.execute('SELECT current_start,current_end,baseline_start,baseline_end,actual_start,actual_end,'
-                                   'status,source,id,(' + withdrawn + ') FROM events e'):
-                budget.check()
-                if not row[0] and not row[4] and not row[9]:
-                    raise ValueError('В копии есть событие без планового и фактического времени.')
-                for start, end in zip(row[:6:2], row[1:6:2]):
-                    if bool(start) != bool(end):
-                        raise ValueError('В копии есть неполный интервал события.')
-                    if start:
-                        a, b = datetime.fromisoformat(start), datetime.fromisoformat(end)
-                        if a.tzinfo is not None or b.tzinfo is not None or a >= b:
-                            raise ValueError('В копии есть некорректное время события.')
-                if row[6] not in {'pending', 'done', 'partial', 'cancelled', 'moved'} or row[7] not in {'local', 'caldav', 'manual'}:
-                    raise ValueError('В копии есть неподдерживаемый статус или источник события.')
+            if con.execute('SELECT 1 FROM events e WHERE current_start IS NULL AND actual_start IS NULL '
+                           'AND NOT (' + withdrawn + ') LIMIT 1').fetchone():
+                raise ValueError('В копии есть событие без планового и фактического времени.')
             if version >= 4 and con.execute('''SELECT 1 FROM events e LEFT JOIN baseline_rules b ON b.event_id=e.id
                     WHERE e.source IN ('local','caldav') AND e.baseline_start IS NOT NULL AND b.event_id IS NULL LIMIT 1''').fetchone():
                 raise ValueError('В копии отсутствуют правила зафиксированного плана.')

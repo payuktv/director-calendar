@@ -60,10 +60,44 @@ def _verify_restored_settings(folder):
         assert live.path.read_bytes() == before
 
 
+def _verify_restored_records(folder):
+    from . import __version__
+    from .storage import Store
+    from .backups import restore_backup
+    from .recovery import recover_database
+    from .updates import prepare_version_update
+
+    live = Store(folder / 'records-live.db')
+    for case in ('category', 'title', 'tolerance'):
+        source = Store(folder / ('records-' + case + '.db'))
+        source.set_setting('app_last_version', __version__)
+        eid = source.create_event('Synthetic', 'Работа', '2026-11-12T09:00:00', '2026-11-12T10:00:00')
+        source.freeze_day('2026-11-12')
+        with closing(sqlite3.connect(source.path)) as con:
+            if case == 'category':
+                con.execute('INSERT INTO categories VALUES (?,?,?)', (b'Synthetic', '#123456', 1))
+            elif case == 'title':
+                con.execute('UPDATE events SET title=? WHERE id=?', (b'Synthetic', eid))
+            else:
+                con.execute('UPDATE baseline_rules SET tolerance_minutes=? WHERE event_id=?', ('invalid', eid))
+            con.commit()
+        before = live.path.read_bytes(), source.path.read_bytes()
+        for restore in (lambda: restore_backup(live, source.path),
+                        lambda: recover_database(live.path, source.path),
+                        lambda: prepare_version_update(source.path)):
+            try:
+                restore()
+            except ValueError:
+                pass
+            else:
+                raise AssertionError('Malformed application records were accepted')
+            assert (live.path.read_bytes(), source.path.read_bytes()) == before
+
+
 def verify_installation(destination):
     from . import diagnostics
     from . import __version__
-    from .runtime_versions import runtime_versions, verify_runtime
+    from .runtime_versions import runtime_versions, verify_runtime, verify_xml_runtime
     from .mail_calendar import CalendarConfig
     from .sync_process import parse_isolated
     from .desktop import app_icon_path, shortcut_spec
@@ -90,6 +124,8 @@ def verify_installation(destination):
         destination.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
         return 1
     report['runtime_patched'] = True
+    verify_xml_runtime()
+    report['xml_runtime_verified'] = True
     sqlite_source = sqlite3.connect(':memory:')
     try:
         source_id = sqlite_source.execute('SELECT sqlite_source_id()').fetchone()[0]
@@ -101,7 +137,9 @@ def verify_installation(destination):
     with tempfile.TemporaryDirectory(prefix='DirectorCalendar-check-') as temporary, diagnostics.session(Path(temporary) / 'logs'):
         os.environ['DIRECTOR_CONTROL_DATA_DIR'] = temporary
         _verify_restored_settings(Path(temporary))
+        _verify_restored_records(Path(temporary))
         report.update(backup_settings_validated=True, backup_destination_local=True)
+        report['backup_records_validated'] = True
         assert ZoneInfo('Europe/Moscow')
         assert Path(certifi.where()).is_file()
         config = CalendarConfig('https://calendar.mail.ru/test/', 'synthetic@example.test')
