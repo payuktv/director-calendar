@@ -171,6 +171,29 @@ def test_published_release_is_complete_and_bound_to_the_checked_commit(tmp_path)
     assert manifest['upgrade_from']['sha'] == OLD_SHA
 
 
+def test_first_stable_release_becomes_latest_only_after_verified_uploads(tmp_path, monkeypatch):
+    monkeypatch.setitem(globals(), 'VERSION', '1.0.0')
+    folder, api = bundle(tmp_path), FakeGitHub()
+    notes = '# v1.0.0\n\nFirst stable release.'
+    api.wrong_digest = True
+    with pytest.raises(ValueError):
+        release.publish(api, folder, VERSION, SHA, notes, ('success', 'success'), '123')
+    assert api.release['draft'] is True and api.release['prerelease'] is False
+    assert not any(data.get('draft') is False for _, _, data in api.writes if isinstance(data, dict))
+
+    # The workflow rebuilds and validates a fresh bundle before retrying a draft.
+    retry = tmp_path / 'retry'
+    retry.mkdir()
+    folder = bundle(retry)
+    api.wrong_digest = False
+    release.publish(api, folder, VERSION, SHA, notes, ('success', 'success'), '123')
+    assert api.tags['v1.0.0'] == SHA
+    assert api.release['draft'] is False and api.release['prerelease'] is False
+    assert api.release['name'] == 'v1.0.0' and api.release['target_commitish'] == SHA
+    assert len(api.assets) == 8
+    assert api.writes[-1] == ('releases/1', 'PATCH', {'draft': False, 'make_latest': 'true'})
+
+
 @pytest.mark.parametrize('failure', ['interrupted', 'digest'])
 def test_upload_failure_leaves_unpublished_draft(tmp_path, failure):
     api = FakeGitHub()

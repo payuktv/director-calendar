@@ -1,8 +1,8 @@
-# Director Calendar — v0.13.10
+# Director Calendar — v1.0.0
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
-**Status:** release candidate for v1.0.0 (published as v0.13.10). Feature scope is frozen; see the finite acceptance checklist in [Releasing](docs/RELEASING.md). The application interface is currently in Russian; the English labels below describe its controls.
+**Status:** stable v1.0.0. The frozen feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The application interface is currently in Russian; the English labels below describe its controls.
 
 ## Features
 
@@ -25,16 +25,16 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v0.13.10](https://github.com/payuktv/director-calendar/releases/tag/v0.13.10)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.0.0](https://github.com/payuktv/director-calendar/releases/tag/v1.0.0)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-0.13.10-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-1.0.0-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; verified files are uploaded directly without intermediate Actions artifact storage. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-0.13.10-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-1.0.0-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
@@ -213,7 +213,7 @@ Build dependencies are pinned in `packaging/requirements-windows.lock`. When tha
 
 **Release** runs the full Windows/Linux Tests workflow at its own source commit, then builds and verifies the Windows distribution and publishes those exact files from the same Windows job. Uploads begin only after all tests and acceptance checks pass; Actions artifact quotas cannot block this path. Add English notes under `releases/vMAJOR.MINOR.PATCH.md` and merge into `main` to start a release, or run Release manually from Actions on `main`. Tags and published files are never overwritten by this process. See [release procedure and retry rules](docs/RELEASING.md).
 
-Hosted runners still have Python installed, although the packaged child processes run without Python on PATH. These checks do not replace acceptance on a clean target Windows computer and the real Mail.ru account.
+Hosted runners still have Python installed, although the packaged child processes run without Python on PATH. The accepted candidate was also checked on the owner's Windows 10 x64 system with a clean application data profile, development-runtime paths removed, and real-account Mail.ru synchronization. This was not a fresh Windows installation; the exact coverage and limitations are recorded in [v1.0 acceptance](docs/ACCEPTANCE-v1.0.0.md).
 
 ## Version conventions
 
@@ -227,6 +227,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v1.0.0 | First stable release of the accepted v0.13.10 scope; target-system acceptance recorded |
 | v0.13.10 | Shared write/startup validation, production XML policy and frozen v1.0 acceptance |
 | v0.13.9 | Validated backup records and paired Expat 2.10.0 modules |
 | v0.13.8 | Validate restored settings and retain local backup destinations |
@@ -256,7 +257,7 @@ Earlier implementation details remain available in the repository's commit and p
 - No periodic Mail.ru polling or automatic application update download.
 - Secondly/minutely recurrences and timed events with zero/undefined duration are unsupported. Invalid input stops parsing without applying the import. Series changes can require manual review of old occurrences.
 - The database stores local display-zone times without offsets; changing the zone after events exist is blocked.
-- Authenticode signing is not configured yet. Clean Windows acceptance and real-account checks remain required before v1.0.0.
+- Authenticode signing is not configured yet. Additional Windows/display coverage and automatic updates remain post-v1.0 work; the agreed target-system acceptance is complete.
 
 ## Data privacy and further documentation
 
