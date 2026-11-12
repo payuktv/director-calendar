@@ -71,7 +71,8 @@ def extract_sources(data, destination, prefix):
             name = '/'.join(relative)
             wanted = (name.startswith(('Include/', 'Lib/', 'lib/'))
                       or name in {'PC/pyconfig.h', 'Modules/pyexpat.c', 'Modules/_elementtree.c',
-                                  'Modules/clinic/_elementtree.c.h', 'Modules/expat/expat_config.h',
+                                  'Modules/clinic/_elementtree.c.h', 'Modules/clinic/pyexpat.c.h',
+                                  'Modules/expat/expat_config.h',
                                   'Modules/expat/pyexpatns.h', 'LICENSE', 'COPYING'})
             if not wanted:
                 continue

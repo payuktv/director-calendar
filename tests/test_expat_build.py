@@ -54,6 +54,13 @@ def test_source_extraction_limits_expanded_bytes(tmp_path, monkeypatch):
     assert not list(tmp_path.rglob('*'))
 
 
+@pytest.mark.parametrize('module', ['pyexpat', '_elementtree'])
+def test_generated_cpython_headers_are_extracted(tmp_path, module):
+    member = f'Python-3.14.10/Modules/clinic/{module}.c.h'
+    prepare_expat.extract_sources(archive(member), tmp_path, 'Python-3.14.10')
+    assert (tmp_path / 'Modules/clinic' / f'{module}.c.h').read_bytes() == b'source'
+
+
 def test_native_overlay_and_publication_use_same_python_expat_policy():
     from director_control.runtime_versions import PYTHON_VERSION
     assert prepare_expat.PYTHON_VERSION == PYTHON_VERSION
