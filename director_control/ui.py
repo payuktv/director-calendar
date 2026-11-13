@@ -736,7 +736,9 @@ class MainWindow(QMainWindow):
         if self._selected_id not in visible_ids:
             self._selected_id = None
         self.calendar.set_data(focus, self.mode if self.mode != "agenda" else "day", self.layer.currentData(),
-                               events, source_info, self._selected_id, self.store.get_setting("mail_timezone", "Europe/Moscow"))
+                               events, source_info, self._selected_id, self.store.get_setting("mail_timezone", "Europe/Moscow"),
+                               frozen_days={date.fromisoformat(value) for value in
+                                            self.store.frozen_days_between(lower[:10], upper[:10])})
         self.calendar_stack.setCurrentIndex(1 if self.mode == "agenda" else 0)
         selected = self.store.get_event(self._selected_id) if self._selected_id is not None else None
         self.inspector.set_event(selected, source_info.get(self._selected_id))

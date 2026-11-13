@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 
 # Shared tokens also drive custom-painted calendars, menus and charts.
 LIGHT = {
+    "frozen_day": "#EFF7F3",
     "text": "#202436", "background": "#F7F8FC", "surface": "#FFFFFF",
     "border": "#ECECF4", "control_border": "#E3E4EF", "muted": "#85889B",
     "subtle": "#9698AA", "accent": "#6956E8", "primary": "#6956E8",
@@ -33,6 +34,7 @@ LIGHT = {
 }
 DARK = {
     **LIGHT,
+    "frozen_day": "#233831",
     "text": "#E4EAF5", "background": "#141923", "surface": "#1E2533",
     "border": "#30394B", "control_border": "#3B465C", "muted": "#A1ADC2",
     "subtle": "#94A0B6", "accent": "#B5A5FF", "primary": "#7662DE",
