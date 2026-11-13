@@ -449,6 +449,12 @@ class Store:
         with self._connect() as con:
             return con.execute("SELECT 1 FROM day_freezes WHERE day=?", (day,)).fetchone() is not None
 
+    def frozen_days_between(self, start: str, end: str) -> set[str]:
+        """Read fixation dates for the visible calendar, including empty days."""
+        with self._connect() as con:
+            return {row['day'] for row in con.execute(
+                'SELECT day FROM day_freezes WHERE day>=? AND day<?', (start, end))}
+
     def baseline_rules(self):
         with self._connect() as con:
             return {row['event_id']: dict(row) for row in con.execute('SELECT * FROM baseline_rules')}

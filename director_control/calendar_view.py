@@ -321,6 +321,8 @@ class TimeGrid(HitCanvas):
                 p.fillRect(QRectF(x, 0, width, self.height()), theme_color("today"))
             elif day.weekday() >= 5:
                 p.fillRect(QRectF(x, 0, width, self.height()), theme_color("weekend"))
+            if day in self.board.frozen_days:
+                p.fillRect(QRectF(x, 0, width, self.height()), theme_color("frozen_day"))
             p.setPen(QPen(theme_color("grid"), 1))
             p.drawLine(QPoint(int(x), 0), QPoint(int(x), self.height()))
         for hour in range(24):
@@ -388,6 +390,8 @@ class DayHeader(HitCanvas):
         p.translate(-self.board.scroll.horizontalScrollBar().value(), 0)
         self.hits = []
         for day, x, width in self.board.time_columns():
+            if day in self.board.frozen_days:
+                p.fillRect(QRectF(x, 0, width, self.height()), theme_color("frozen_day"))
             text(p, QRectF(x + 12, 7, width - 16, 17), WEEKDAYS[day.weekday()], 10, theme_color("calendar_muted"), QFont.Weight.DemiBold)
             if day == self.board.today():
                 p.setPen(Qt.PenStyle.NoPen)
@@ -454,6 +458,12 @@ class MonthGrid(HitCanvas):
                 p.fillRect(QRectF(x, y, width, height), theme_color("month_focus"))
             elif day.month != self.board.focus.month:
                 p.fillRect(QRectF(x, y, width, height), theme_color("outside_month"))
+            if day in self.board.frozen_days:
+                p.fillRect(QRectF(x, y, width, height), theme_color("frozen_day"))
+            if day == self.board.focus:
+                p.setPen(QPen(theme_color("focus_border"), 2))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRect(QRectF(x + 2, y + 2, width - 4, height - 4))
             p.setPen(QPen(theme_color("grid"), 1))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRect(QRectF(x, y, width, height))
@@ -525,6 +535,8 @@ class CalendarBoard(QWidget):
         self.days = period_days(self.focus, self.mode)
         self.timed, self.all_day = {}, {}
         self.metadata = {}
+        self.frozen_days = frozenset()
+        self.setToolTip("Зелёный фон дня — исходный план зафиксирован")
         self.stack = QStackedWidget()
         timeline = QWidget()
         layout = QVBoxLayout(timeline)
@@ -601,9 +613,10 @@ class CalendarBoard(QWidget):
         info = self.metadata.get(event.id, {})
         return bool(info.get("baseline_all_day" if self.layer == "baseline" else "all_day"))
 
-    def set_data(self, focus, mode, layer, events, metadata, selected_id=None, zone="Europe/Moscow"):
+    def set_data(self, focus, mode, layer, events, metadata, selected_id=None, zone="Europe/Moscow", *, frozen_days=()):
         self.focus, self.mode, self.layer, self.zone, self.selected_id = focus, mode, layer, zone, selected_id
         self.metadata = metadata
+        self.frozen_days = frozenset(frozen_days)
         self.clicked_day = None
         self.days = period_days(focus, mode)
         self.timed, self.all_day = split_blocks(events, self.days, layer, metadata)

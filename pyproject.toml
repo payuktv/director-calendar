@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "director-control"
-version = "1.0.0"
+version = "1.0.1"
 description = "Local Windows plan/fact calendar tracking prototype"
 requires-python = ">=3.13,<3.15"
 dependencies = [

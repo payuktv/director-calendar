@@ -45,6 +45,44 @@ def make_window(tmp_path):
     return store, eid, window
 
 
+@pytest.mark.parametrize('theme', ['light', 'dark'])
+@pytest.mark.parametrize('mode', ['day', 'week', 'month'])
+def test_empty_frozen_day_background_survives_filters_and_reload(app, tmp_path, theme, mode):
+    from datetime import date
+    apply_theme(theme)
+    store = Store(tmp_path / 'frozen-background.db')
+    window = MainWindow(store)
+    apply_theme(theme)
+    window.date_input.setDate(QDate(2026, 10, 22))
+    window.mode = mode
+    window.resize(1300, 900)
+    window.show()
+    window.reload()
+    app.processEvents()
+    board = window.calendar
+    day = date(2026, 10, 22)
+
+    def background():
+        if mode == 'month':
+            index = board.days.index(day)
+            width, height = board.month.width() / 7, (board.month.height() - 28) / 6
+            return board.month.grab().toImage().pixelColor(
+                int((index % 7 + .5) * width), int(28 + (index // 7 + .7) * height))
+        _, left, width = next(column for column in board.time_columns() if column[0] == day)
+        return board.grid.grab().toImage().pixelColor(int(left + width / 2), 20)
+
+    before = background()
+    store.freeze_day(day.isoformat())  # No events: fixation itself must drive the background.
+    window.search.setText('no matching events')
+    window.reload()
+    app.processEvents()
+    assert board.frozen_days == {day}
+    assert background() == color('frozen_day') and background() != before
+    window.reload()
+    assert board.frozen_days == {day}
+    window.close()
+
+
 def test_toggle_applies_immediately_and_persists_without_changing_schedule(app, tmp_path):
     store, eid, window = make_window(tmp_path)
     before = store.get_event(eid)
