@@ -11,7 +11,7 @@
 AppId={{D93AC78A-55E8-46C9-B014-517D5B2B6A32}
 AppName=Director Calendar
 AppVersion={#AppVersion}
-AppPublisher=ACS
+AppPublisher=Director Calendar
 DefaultDirName={localappdata}\Programs\DirectorCalendar
 DisableDirPage=yes
 DefaultGroupName=Director Calendar

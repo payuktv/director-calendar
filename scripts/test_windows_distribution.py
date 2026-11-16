@@ -152,7 +152,7 @@ def main(previous_root, output, upgrade_source, previous_installer=None):
     try:
         with tempfile.TemporaryDirectory(prefix='DirectorCalendar-distribution-') as directory:
             temp = Path(directory)
-            install = temp / "Компания O'Neil & команда" / 'Программа'
+            install = temp / "Профиль O'Neil & тест" / 'Программа'
             install.parent.mkdir()
             env = dict(os.environ)
             for name in ('PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV', 'QT_QPA_PLATFORM', 'DIRECTOR_CONTROL_DATA_DIR'):
