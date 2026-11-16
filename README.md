@@ -263,7 +263,7 @@ Earlier implementation details remain available in the repository's commit and p
 
 ## Data privacy and further documentation
 
-The SQLite database, audit history, CSV exports, backups and preserved recovery files can contain confidential schedule information. They are not encrypted by the application. Protect the Windows account, disk and backup location according to company policy. Passwords are not stored in SQLite; never commit databases, credentials or real calendar exports.
+The SQLite database, audit history, CSV exports, backups and preserved recovery files can contain confidential schedule information. They are not encrypted by the application. Protect your Windows account, disk and backup location. Passwords are not stored in SQLite; never commit databases, credentials or real calendar exports.
 
 - [Windows distribution details](docs/WINDOWS-DISTRIBUTION.md) — additional operational/build notes, currently in Russian.
 - [Release procedure](docs/RELEASING.md) — publication gates, previous-version selection and retries.

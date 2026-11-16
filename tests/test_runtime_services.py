@@ -7,7 +7,7 @@ from time import monotonic, sleep
 
 
 def test_real_entry_point_creates_daily_copy_and_activates_owner_on_relaunch(tmp_path):
-    folder = tmp_path / 'Компания ACS'
+    folder = tmp_path / 'Тестовый профиль'
     folder.mkdir()
     script = r'''
 import os
