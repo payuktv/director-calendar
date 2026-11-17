@@ -27,7 +27,8 @@ REQUIRED_CHECKS = ('ok', 'frozen', 'icon', 'caldav_parse', 'vault', 'backup_rest
                    'sqlite_patched', 'untrusted_backup_rejected', 'obsolete_files_removed',
                    'user_files_preserved', 'installed_file_manifest', 'reparse_path_rejected', 'runtime_patched',
                    'backup_settings_validated', 'backup_destination_local',
-                   'backup_records_validated', 'xml_runtime_verified', 'calendar_writes_validated')
+                   'backup_records_validated', 'xml_runtime_verified', 'calendar_writes_validated',
+                   'update_check_transport')
 
 
 def version_key(version):

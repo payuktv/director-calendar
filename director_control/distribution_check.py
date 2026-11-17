@@ -150,6 +150,7 @@ def verify_installation(destination):
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QIcon
     from PySide6.QtCore import QTimer
+    from PySide6.QtNetwork import QSslSocket
     from .ui import MainWindow
     import certifi
     from datetime import date
@@ -255,6 +256,12 @@ def verify_installation(destination):
         store = Store(store.path)
         assert store.get_event(eid).note == ''
         window = MainWindow(store)
+        # The frozen app must retain Qt's HTTPS support, including its TLS plugin.
+        # No live network dependency is needed for distribution acceptance.
+        assert QSslSocket.supportsSsl(), 'The bundle has no working Qt TLS backend'
+        assert 'https' in window.update_panel.checker.manager.supportedSchemes()
+        assert not window.update_panel.checker.busy
+        report['update_check_transport'] = True
         window.show()
         diagnostics.install_hooks()
         def synthetic_slot_error():
