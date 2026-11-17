@@ -66,7 +66,7 @@ class UpdateChecker(QObject):
 
     def __init__(self, parent=None, *, manager=None):
         super().__init__(parent)
-        self.manager = manager if manager is not None else QNetworkAccessManager(self)
+        self._manager = manager
         self.reply = None
         self.body = bytearray()
         self.abort_message = ''
@@ -77,6 +77,13 @@ class UpdateChecker(QObject):
     @property
     def busy(self):
         return self.reply is not None
+
+    @property
+    def manager(self):
+        # Opening or closing the calendar must not initialize a network backend.
+        if self._manager is None:
+            self._manager = QNetworkAccessManager(self)
+        return self._manager
 
     def start(self):
         if self.busy:

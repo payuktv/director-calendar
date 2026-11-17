@@ -140,6 +140,23 @@ def checker_for(reply):
     return checker, good, bad
 
 
+def test_network_backend_is_created_only_for_requested_check(app, monkeypatch):
+    created = []
+    def factory(parent):
+        created.append(parent)
+        return Manager(Reply())
+    monkeypatch.setattr(updates, 'QNetworkAccessManager', factory)
+    checker = updates.UpdateChecker()
+    assert created == []
+    checker.start()
+    assert created == [checker]
+    checker.cancel()
+    checker.manager.reply = Reply()
+    checker.start()
+    assert created == [checker]
+    checker.cancel()
+
+
 def test_explicit_single_request_without_credentials_cookies_or_redirects(app):
     reply = Reply()
     checker, good, bad = checker_for(reply)
@@ -257,7 +274,7 @@ def test_main_window_close_cancels_pending_check_without_wait(app, tmp_path, mon
     from director_control.ui import MainWindow
     window = MainWindow(Store(tmp_path / 'update-check.db'))
     reply = Reply()
-    window.update_panel.checker.manager = Manager(reply)
+    window.update_panel.checker._manager = Manager(reply)
     window.update_panel.check_button.click()
     assert window.update_panel.checker.busy
     assert window.close()
