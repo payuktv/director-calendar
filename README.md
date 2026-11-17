@@ -15,6 +15,7 @@ A local Windows desktop application for tracking a CEO's schedule, original plan
 - Light/dark themes, desktop shortcuts and single-instance protection.
 - Verified manual/daily backups, update backups and startup recovery for damaged databases.
 - Standalone Windows x64 installer and portable ZIP. Python is bundled.
+- On-demand update checks from Settings, with version comparison and browser links to the new installer and release notes.
 
 ![Calendar, light theme](docs/screenshots/calendar-week.png)
 ![Calendar, dark theme](docs/screenshots/calendar-week-dark.png)
@@ -27,7 +28,7 @@ Target platform: Windows 10/11 x64. Use the installer for normal use; Python, Po
 
 1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.0.2](https://github.com/payuktv/director-calendar/releases/tag/v1.0.2)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
-3. Download the installer from **Assets**. Access to this private repository is required. GitHub's automatic source-code archives are for development, not installation.
+3. Download the installer from **Assets**. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
 5. Run `DirectorCalendar-1.0.2-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
@@ -39,6 +40,10 @@ For portable use, extract the **entire** `DirectorCalendar-1.0.2-portable-x64.zi
 ## Update and data locations
 
 Close the application, run the new installer and reopen the existing shortcut. Updates are installed manually; there is no automatic update download.
+
+The next application build adds **Settings → Application updates → Check for updates**. It compares the installed version with the latest published stable GitHub release. A newer version offers **Download installer** and **What's new**, both opened in the default browser. Downloading does not close the calendar or start installation. Close the calendar before running the downloaded installer yourself. Already published v1.0.2 binaries do not contain this new panel.
+
+Checks run only when requested, without GitHub credentials or calendar data. The interface stays responsive, with a 15-second deadline; closing the window cancels the request. Network failures, unavailable releases and malformed responses are reported as failed checks, never as evidence that the installed version is current. Drafts, pre-releases, unfinished installers and download links outside this repository are rejected. No separate update server or public version file is required; publishing a complete stable GitHub release makes it available to the checker.
 
 | Item | Default location |
 | --- | --- |

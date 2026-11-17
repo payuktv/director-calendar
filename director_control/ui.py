@@ -615,6 +615,9 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 8, 12, 24)
         v.setSpacing(20)
+        from .update_ui import UpdatePanel
+        self.update_panel = UpdatePanel()
+        v.addWidget(self.update_panel)
         self.mail_panel = MailPanel(self.store, self.selected_sync_day)
         self.mail_panel.changed.connect(self.reload)
         self.mail_panel.message.connect(self.mail_status.setText)
@@ -926,6 +929,7 @@ class MainWindow(QMainWindow):
             return
         self.backup_panel.timer.stop()
         self.history_page.timer.stop()
+        self.update_panel.cancel()
         super().closeEvent(event)
 
 
