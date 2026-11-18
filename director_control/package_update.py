@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
+from http.client import IncompleteRead
 import ntpath
 import os
 from pathlib import Path
@@ -12,7 +13,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-from time import monotonic
+from time import monotonic, sleep
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import build_opener, HTTPRedirectHandler, HTTPSHandler, Request
@@ -26,7 +27,9 @@ MAX_DOWNLOAD = 256 * 1024 * 1024
 MAX_EXPANDED = 768 * 1024 * 1024
 MAX_ENTRIES = 8192
 BLOCK = 256 * 1024
-MAX_SECONDS = 900
+SOCKET_TIMEOUT = 45
+WORKER_IDLE_SECONDS = 5 * 60
+RETRY_DELAYS = (1, 2, 4)
 _VERSION = re.compile(r'(?:0|[1-9][0-9]{0,8})(?:\.(?:0|[1-9][0-9]{0,8})){2}')
 _HASH = re.compile(r'[a-f0-9]{64}')
 
@@ -160,13 +163,60 @@ class _AssetRedirect(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def open_package(package):
+def open_package(package, offset=0):
     import certifi
     tls = ssl.create_default_context()
     tls.load_verify_locations(cafile=certifi.where())
     opener = build_opener(_AssetRedirect(), HTTPSHandler(context=tls))
-    request = Request(package.url, headers={'User-Agent': 'DirectorCalendar-Update', 'Accept-Encoding': 'identity'})
-    return opener.open(request, timeout=15)
+    headers = {'User-Agent': 'DirectorCalendar-Update', 'Accept-Encoding': 'identity'}
+    if offset:
+        headers['Range'] = f'bytes={offset}-'
+    return opener.open(Request(package.url, headers=headers), timeout=SOCKET_TIMEOUT)
+
+
+def _download(package, archive, open_asset, progress):
+    """Resume transient network failures inside the same private staging directory."""
+    size, digest = 0, hashlib.sha256()
+    last_percent, last_report = -1, monotonic()
+    with archive.open('xb') as output:
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            try:
+                with open_asset(package, size) as response:
+                    if response.status == 200:
+                        if size:  # The server ignored Range and sent the whole file.
+                            output.seek(0)
+                            output.truncate()
+                            size, digest = 0, hashlib.sha256()
+                    elif (not size or response.status != 206 or response.headers.get('Content-Range', '').lower()
+                          != f'bytes {size}-{package.size - 1}/{package.size}'):
+                        raise ValueError('Unexpected package byte range')
+                    while chunk := response.read1(BLOCK):
+                        size += len(chunk)
+                        if size > package.size:
+                            raise ValueError('Package is larger than declared')
+                        output.write(chunk)
+                        digest.update(chunk)
+                        percent, now = size * 100 // package.size, monotonic()
+                        if progress is not None and (percent != last_percent or now - last_report >= 10):
+                            progress(percent)
+                            last_percent, last_report = percent, now
+                    if size != package.size:
+                        raise ConnectionError('Package transfer ended early')
+                break
+            except (URLError, TimeoutError, ConnectionError, IncompleteRead, ssl.SSLEOFError) as exc:
+                if isinstance(exc, HTTPError):
+                    exc.close()
+                    if exc.code not in (408, 429, 500, 502, 503, 504):
+                        raise
+                if isinstance(getattr(exc, 'reason', None), ssl.SSLCertVerificationError):
+                    raise
+                if size == package.size:  # All expected bytes are available for the digest check.
+                    break
+                if attempt == len(RETRY_DELAYS):
+                    raise ConnectionError('Unable to finish the package transfer') from exc
+                sleep(RETRY_DELAYS[attempt])
+    if size != package.size or digest.hexdigest() != package.sha256:
+        raise ValueError('Package verification failed')
 
 
 def _member_parts(name):
@@ -305,25 +355,7 @@ def prepare_package(executable, current, package, *, open_asset=open_package, pr
             work = Path(temporary)
             (work / '.owner').write_bytes(OWNER)
             archive = work / 'release.zip'
-            start, size, sha = monotonic(), 0, hashlib.sha256()
-            last_percent = -1
-            with open_asset(package) as response, archive.open('xb') as output:
-                if response.status != 200:
-                    raise ValueError('Incomplete HTTP response')
-                while chunk := response.read1(BLOCK):
-                    if monotonic() - start > MAX_SECONDS:
-                        raise TimeoutError('Update timed out')
-                    size += len(chunk)
-                    if size > package.size:
-                        raise ValueError('Package is larger than declared')
-                    sha.update(chunk)
-                    output.write(chunk)
-                    percent = size * 100 // package.size
-                    if progress is not None and percent != last_percent:
-                        progress(percent)
-                        last_percent = percent
-            if size != package.size or sha.hexdigest() != package.sha256:
-                raise ValueError('Package verification failed')
+            _download(package, archive, open_asset, progress)
             staging = work / 'payload'
             staging.mkdir()
             _unpack(archive, staging, package.version)
@@ -349,7 +381,7 @@ def worker_main(args):
         package = Package(args[0], int(args[1]), args[2])
         prepare_package(sys.executable, __version__, package, progress=report)
         return 0
-    except (HTTPError, URLError, TimeoutError):
+    except (URLError, TimeoutError, ConnectionError, ssl.SSLError):
         return 3
     except (ValueError, BadZipFile):
         return 2

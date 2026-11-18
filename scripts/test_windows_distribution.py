@@ -2,6 +2,7 @@
 import ctypes
 import argparse
 from contextlib import closing
+from io import BytesIO
 from ctypes import wintypes
 import json
 import hashlib
@@ -141,10 +142,20 @@ def verify_package_update(exe, env, previous_version, original_database, expecte
     with archive.open('rb') as stream:
         package = Package(__version__, archive.stat().st_size, hashlib.file_digest(stream, 'sha256').hexdigest())
 
-    def local_response(requested):
+    offsets = []
+    cutoff = 64 * 1024
+    def local_response(requested, offset):
         assert requested == package
-        response = archive.open('rb')
-        response.status = 200
+        offsets.append(offset)
+        if offset == 0:
+            with archive.open('rb') as stream:
+                response = BytesIO(stream.read(cutoff))
+            response.status = 200
+        else:
+            response = archive.open('rb')
+            response.seek(offset)
+            response.status = 206
+            response.headers = {'Content-Range': f'bytes {offset}-{package.size - 1}/{package.size}'}
         return response
 
     profile = original_database.parent.parent / 'Package update profile'
@@ -155,6 +166,7 @@ def verify_package_update(exe, env, previous_version, original_database, expecte
     # Only the HTTP body is supplied locally. Verification, extraction, the
     # frozen startup probe and the normal handoff all use production code.
     target = prepare_package(exe, previous_version, package, open_asset=local_response)
+    assert offsets == [0, cutoff]
     assert database.read_bytes() == before
     assert (target.parent / 'version.txt').read_text(encoding='ascii').strip() == __version__
     update_env = dict(env, DIRECTOR_CONTROL_DATA_DIR=str(profile))

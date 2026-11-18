@@ -50,7 +50,7 @@ Pass evidence is recorded against the candidate version. Promote the same functi
 
 Post-v1.0 work includes Authenticode signing, automated advisory monitoring, stronger dependency/action pinning and additional platform/display coverage. Automatic package updates shipped in v1.3.0. Fresh security disclosures receive a reachability and severity assessment.
 
-The current portable ZIP must contain the application, its native libraries and a matching `version.txt`. The mandatory `portable_update_verified` acceptance check stages the real ZIP, probes the extracted executable, opens it on a previous-version test database, verifies the backup and checks that uninstall preserves unrelated files inside an updated copy.
+The current portable ZIP must contain the application, its native libraries and a matching `version.txt`. The mandatory `portable_update_verified` acceptance check interrupts and resumes the real ZIP transfer, probes the extracted executable, opens it on a previous-version test database, verifies the backup and checks that uninstall preserves unrelated files inside an updated copy.
 
 ## Native security and installed contents
 
