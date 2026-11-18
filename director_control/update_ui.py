@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QCheckBox, QGroupBox, QHBoxLayout, QProgressBar, Q
 from . import __version__
 from .diagnostics import record_error
 from .inspector import plain_label
-from .package_update import MAX_SECONDS, install_root, packaged, ready_target, version_key
+from .package_update import WORKER_IDLE_SECONDS, install_root, packaged, ready_target, version_key
 from .update_check import UpdateChecker
 
 
@@ -22,6 +22,7 @@ class PackagePreparer(QObject):
         self.process = None
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
+        self.timer.setInterval(WORKER_IDLE_SECONDS * 1000)
         self.timer.timeout.connect(self._timeout)
 
     @property
@@ -40,7 +41,7 @@ class PackagePreparer(QObject):
         process.setProcessEnvironment(environment)
         process.readyReadStandardOutput.connect(self._progress)
         process.setStandardErrorFile(QProcess.nullDevice())
-        self.timer.start((MAX_SECONDS + 60) * 1000)
+        self.timer.start()
         process.start(sys.executable, ['--prepare-update', package.version, str(package.size), package.sha256])
 
     def _progress(self):
@@ -50,6 +51,7 @@ class PackagePreparer(QObject):
         while process.canReadLine():
             line = bytes(process.readLine()).strip()
             if 1 <= len(line) <= 3 and line.isdigit() and int(line) <= 100:
+                self.timer.start()
                 self.progress.emit(int(line))
 
     def _discard(self):

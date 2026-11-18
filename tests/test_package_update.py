@@ -32,7 +32,7 @@ def package(version, data):
 def stage(exe, current, version, *, data=None, metadata=None, probe=lambda *_: None):
     data = data if data is not None else bundle(version)
     return updater.prepare_package(exe, current, metadata or package(version, data),
-                                   open_asset=lambda p: Response(data), probe=probe)
+                                   open_asset=lambda p, offset: Response(data), probe=probe)
 
 
 @pytest.fixture
@@ -69,7 +69,8 @@ def test_ready_on_next_launch_from_original_shortcut_after_complete_verification
 
 
 @pytest.mark.parametrize('failure', ['truncated', 'too large', 'wrong digest', 'wrong version', 'incomplete', 'probe'])
-def test_bad_or_interrupted_package_cannot_displace_last_working_version(exe, failure):
+def test_bad_or_interrupted_package_cannot_displace_last_working_version(exe, failure, monkeypatch):
+    monkeypatch.setattr(updater, 'sleep', lambda _: None)
     first = stage(exe, '1.3.0', '1.4.0')
     good = bundle('1.5.0')
     data, meta = good, package('1.5.0', good)
@@ -91,7 +92,7 @@ def test_bad_or_interrupted_package_cannot_displace_last_working_version(exe, fa
             archive.writestr('DirectorCalendar/version.txt', '1.5.0')
         data = empty.getvalue()
         meta = package('1.5.0', data)
-    with pytest.raises(ValueError):
+    with pytest.raises(ConnectionError if failure == 'truncated' else ValueError):
         stage(first, '1.4.0', '1.5.0', data=data, metadata=meta, probe=probe)
     assert updater.ready_target(exe.parent, '1.3.0') == first
     assert updater.ready_target(exe.parent, '1.4.0') is None
@@ -140,3 +141,81 @@ def test_worker_only_accepts_official_github_https_asset_redirects():
                 'https://objects.githubusercontent.com:8443/file'):
         with pytest.raises(ValueError):
             handler.redirect_request(request, None, 302, '', {}, url)
+
+
+@pytest.mark.parametrize('resume', ['partial', 'full', 'wrong range', 'altered bytes'])
+def test_resumption_verifies_byte_range_and_complete_digest(exe, monkeypatch, resume):
+    monkeypatch.setattr(updater, 'sleep', lambda _: None)
+    data = bundle('1.4.0')
+    meta = package('1.4.0', data)
+    cut = 37
+    offsets = []
+    class Interrupted(Response):
+        def read1(self, n):
+            if self.tell() >= cut:
+                raise TimeoutError('connection stalled')
+            return super().read1(cut)
+    def open_asset(pkg, offset):
+        assert pkg == meta
+        offsets.append(offset)
+        if not offset:
+            return Interrupted(data)
+        if resume == 'full':
+            return Response(data)
+        result = Response(data[offset:] if resume != 'altered bytes' else bytes(len(data) - offset))
+        result.status = 206
+        begin = 0 if resume == 'wrong range' else offset
+        result.headers = {'Content-Range': f'bytes {begin}-{len(data)-1}/{len(data)}'}
+        return result
+    def prepare():
+        return updater.prepare_package(exe, '1.3.1', meta, open_asset=open_asset, probe=lambda *_: None)
+    if resume in ('wrong range', 'altered bytes'):
+        with pytest.raises(ValueError):
+            prepare()
+        assert updater.ready_target(exe.parent, '1.3.1') is None
+    else:
+        result = prepare()
+        assert result == updater.ready_target(exe.parent, '1.3.1')
+    assert offsets == [0, cut]
+
+
+def test_slow_progress_keeps_download_alive_beyond_fifteen_minutes(tmp_path, monkeypatch):
+    from itertools import count
+    tick = count(0, 11)
+    monkeypatch.setattr(updater, 'monotonic', lambda: next(tick))
+    data = bytes(range(200))
+    class Slow(Response):
+        def read1(self, n):
+            return super().read1(1)
+    progress = []
+    dest = tmp_path / 'package.zip'
+    updater._download(package('1.4.0', data), dest, lambda _, offset: Slow(data), progress.append)
+    assert dest.read_bytes() == data and next(tick) > 900
+    assert len(progress) == len(data) and progress[-1] == 100
+
+
+def test_a_bounded_number_of_reconnections_leaves_application_usable(exe, monkeypatch):
+    attempts, delays = [], []
+    monkeypatch.setattr(updater, 'sleep', delays.append)
+    def unavailable(_, offset):
+        attempts.append(offset)
+        raise TimeoutError('offline')
+    with pytest.raises(ConnectionError):
+        updater.prepare_package(exe, '1.3.1', package('1.4.0', b'example'), open_asset=unavailable)
+    assert attempts == [0, 0, 0, 0] and delays == [1, 2, 4]
+    assert exe.read_bytes() == b'working bootstrap' and updater.ready_target(exe.parent, '1.3.1') is None
+
+
+def test_range_request_survives_the_github_asset_redirect(monkeypatch):
+    seen = []
+    class Opener:
+        def open(self, request, timeout):
+            seen.append((request, timeout))
+    monkeypatch.setattr(updater, 'build_opener', lambda *_: Opener())
+    pkg = package('1.4.0', b'example')
+    updater.open_package(pkg, 3)
+    req, timeout = seen[0]
+    assert timeout == updater.SOCKET_TIMEOUT and req.full_url == pkg.url
+    redirected = updater._AssetRedirect().redirect_request(req, None, 302, '', {},
+                                                          'https://release-assets.githubusercontent.com/example')
+    assert redirected.get_header('Range') == 'bytes=3-'
