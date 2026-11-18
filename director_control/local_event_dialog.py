@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from .date_picker import install_date_picker
 from .inspector import plain_label
 from .storage import STATUSES
+from .event_status import status_hint
 
 
 class LocalEventDialog(QDialog):
@@ -83,6 +84,11 @@ class LocalEventDialog(QDialog):
         self.form.addRow("Факт: начало", self.fact_start)
         self.form.addRow("Факт: конец", self.fact_end)
         self.fact_checkbox.toggled.connect(self._fact_enabled)
+        self.status_note = plain_label('', 'Muted')
+        self.status_note.setWordWrap(True)
+        self.form.addRow('', self.status_note)
+        self.status_input.currentIndexChanged.connect(self._status_changed)
+        self._status_changed()
         self.note_input = QPlainTextEdit(event.note if event else "")
         self.note_input.setPlaceholderText("Результат, причина появления вне плана или другие подробности")
         self.note_input.setMaximumHeight(100)
@@ -138,11 +144,14 @@ class LocalEventDialog(QDialog):
         self.fact_start.setEnabled(self.fact_checkbox.isChecked())
         self.fact_end.setEnabled(self.fact_checkbox.isChecked())
 
+    def _status_changed(self):
+        self.status_note.setText(status_hint(self.status_input.currentData()))
+
     def _kind_changed(self):
         planned = self.kind_input.currentData() == "planned"
         self.start_label.setText("План: начало" if planned else "Факт: начало")
         self.end_label.setText("План: конец" if planned else "Факт: конец")
-        self.kind_note.setText("Попадёт в исходный план только при его фиксации. Факт заполняется отдельно."
+        self.kind_note.setText("Попадёт в исходный план только при его фиксации."
                                if planned else "Будет учтено вне плана. Даже последующая фиксация дня не добавит его в исходный план.")
         for field in (self.fact_checkbox, self.fact_start, self.fact_end):
             self.form.setRowVisible(field, planned)

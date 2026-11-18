@@ -117,7 +117,7 @@ def test_calendar_modes_search_mail_only_and_period_navigation(tmp_path):
     window.close()
 
 
-def test_event_inspector_and_quick_completion_preserve_plan_and_do_not_invent_fact(tmp_path):
+def test_event_inspector_and_quick_completion_preserve_plan_and_fill_fact(tmp_path):
     from PySide6.QtCore import QDate
     from PySide6.QtWidgets import QApplication
     from director_control.storage import Store
@@ -133,7 +133,8 @@ def test_event_inspector_and_quick_completion_preserve_plan_and_do_not_invent_fa
     assert window.inspector.title.text() == "Meeting"
     window.mark_done()
     event = store.get_event(eid)
-    assert event.status == "done" and event.actual_start is None
+    assert event.status == "done" and event.actual_start == "2026-10-22T09:00:00"
+    assert event.actual_end == "2026-10-22T10:00:00"
     assert event.baseline_start == "2026-10-22T09:00:00"
     window.show()
     window.resize(1050, 720)

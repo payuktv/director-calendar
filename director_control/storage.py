@@ -13,18 +13,12 @@ from typing import Iterator
 from zoneinfo import ZoneInfo
 
 from .provenance import work_origin
+from .event_status import STATUSES, FAILED_STATUSES, fill_completed_actual
 from .record_validation import (
     validate_calendar_window, validate_event_content, validate_remote_event, validate_text,
 )
 from .source_state import source_state
 
-STATUSES = {
-    "pending": "Не подтверждено",
-    "done": "Выполнено",
-    "partial": "Частично",
-    "cancelled": "Отменено",
-    "moved": "Перенесено",
-}
 DEFAULT_CATEGORIES = [
     ("Совещания", "#6678E8", 1),
     ("Встречи", "#27A88A", 1),
@@ -356,6 +350,7 @@ class Store:
         data = dict(title=title.strip() if isinstance(title, str) else title, category=category, current_start=current_start,
                     current_end=current_end, actual_start=actual_start, actual_end=actual_end,
                     status=status if status is not None else ("pending" if current_start else "done"), note=(note or "").strip())
+        fill_completed_actual(data)
         self._validate_event_data(data)
         with self._connect() as con:
             cur = con.execute("""INSERT INTO events
@@ -401,10 +396,16 @@ class Store:
             data["title"] = data["title"].strip()
         if "note" in updates:
             data["note"] = (data["note"] or "").strip()
+        changed_fields = set(updates)
+        if updates.get("status") == "done":
+            meta = con.execute("SELECT all_day, baseline_all_day FROM calendar_events WHERE event_id=?", (event_id,)).fetchone()
+            all_day = bool(meta and meta["all_day" if data["current_start"] else "baseline_all_day"])
+            fill_completed_actual(data, all_day=all_day)
+            changed_fields.update({"actual_start", "actual_end"})
         self._validate_event_data(data)
         if old.source == "local" and bool(old.current_start) != bool(data["current_start"]):
             raise ValueError("Тип существующего локального события менять нельзя: сохрани план и факт раздельно.")
-        changes = {k: {"было": getattr(old, k), "стало": data[k]} for k in updates if getattr(old, k) != data[k]}
+        changes = {k: {"было": getattr(old, k), "стало": data[k]} for k in sorted(changed_fields) if getattr(old, k) != data[k]}
         if not changes:
             return
         columns = [f"{k}=?" for k in changes]
@@ -483,7 +484,7 @@ class Store:
         slots = []
         metadata = self.calendar_info()
         for event in self.daily_events(day):
-            if (not event.current_start or event.status in {"cancelled", "moved"}
+            if (not event.current_start or event.status in {"cancelled", "moved"} | FAILED_STATUSES
                     or metadata.get(event.id, {}).get("all_day")):
                 continue
             start = max(day_start, datetime.fromisoformat(event.current_start))
@@ -524,6 +525,9 @@ class Store:
             "total": len(rows), "planned": len(planned), "done": done,
             "partial": sum(r["status"] == "partial" for r in planned),
             "cancelled": sum(r["status"] == "cancelled" for r in planned),
+            "failed": sum(r["status"] in FAILED_STATUSES for r in planned),
+            "failed_assistant": sum(r["status"] == "failed_assistant" for r in planned),
+            "failed_director": sum(r["status"] == "failed_director" for r in planned),
             "moved": sum(r["status"] == "moved" for r in planned),
             "pending": sum(r["status"] == "pending" for r in planned),
             "unplanned": unscheduled, "unfixed": origins.count("unfixed"), "nontracked": len(uncontrolled),
@@ -777,6 +781,7 @@ class Store:
                     con.execute('UPDATE events SET revision=revision+1 WHERE id=?', (row['id'],))
                     state = source_state(self._as_event(row), {'missing': 1})
                     action = ('Отменённое событие отсутствует в Mail.ru' if state.code == 'cancelled_missing'
+                              else 'Проваленное событие отсутствует в Mail.ru' if state.code == 'failed_missing'
                               else 'Нет в ответе Mail.ru')
                     self._audit(con, row["id"], row["title"], action, {"требует проверки": state.needs_review})
                     stats["missing"] += 1

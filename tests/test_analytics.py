@@ -7,7 +7,7 @@ import pytest
 from director_control.analytics import deviations, export_report, period_bounds
 from director_control.mail_calendar import CalendarConfig
 from director_control.storage import Store
-from tests.helpers import seed_event, source_update
+from tests.helpers import LegacyStoreFixture, seed_event, source_update
 
 DAY = '2026-10-19'
 
@@ -192,7 +192,8 @@ def test_sync_coverage_is_per_calendar_and_latest_attempt_for_each_day(store):
 
 
 def test_report_is_read_only_and_does_not_freeze_plan_or_invent_fact(store):
-    planned(store, status='done')
+    eid = planned(store)
+    LegacyStoreFixture.update_event(store, eid, status='done')  # Historical record, before auto fact.
     audit = store.audit_log()
     before = store.path.read_bytes()
     r = store.analytics_report(DAY)

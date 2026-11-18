@@ -108,6 +108,44 @@ def test_local_plan_form_keeps_fact_optional_and_reject_does_not_create(app, kee
     assert event.actual_start is None and event.baseline_start is None
 
 
+@pytest.mark.parametrize('source', ['local', 'caldav'])
+@pytest.mark.parametrize('status', ['done', 'partial', 'failed_assistant', 'failed_director'])
+def test_editors_save_completion_defaults_and_failure_attribution(app, keep, store, source, status):
+    from director_control.ui import EventDialog
+    from tests.helpers import seed_event
+    start, end = DAY+'T11:00:00', DAY+'T12:00:00'
+    eid = (store.create_event('Task', 'Работа', start, end) if source == 'local'
+           else seed_event(store, 'Task', 'Работа', start, end))
+    item = store.get_event(eid)
+    dialog = keep(LocalEventDialog(store, START, item) if source == 'local' else EventDialog(store, item))
+    # Merely browsing statuses must not leak an automatically previewed fact into Partial.
+    dialog.status_input.setCurrentIndex(dialog.status_input.findData('done'))
+    dialog.status_input.setCurrentIndex(dialog.status_input.findData(status))
+    assert not dialog.fact_checkbox.isChecked()
+    assert dialog.status_note.text()
+    dialog.save()
+    saved = store.get_event(eid)
+    assert saved.status == status
+    assert saved.actual_start == (start if status == 'done' else None)
+    if status == 'done':
+        edit = keep(LocalEventDialog(store, START, saved) if source == 'local' else EventDialog(store, saved))
+        assert edit.fact_checkbox.isChecked()
+        edit.fact_end.setDateTime(qt_datetime(DAY+'T11:30:00'))
+        edit.save()
+        assert store.get_event(eid).actual_end == DAY+'T11:30:00'
+
+
+def test_quick_completion_and_partial_inspector_prompt(app, keep, store):
+    eid = store.create_event('Task', 'Работа', DAY+'T11:00:00', DAY+'T12:00:00', status='partial', note='Started')
+    window = keep(MainWindow(store))
+    window.set_date(QDate(2026, 10, 22))
+    window.select_event(eid)
+    assert 'Ожидается' in window.inspector.note.text() and 'Started' in window.inspector.note.text()
+    window.inspector.done_button.click()
+    assert store.get_event(eid).actual_start == DAY+'T11:00:00'
+    assert 'Ожидается' not in window.inspector.note.text()
+
+
 @pytest.mark.parametrize('mode', ['day', 'week', 'month', 'agenda'])
 def test_add_button_shows_postfactum_in_every_view_without_sync(app, keep, store, monkeypatch, mode):
     window = keep(MainWindow(store))

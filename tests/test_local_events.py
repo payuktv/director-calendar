@@ -50,16 +50,18 @@ def test_postfactum_never_creates_a_plan_or_improves_its_execution_rate(store, t
     assert 'Итог обсуждения' in row['Комментарий']
 
 
-def test_local_planned_events_freeze_without_inventing_fact_and_preserve_baseline(store):
+def test_local_planned_events_only_fill_fact_on_completion_and_preserve_baseline(store):
     eid = store.create_event('Подготовка', 'Работа', START, END)
     assert store.get_event(eid).status == 'pending'
     assert store.get_event(eid).actual_start is None
     assert store.freeze_day(DAY) == 1
+    assert store.get_event(eid).actual_start is None
     store.update_event(eid, title='Подготовка материалов', current_start=DAY+'T13:00:00', current_end=DAY+'T14:00:00', status='done')
     event = store.get_event(eid)
     assert event.baseline_start == START and event.baseline_end == END
-    assert event.current_start == DAY+'T13:00:00' and event.actual_start is None
-    assert store.category_totals(DAY) == [('Работа', 45, 0)]
+    assert event.current_start == event.actual_start == DAY+'T13:00:00'
+    assert event.actual_end == DAY+'T14:00:00'
+    assert store.category_totals(DAY) == [('Работа', 45, 60)]
     with pytest.raises(ValueError, match='зафиксированный план'):
         store.delete_event(eid)
     with pytest.raises(ValueError, match='Недопустимые'):

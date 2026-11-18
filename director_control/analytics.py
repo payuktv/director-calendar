@@ -9,6 +9,7 @@ from pathlib import Path
 from .storage import Event
 from .provenance import work_origin
 from .source_state import source_state
+from .event_status import FAILED_STATUSES, outcome_day
 
 
 def period_bounds(anchor: date, mode: str) -> tuple[date, date]:
@@ -48,6 +49,11 @@ class Metrics:
     done: int = 0
     partial: int = 0
     cancelled: int = 0
+    failed_assistant: int = 0
+    failed_director: int = 0
+    cancelled_total: int = 0
+    failed_assistant_total: int = 0
+    failed_director_total: int = 0
     moved: int = 0
     pending: int = 0
     completed: int = 0
@@ -62,6 +68,14 @@ class Metrics:
     abs_start_seconds: float = 0.
     abs_duration_seconds: float = 0.
     overlap_seconds: float = 0.
+
+    @property
+    def failed(self):
+        return self.failed_assistant + self.failed_director
+
+    @property
+    def failed_total(self):
+        return self.failed_assistant_total + self.failed_director_total
 
     @property
     def completion_percent(self):
@@ -153,11 +167,17 @@ def build_report(anchor, mode, only_tracked, events, categories, rules, metadata
             bucket = daily[plan[0].date()]
             bucket.planned += 1
             setattr(bucket, event.status, getattr(bucket, event.status) + 1)
+        outcome_date = outcome_day(event)
+        if (event.status in FAILED_STATUSES | {'cancelled'} and outcome_date
+                and date.fromisoformat(outcome_date) in daily):
+            bucket = daily[date.fromisoformat(outcome_date)]
+            field = event.status + '_total'
+            setattr(bucket, field, getattr(bucket, field) + 1)
         completed_date = (event.actual_start or event.baseline_start or event.current_start or '')[:10]
         if event.status == 'done' and completed_date and date.fromisoformat(completed_date) in daily:
             daily[date.fromisoformat(completed_date)].completed += 1
         missing_date = (event.baseline_start or event.current_start or '')[:10]
-        missing = (event.status == 'done' and not (event.actual_start and event.actual_end)
+        missing = (event.status in {'done', 'partial'} and not (event.actual_start and event.actual_end)
                    and not meta.get('all_day') and bool(missing_date)
                    and date.fromisoformat(missing_date) in daily)
         if missing:
@@ -210,9 +230,11 @@ def build_report(anchor, mode, only_tracked, events, categories, rules, metadata
 def export_report(report: Report, destination: Path | str):
     """Weighted period summary and additive daily data, suitable for Russian Excel."""
     headers = ['Строка', 'С', 'По', 'Категории', 'В плане', 'Выполнено из плана',
-               'Выполнено по дате факта/плана', 'Частично', 'Отменено', 'Перенесено', 'Не подтверждено',
+               'Выполнено по дате факта/плана', 'Частично', 'Отменено из плана', 'Перенесено', 'Не подтверждено',
+               'Провалено из плана — ассистент', 'Провалено из плана — директор',
+               'Отменено всего', 'Провалено всего', 'Провалено — ассистент', 'Провалено — директор',
                'Исполнение, %', 'План, мин', 'Факт, мин', 'Вне плана, мин', 'План не зафиксирован, мин',
-               'Доля внепланового, %', 'Доля — нижняя граница', 'Выполнено без времени', 'Сравнимых событий',
+               'Доля внепланового, %', 'Доля — нижняя граница', 'Ожидают фактического времени', 'Сравнимых событий',
                'Среднее абсолютное отклонение начала, мин', 'Среднее абсолютное отклонение длительности, мин',
                'Начало вне допуска', 'Длительность вне допуска', 'Повторно учтено при пересечениях, мин',
                'Дней с зафиксированным планом', 'Дней с полной загрузкой Mail.ru', 'Дней в периоде',
@@ -221,7 +243,9 @@ def export_report(report: Report, destination: Path | str):
     def row(label, start, end, m, summary=False):
         return [label, start.isoformat(), (end - timedelta(days=1)).isoformat(),
                 'Контролируемые' if report.only_tracked else 'Все', m.planned, m.done, m.completed,
-                m.partial, m.cancelled, m.moved, m.pending, m.completion_percent, m.planned_seconds / 60,
+                m.partial, m.cancelled, m.moved, m.pending, m.failed_assistant, m.failed_director,
+                m.cancelled_total, m.failed_total, m.failed_assistant_total, m.failed_director_total,
+                m.completion_percent, m.planned_seconds / 60,
                 m.actual_seconds / 60, m.unplanned_seconds / 60, m.unknown_seconds / 60,
                 m.unplanned_percent, 'Да' if m.unknown_seconds else 'Нет', m.missing_time, m.comparable,
                 m.mean_start_minutes, m.mean_duration_minutes, m.start_outside, m.duration_outside,
