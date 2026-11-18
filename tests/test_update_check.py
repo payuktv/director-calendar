@@ -22,19 +22,20 @@ def release_data(version='1.0.3'):
     return {'tag_name': f'v{version}', 'draft': False, 'prerelease': False,
             'published_at': '2026-11-17T12:00:00Z',
             'html_url': f'{root}/releases/tag/v{version}',
-            'assets': [{'name': f'DirectorCalendar-{version}-Setup-x64.exe', 'state': 'uploaded',
-                        'size': 120000000,
-                        'browser_download_url': f'{root}/releases/download/v{version}/DirectorCalendar-{version}-Setup-x64.exe'}]}
+            'assets': [{'name': f'DirectorCalendar-{version}-portable-x64.zip', 'state': 'uploaded',
+                        'size': 51000000, 'digest': 'sha256:' + 'a' * 64,
+                        'browser_download_url': f'{root}/releases/download/v{version}/DirectorCalendar-{version}-portable-x64.zip'}]}
 
 
 def payload(data=None):
     return json.dumps(release_data() if data is None else data).encode()
 
 
-def test_numeric_versions_and_installer_are_preserved():
+def test_numeric_versions_and_verified_package_are_preserved():
     release = updates.parse_release(payload(release_data('1.10.0')))
     assert updates.version_key(release.version) > updates.version_key('1.9.9')
-    assert release.installer_url.endswith('/v1.10.0/DirectorCalendar-1.10.0-Setup-x64.exe')
+    assert release.package.url.endswith('/v1.10.0/DirectorCalendar-1.10.0-portable-x64.zip')
+    assert (release.package.size, release.package.sha256) == (51000000, 'a' * 64)
 
 
 @pytest.mark.parametrize('version', ['v1.2.3', '01.2.3', '1.2', '1.2.3-rc1', '1.2.3+build',
@@ -64,7 +65,8 @@ def test_arbitrary_download_targets_are_rejected(url):
         updates.parse_release(payload(data))
 
 
-@pytest.mark.parametrize('patch', [{'size': 0}, {'size': True}, {'state': 'new'}])
+@pytest.mark.parametrize('patch', [{'size': 0}, {'size': True}, {'state': 'new'}, {'size': 2**30},
+                                   {'digest': None}, {'digest': 'md5:' + 'a'*32}, {'digest': 'sha256:' + 'X'*64}])
 def test_unfinished_assets_are_rejected(patch):
     data = release_data()
     data['assets'][0].update(patch)
@@ -72,7 +74,7 @@ def test_unfinished_assets_are_rejected(patch):
         updates.parse_release(payload(data))
 
 
-def test_ambiguous_installer_is_rejected():
+def test_ambiguous_package_is_rejected():
     data = release_data()
     data['assets'].append(copy.deepcopy(data['assets'][0]))
     with pytest.raises(ValueError):
@@ -224,23 +226,112 @@ def test_cancel_does_not_emit_result_and_allows_retry(app):
     assert [release.version for release in good] == ['1.0.4'] and not bad
 
 
-def test_update_panel_displays_result_and_opens_only_requested_link(app, monkeypatch):
+class Preparer(QObject):
+    prepared = Signal()
+    failed = Signal(str)
+    progress = Signal(int)
+
+    def __init__(self):
+        super().__init__()
+        self.package = None
+
+    @property
+    def busy(self):
+        return self.package is not None
+
+    def start(self, package):
+        assert not self.busy
+        self.package = package
+
+    def cancel(self):
+        self.package = None
+
+
+def test_update_panel_downloads_package_and_restarts_only_on_user_action(app, monkeypatch, tmp_path):
     from director_control import update_ui
     reply = Reply()
     checker, good, bad = checker_for(reply)
-    panel = update_ui.UpdatePanel(checker=checker, installed_version='1.0.2')
+    preparer = Preparer()
+    panel = update_ui.UpdatePanel(checker=checker, preparer=preparer, installed_version='1.0.2', supported=True)
+    restarts = []
+    panel.restart_requested.connect(lambda: restarts.append(True))
     opened = []
     monkeypatch.setattr(update_ui.QDesktopServices, 'openUrl', lambda url: opened.append(url.toString()) or True)
     assert not checker.manager.requests
     panel.check_button.click()
     assert not panel.check_button.isEnabled() and panel.download_button.isHidden()
     reply.feed(payload())
-    assert not opened and panel.check_button.isEnabled()
+    assert not opened and not panel.check_button.isEnabled()
     assert '1.0.3' in panel.status.text() and not panel.download_button.isHidden()
+    assert preparer.package == good[0].package and not restarts
+    preparer.progress.emit(38)
+    assert panel.progress.value() == 38 and not panel.progress.isHidden()
+    preparer.package = None
+    monkeypatch.setattr(update_ui, 'ready_target', lambda *a: tmp_path / 'v1.0.3' / 'DirectorCalendar.exe')
+    preparer.prepared.emit()
+    assert not restarts and panel.download_button.text() == 'Перезапустить сейчас'
     panel.download_button.click()
+    assert restarts == [True]
     panel.notes_button.click()
-    assert opened == [good[0].installer_url, good[0].page_url]
+    assert opened == [good[0].page_url]
     panel.close()
+
+
+def test_automatic_preference_cancel_and_manual_retry(app, tmp_path, monkeypatch):
+    from director_control import update_ui
+    from director_control.storage import Store
+    store = Store(tmp_path / 'preferences.db')
+    checker, _, _ = checker_for(Reply())
+    prep = Preparer()
+    panel = update_ui.UpdatePanel(store=store, checker=checker, preparer=prep, installed_version='1.0.2', supported=True)
+    monkeypatch.setattr(update_ui, 'ready_target', lambda *args: None)
+    panel.start_automatic()
+    assert panel.startup.isActive() and panel.daily.isActive()
+    panel.automatic.setChecked(False)
+    assert store.get_setting('app_auto_updates') == '0'
+    assert not panel.startup.isActive() and not panel.daily.isActive()
+    panel._auto_check()
+    assert not checker.manager.requests
+    panel.check_button.click()
+    checker.reply.feed(payload())
+    assert not prep.busy and panel.download_button.text() == 'Обновить до 1.0.3'
+    panel.download_button.click()
+    assert prep.busy and not panel.check_button.isEnabled()
+    panel.download_button.click()
+    assert not prep.busy and panel.ready_version is None and panel.progress.isHidden()
+    panel.download_button.click()
+    assert prep.busy
+    panel.cancel()
+    assert not prep.busy
+    panel.close()
+
+
+def test_requested_restart_waits_for_sync_backup_and_open_form(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+    from director_control.storage import Store
+    from director_control.ui import MainWindow
+    window = MainWindow(Store(tmp_path / 'restart.db'))
+    window.update_panel.ready_version = '2.0.0'
+    closed = []
+    monkeypatch.setattr(window, 'close', lambda: closed.append(True) or True)
+    with monkeypatch.context() as patch:
+        patch.setattr(type(window.mail_panel), 'busy', property(lambda _: True))
+        window._restart_for_update()
+    with monkeypatch.context() as patch:
+        patch.setattr(type(window.backup_panel), 'busy', property(lambda _: True))
+        window._restart_for_update()
+    dialog = QDialog(window)
+    dialog.setModal(True)
+    dialog.show()
+    app.processEvents()
+    window._restart_for_update()
+    dialog.reject()
+    assert not closed and not getattr(window, 'restart_after_close', False)
+    window._restart_for_update()
+    assert closed == [True] and window.restart_after_close
+    window.deleteLater()
+    from PySide6.QtCore import QEvent
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 @pytest.mark.parametrize('installed, expected', [('1.0.3', 'последняя опубликованная'), ('1.0.4', 'новее')])

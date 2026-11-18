@@ -48,7 +48,9 @@ The completed target-system checklist for the frozen candidate was:
 
 Pass evidence is recorded against the candidate version. Promote the same functional scope to v1.0.0 and run the mandatory release gates for that version. The checklist is finite and is not extended by cosmetic issues or new feature requests. Reopen a release blocker only for a reproduced critical vulnerability, data loss/corruption, failed required gate or failure of a core acceptance scenario.
 
-Post-v1.0 work: Authenticode signing, automated advisory monitoring, stronger dependency/action pinning, automatic update downloads, additional platform/display coverage and new features. These items do not block the agreed initial scope. Fresh security disclosures still receive a reachability/severity assessment; a version difference alone is not a reason to postpone publication.
+Post-v1.0 work includes Authenticode signing, automated advisory monitoring, stronger dependency/action pinning and additional platform/display coverage. Automatic package updates shipped in v1.3.0. Fresh security disclosures receive a reachability and severity assessment.
+
+The current portable ZIP must contain the application, its native libraries and a matching `version.txt`. The mandatory `portable_update_verified` acceptance check stages the real ZIP, probes the extracted executable, opens it on a previous-version test database, verifies the backup and checks that uninstall preserves unrelated files inside an updated copy.
 
 ## Native security and installed contents
 

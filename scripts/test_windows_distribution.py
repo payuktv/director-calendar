@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import shutil
 from time import monotonic, sleep
 from uuid import uuid4
 
@@ -65,6 +66,10 @@ def windows(pid):
 def open_app(exe, env, cwd):
     print(f'Launching: {ascii(str(exe))}', flush=True)
     process = subprocess.Popen([str(exe)], env=env, cwd=cwd)
+    return wait_for_window(process, env)
+
+
+def wait_for_window(process, env):
     deadline = monotonic() + 45
     while process.poll() is None and monotonic() < deadline:
         for hwnd, title in windows(process.pid):
@@ -127,6 +132,47 @@ def uninstall(folder, env):
     raise AssertionError('Uninstall did not finish removing program files')
 
 
+def verify_package_update(exe, env, previous_version, original_database, expected):
+    """Run the exact portable release with an independent, previous-version profile."""
+    from director_control import __version__
+    from director_control.package_update import Package, prepare_package, launch_ready
+
+    archive = ROOT / f'dist/artifacts/DirectorCalendar-{__version__}-portable-x64.zip'
+    with archive.open('rb') as stream:
+        package = Package(__version__, archive.stat().st_size, hashlib.file_digest(stream, 'sha256').hexdigest())
+
+    def local_response(requested):
+        assert requested == package
+        response = archive.open('rb')
+        response.status = 200
+        return response
+
+    profile = original_database.parent.parent / 'Package update profile'
+    profile.mkdir()
+    database = profile / 'director_control.db'
+    shutil.copyfile(original_database, database)
+    before = database.read_bytes()
+    # Only the HTTP body is supplied locally. Verification, extraction, the
+    # frozen startup probe and the normal handoff all use production code.
+    target = prepare_package(exe, previous_version, package, open_asset=local_response)
+    assert database.read_bytes() == before
+    assert (target.parent / 'version.txt').read_text(encoding='ascii').strip() == __version__
+    update_env = dict(env, DIRECTOR_CONTROL_DATA_DIR=str(profile))
+    process = launch_ready(exe, previous_version, environ=update_env)
+    assert process is not None
+    process, hwnd = wait_for_window(process, update_env)
+    close_app(process, hwnd)
+    assert snapshot(database) == expected
+    with closing(sqlite3.connect(database)) as con:
+        assert con.execute("SELECT value FROM settings WHERE key='app_last_version'").fetchone()[0] == __version__
+    backups = list((profile / 'backups').glob('before-update-*.db'))
+    assert len(backups) == 1 and snapshot(backups[0]) == expected
+    # Uninstall must clean the package while preserving unrelated user additions.
+    personal = target.parent / '_internal' / 'personal-note.txt'
+    personal.write_bytes(b'not package-owned')
+    return personal
+
+
 def main(previous_root, output, upgrade_source, previous_installer=None):
     from keyring.backends.Windows import WinVaultKeyring
     from director_control import __version__
@@ -174,6 +220,7 @@ s.set_setting('mail_login','synthetic@example.test')
 s.set_setting('mail_auto','0')
 # Daily-backup workers have separate entry-point tests; isolate update acceptance.
 s.set_setting('backup_auto','0')
+s.set_setting('app_auto_updates','0')
 s.set_setting('ui_calendar_view','month')
 """
             subprocess.run([sys.executable, '-c', seed], cwd=previous_root, env=env, check=True, timeout=30)
@@ -249,6 +296,10 @@ s.set_setting('ui_calendar_view','month')
             check = json.loads(checked.read_text(encoding='utf-8'))
             assert check['ok'] and check['frozen'] and check['version'] == __version__
             assert Path(check['shortcut_target']).samefile(exe)
+            personal = verify_package_update(exe, env, previous_version, backups[0], expected)
+            sentinels[personal.relative_to(install).as_posix()] = hashlib.sha256(personal.read_bytes()).hexdigest()
+            cache_marker = install / '.director-updates' / '.owner'
+            sentinels[cache_marker.relative_to(install).as_posix()] = hashlib.sha256(cache_marker.read_bytes()).hexdigest()
             # Uninstall must retain DB/backups/settings/Vault. Then a clean reinstall reuses them.
             uninstall(install, env)
             assert program_files(install) == sentinels
@@ -261,7 +312,7 @@ s.set_setting('ui_calendar_view','month')
             assert snapshot(database) == expected
             uninstall(install, env)
             assert program_files(install) == sentinels
-            report.update(check, source_to_exe=True, old_to_new=True, reinstall=True, uninstall_preserves_data=True,
+            report.update(check, portable_update_verified=True, source_to_exe=True, old_to_new=True, reinstall=True, uninstall_preserves_data=True,
                           running_app_protected=True, downgrade_rejected=True, no_python_on_path=True,
                           default_data_directory=str(default_data_dir()), unicode_install_path=True,
                           previous_version=previous_version, previous_commit=previous_commit,
