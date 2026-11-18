@@ -1,8 +1,8 @@
-# Director Calendar — v1.3.1
+# Director Calendar — v1.3.2
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
-**Status:** stable v1.3.1. The original v1.0 feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The application interface is currently in Russian; the English labels below describe its controls.
+**Status:** stable v1.3.2. The original v1.0 feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The application interface is currently in Russian; the English labels below describe its controls.
 
 ## Features
 
@@ -26,22 +26,22 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.3.1](https://github.com/payuktv/director-calendar/releases/tag/v1.3.1)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.3.2](https://github.com/payuktv/director-calendar/releases/tag/v1.3.2)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-1.3.1-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-1.3.2-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; verified files are uploaded directly without intermediate Actions artifact storage. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-1.3.1-portable-x64.zip`. Keep `DirectorCalendar.exe` alongside `version.txt` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-1.3.2-portable-x64.zip`. Keep `DirectorCalendar.exe` alongside `version.txt` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
 From v1.3.0, the installed and portable Windows editions check at startup and daily while open. Automatic downloads are enabled by default in **Settings → Application updates**. A new stable release downloads in the background and opens at the next normal launch. **Restart now** applies it sooner once editing, synchronization and backup operations have finished. You can turn off automatic downloads and use **Check for updates → Update** when convenient.
 
-To move from v1.2.0 or earlier, install v1.3.1 once or extract its complete portable ZIP. Versions v1.1.0 and v1.2.0 can find this transitional installer through their existing update panel. Subsequent versions use the portable ZIP directly with the existing shortcut. The version shown in the calendar reflects the running package. Windows Installed Apps identifies the original installer.
+To move from v1.2.0 or earlier, install v1.3.2 once or extract its complete portable ZIP. Versions v1.1.0 and v1.2.0 can find this transitional installer through their existing update panel. Subsequent versions use the portable ZIP directly with the existing shortcut. The version shown in the calendar reflects the running package. Windows Installed Apps identifies the original installer.
 
 The updater requests public release metadata over HTTPS, checks the ZIP's exact size and SHA-256, and tests the extracted runtime before making it available. Only the official repository and GitHub release asset hosts are used. A slow transfer can continue as long as bytes are arriving. After a temporary disconnection, the app retries up to three times and requests the remaining bytes. If the server returns the whole package, it restarts the transfer and verifies it. Closing the calendar cancels an unfinished transfer. Each verified version lives under `.director-updates` beside the application, so portable installations need a writable folder. The database, credentials and pre-update backup use their existing locations.
 
@@ -237,6 +237,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v1.3.2 | Clearer backgrounds for fixed-plan days in both themes |
 | v1.3.1 | Slow transfers continue and interrupted downloads resume inside the app |
 | v1.3.0 | Installer-free background updates, verified portable packages and restart on demand |
 | v1.2.0 | Automatic actual time on completion, partial-time queue and failure attribution with separate statistics |
