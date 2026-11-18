@@ -1,8 +1,8 @@
-# Director Calendar — v1.1.0
+# Director Calendar — v1.2.0
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
-**Status:** stable v1.1.0. The original v1.0 feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The application interface is currently in Russian; the English labels below describe its controls.
+**Status:** stable v1.2.0. The original v1.0 feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The application interface is currently in Russian; the English labels below describe its controls.
 
 ## Features
 
@@ -26,22 +26,22 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.1.0](https://github.com/payuktv/director-calendar/releases/tag/v1.1.0)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.2.0](https://github.com/payuktv/director-calendar/releases/tag/v1.2.0)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-1.1.0-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-1.2.0-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; verified files are uploaded directly without intermediate Actions artifact storage. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-1.1.0-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-1.2.0-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
 Close the application, run the new installer and reopen the existing shortcut. Updates are installed manually; there is no automatic update download.
 
-Starting with v1.1.0, use **Settings → Application updates → Check for updates**. It compares the installed version with the latest published stable GitHub release. A newer version offers **Download installer** and **What's new**, both opened in the default browser. Downloading does not close the calendar or start installation. Close the calendar before running the downloaded installer yourself. Versions up to v1.0.2 do not contain this panel: download and install v1.1.0 from Releases once to enable it for future updates.
+Starting with v1.1.0, use **Settings → Application updates → Check for updates**. It compares the installed version with the latest published stable GitHub release. A newer version offers **Download installer** and **What's new**, both opened in the default browser. Downloading does not close the calendar or start installation. Close the calendar before running the downloaded installer yourself. Versions up to v1.0.2 do not contain this panel: download and install the current version from Releases once to enable it for future updates.
 
 Checks run only when requested, without GitHub credentials or calendar data. The interface stays responsive, with a 15-second deadline; closing the window cancels the request. Network failures, unavailable releases and malformed responses are reported as failed checks, never as evidence that the installed version is current. Drafts, pre-releases, unfinished installers and download links outside this repository are rejected. No separate update server or public version file is required; publishing a complete stable GitHub release makes it available to the checker.
 
@@ -76,7 +76,7 @@ A missing event in a bounded server response is **not proof of deletion**. After
 
 Mail.ru may include the selected calendar collection itself in a query response. The client requests resource types and ignores that collection's `calendar-data 404` only when a successful response explicitly identifies the exact selected address as both a collection and a calendar. Unreadable event resources still make the import partial. Withdrawn records can be opened from History in a read-only card without inventing a current time.
 
-Cancelling an event locally and then removing it in Mail.ru is an expected workflow. After a complete query confirms its absence in the loaded period, the retained cancelled record has no source warning. It remains cancelled in the calendar, original plan, analytics and History; no actual work time is invented. An unfrozen record without a baseline remains available as the record of the cancellation. If the source event reappears, the local cancellation is preserved and the interface indicates that the event is present in Mail.ru. Undoing the local cancellation while the source remains missing restores the warning. Missing non-cancelled events and source cancellations conflicting with a local completion still require review. The synchronization result, agenda, inspector and analytics use the same source-state rules.
+Cancelling or explicitly marking an event as failed locally and then removing it in Mail.ru is an expected workflow. After a complete query confirms its absence in the loaded period, the retained record has no source warning. Its local status and failure attribution remain in the calendar, original plan, analytics and History; no actual work time is invented. Unfrozen records also retain this outcome. Source reappearance or cancellation never silently overwrites the chosen local status. Reverting to an unresolved status while the source remains missing restores the warning. Missing pending, completed, partial or moved events and source cancellations conflicting with a local completion still require review. The synchronization result, agenda, inspector and analytics use the same source-state rules.
 
 After importing a calendar, switching accounts/collections is blocked. The display time zone cannot be changed once schedule events exist. UTC/TZID values are converted on import; floating times use the selected zone.
 
@@ -91,13 +91,15 @@ Before relying on a connection, use a synthetic appointment to verify initial im
 1. Select the date and refresh Mail.ru.
 2. Review the schedule, conflicts and free intervals within the 07:00–19:00 workday.
 3. Fix the original plan once the day is agreed. Fixation is disabled during synchronization; missing, partial, failed or older-than-30-minute coverage produces a warning.
-4. Record actual start/end times and execution status in the event card. Missing actual time is never replaced with scheduled time.
+4. Select an execution status. **Done** fills an entirely missing actual interval from the current scheduled time when saved; an existing or explicitly entered actual interval takes priority. Actual time can then be edited. **Partial** does not fill time automatically and waits for an actual interval in analytics. All-day events are exempt from automatic time and missing-time prompts. Existing historical records are not backfilled by opening the application or report.
 5. Use **Add event** or **Ctrl+N** for local planning or post-factum unplanned work.
 6. Review analytics and incomplete actual-time records; use History to inspect changes.
 
 A local event already included in the original plan cannot be deleted; cancel it while retaining its baseline. Imported events cannot be deleted locally. Post-factum local work is always unplanned. A baseline event moved to another day remains planned; ordinary events on an unfixed day have unknown work origin.
 
 Plan fixation preserves the category, tracking flag and time tolerance used for baseline calculations. Later settings changes do not rewrite those saved rules. All-day events are displayed separately and do not contribute 24 hours of planned work.
+
+Use **Failed · assistant** or **Failed · director** when an event did not happen because that participant missed it or forgot. Attribution is selected by the user, never inferred from Mail.ru. Use **Cancelled** for an agreed cancellation. Comments can record the reason. Failed events retain their plan and history but do not contribute completed tasks or actual working hours, even if an earlier actual interval remains saved.
 
 ## Analytics and exports
 
@@ -109,13 +111,16 @@ Reports cover a day, Monday–Sunday week or calendar month. Calendar search and
 | Confirmed actual time | Actual intervals of completed or partially completed events, clipped to report/day boundaries |
 | Unplanned share | Confirmed unplanned time / all confirmed actual time; unknown-origin time makes this a lower bound, shown with `≥` |
 | Start/duration deviation | Actual minus original plan; summary cards use absolute deviations so early and late values do not cancel out |
-| Completed without time | Completed events missing a full actual interval, excluding current all-day events |
+| Awaiting actual time | Partial and historical completed events missing a full actual interval, excluding current all-day events |
+| Cancelled / Failed | Separate outcome totals, including unfrozen days; failures are split by assistant/director and can be opened as filtered event lists |
 
 No plan or actual data produces an undefined metric rather than a misleading zero. Deviation comparisons use complete original/actual intervals and the saved tolerance; equality with the tolerance is allowed. Overlapping actual intervals are summed, with duplicated minutes reported explicitly.
 
 Reports show plan-fixation coverage, complete Mail.ru loading coverage, source warnings and missing actual time. Loading coverage is not a guarantee that the remote calendar is still current. Drill down by day, category or event; open an event to correct its actual time.
 
 Period CSV exports include a total row and every day in the selected period. Files use UTF-8 with BOM, semicolons and decimal commas. Undefined values are blank. Reports are read from a consistent SQLite snapshot and do not modify the plan or fact records.
+
+Cancellations and failures are counted once on the original plan's start date, otherwise the current start date (or actual start for actual-only records). They respect the selected category scope and frozen tracking rules. Separate baseline counts preserve the completion denominator; CSV exports include both baseline and overall outcome counts. Overnight events are not counted again on the following day.
 
 ## History
 
@@ -232,6 +237,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v1.2.0 | Automatic actual time on completion, partial-time queue and failure attribution with separate statistics |
 | v1.1.0 | In-app version checks, browser links to updates and neutral publisher metadata |
 | v1.0.2 | Refined fixed-plan background shades: fresher light green and a dark tint without brightening |
 | v1.0.1 | Subtle background for days with a fixed original plan in both themes |

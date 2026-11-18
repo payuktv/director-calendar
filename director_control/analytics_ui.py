@@ -17,6 +17,7 @@ from .calendar_view import text
 from .date_picker import install_date_picker
 from .inspector import CategoryBars, plain_label
 from .storage import STATUSES
+from .event_status import FAILED_STATUSES, outcome_day
 from .theme import color
 
 
@@ -60,7 +61,7 @@ class AnalyticsMetric(QFrame):
         self.actionable = actionable
         if actionable:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.setToolTip('Нажми, чтобы открыть список выполненных событий без времени')
+            self.setToolTip('Нажми, чтобы открыть соответствующий список событий')
             self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             self.setAccessibleName(title + '. Открыть список событий')
 
@@ -255,6 +256,10 @@ class AnalyticsPage(QScrollArea):
         self.rules = plain_label(
             'Исполнение: выполненные события / исходный зафиксированный план; проценты дней не усредняются. '
             'Время: только заполненный факт со статусом «Выполнено» или «Частично», обрезанный границами периода. '
+            'При выборе «Выполнено» пустой факт заполняется текущим временем события; его можно исправить. '
+            '«Частично» без факта ожидает заполнения. '
+            'Отмены и провалы считаются отдельно, включая дни без фиксации плана, по исходной дате, иначе текущей. '
+            'У провала причину выбирает пользователь: ассистент или директор. Часы провалов не учитываются. '
             'Вне плана: локальные события постфактум и события, добавленные после фиксации их дня. '
             'Перенос зафиксированного события остаётся плановой работой. Если план не зафиксирован, происхождение '
             'работы неизвестно, а доля внепланового показана как нижняя граница (≥). '
@@ -275,7 +280,7 @@ class AnalyticsPage(QScrollArea):
         self.cards = {}
         for i, (key, title) in enumerate((('completion', 'Исполнение исходного плана'),
                                          ('unplanned', 'Доля внеплановой работы'),
-                                         ('missing', 'Выполнено без времени'),
+                                         ('missing', 'Ожидают фактического времени'),
                                          ('actual', 'Подтверждённое время'),
                                          ('start', 'Отклонение начала · среднее |Δ|'),
                                          ('duration', 'Отклонение длительности · |Δ|'))):
@@ -283,8 +288,16 @@ class AnalyticsPage(QScrollArea):
             self.cards[key] = card
             grid.addWidget(card, i // 3, i % 3)
             grid.setColumnStretch(i % 3, 1)
-        self.cards['missing'].clicked.connect(lambda: self.show_events('missing'))
+        self.cards['missing'].clicked.connect(self.show_missing)
         layout.addLayout(grid)
+        outcomes = QHBoxLayout()
+        for key, title in (('cancelled', 'Отменено'), ('failed', 'Провалено')):
+            card = AnalyticsMetric(title, True)
+            self.cards[key] = card
+            outcomes.addWidget(card, 1)
+        self.cards['cancelled'].clicked.connect(self.show_cancelled)
+        self.cards['failed'].clicked.connect(self.show_failed)
+        layout.addLayout(outcomes)
 
         self.details = QTabWidget()
         self.details.setObjectName('AnalyticsDetails')
@@ -302,7 +315,7 @@ class AnalyticsPage(QScrollArea):
         self.daily_bars.day_selected.connect(self.show_day)
         dv.addWidget(self.daily_bars, 1)
         self.details.addTab(dynamics, 'Динамика')
-        self.day_table = make_table(['День', 'В плане', 'Выполнено', 'Исполнение', 'План, ч', 'Факт, ч', 'Вне плана'])
+        self.day_table = make_table(['День', 'В плане', 'Выполнено', 'Исполнение', 'План, ч', 'Факт, ч', 'Вне плана', 'Отменено', 'Провалено'])
         self.day_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.day_table.activated.connect(lambda index: self.show_day(list(self.report.daily)[index.row()]) if self.report else None)
         self.details.addTab(self.day_table, 'По дням')
@@ -322,7 +335,9 @@ class AnalyticsPage(QScrollArea):
         ev = QVBoxLayout(events)
         filters = QHBoxLayout()
         self.event_filter = QComboBox()
-        for title, key in (('Все события', 'all'), ('Выполнено без времени', 'missing'),
+        for title, key in (('Все события', 'all'), ('Ожидают фактического времени', 'missing'),
+                           ('Отменено', 'cancelled'), ('Провалено — все причины', 'failed'),
+                           ('Провалено · ассистент', 'failed_assistant'), ('Провалено · директор', 'failed_director'),
                            ('Внеплановая работа', 'unplanned'), ('Отклонения вне допуска', 'deviation'),
                            ('Без зафиксированного плана', 'unfixed')):
             self.event_filter.addItem(title, key)
@@ -341,7 +356,7 @@ class AnalyticsPage(QScrollArea):
                                        'Начало\nΔ мин', 'Длительность\nΔ мин', 'Допуск\nмин', 'Учёт времени'])
         self.event_table.horizontalHeader().setFixedHeight(52)
         self.event_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for i, width in enumerate((240, 98, 135, 145, 115, 105, 120, 85, 165)):
+        for i, width in enumerate((240, 98, 195, 145, 115, 105, 120, 85, 165)):
             self.event_table.setColumnWidth(i, width)
         self.event_table.activated.connect(self._open_event)
         ev.addWidget(self.event_table, 1)
@@ -409,7 +424,9 @@ class AnalyticsPage(QScrollArea):
         r, m = self.report, self.report.totals
         self.cards['completion'].set_values(percent(m.completion_percent), f'{m.done} из {m.planned} событий\nЧастично: {m.partial} · перенесено: {m.moved}')
         self.cards['unplanned'].set_values(percent(m.unplanned_percent, bool(m.unknown_seconds)), f'{duration(m.unplanned_seconds)} из {duration(m.actual_seconds)} факта\nДоля по времени')
-        self.cards['missing'].set_values(str(m.missing_time), 'Нажми для заполнения факта\nВремя не подставляется')
+        self.cards['missing'].set_values(str(m.missing_time), 'Частично и ранее выполненные без факта\nНажми для заполнения')
+        self.cards['cancelled'].set_values(str(m.cancelled_total), f'Из исходного плана: {m.cancelled}\nНажми, чтобы открыть события')
+        self.cards['failed'].set_values(str(m.failed_total), f'Ассистент: {m.failed_assistant_total} · директор: {m.failed_director_total}\nИз исходного плана: {m.failed}')
         self.cards['actual'].set_values(duration(m.actual_seconds), f'Исходный план: {duration(m.planned_seconds)}\nТолько выполнено и частично')
         for key, value, outside in (('start', m.mean_start_minutes, m.start_outside), ('duration', m.mean_duration_minutes, m.duration_outside)):
             self.cards[key].set_values('—' if value is None else numeric(value) + ' мин', f'Сравнимых событий: {m.comparable}\nВне допуска: {outside}')
@@ -428,9 +445,11 @@ class AnalyticsPage(QScrollArea):
         for row, (day, metrics) in enumerate(r.daily.items()):
             values = (day.strftime('%d.%m'), str(metrics.planned), str(metrics.done), percent(metrics.completion_percent),
                       numeric(metrics.planned_seconds / 3600), numeric(metrics.actual_seconds / 3600),
-                      percent(metrics.unplanned_percent, bool(metrics.unknown_seconds)))
+                      percent(metrics.unplanned_percent, bool(metrics.unknown_seconds)),
+                      str(metrics.cancelled_total), str(metrics.failed_total))
             for col, value in enumerate(values):
                 self.day_table.setItem(row, col, QTableWidgetItem(value))
+            self.day_table.item(row, 8).setToolTip(f'Ассистент: {metrics.failed_assistant_total} · директор: {metrics.failed_director_total}')
         self.category_bars.set_values(r.categories)
         self.category_table.setRowCount(len(r.categories))
         for row, (name, plan, fact) in enumerate(r.categories):
@@ -439,6 +458,15 @@ class AnalyticsPage(QScrollArea):
         if self.day_filter not in r.daily:
             self.day_filter = None
         self._fill_events()
+
+    def show_missing(self):
+        self.show_events('missing')
+
+    def show_cancelled(self):
+        self.show_events('cancelled')
+
+    def show_failed(self):
+        self.show_events('failed')
 
     def show_events(self, kind='all'):
         self.day_filter = None
@@ -472,6 +500,13 @@ class AnalyticsPage(QScrollArea):
             if kind == 'deviation' and not (row.in_comparison and row.outside_tolerance):
                 continue
             e = row.event
+            if kind in FAILED_STATUSES | {'cancelled', 'failed'}:
+                statuses = FAILED_STATUSES if kind == 'failed' else {kind}
+                day = outcome_day(e)
+                if e.status not in statuses or not day or not self.report.start.isoformat() <= day < self.report.end.isoformat():
+                    continue
+                if self.day_filter and day != self.day_filter.isoformat():
+                    continue
             if self.day_filter:
                 ds, de = self.day_filter.isoformat() + 'T00:00:00', (self.day_filter + timedelta(days=1)).isoformat() + 'T00:00:00'
                 if not any(s and end and s < de and end > ds for s, end in
@@ -486,6 +521,8 @@ class AnalyticsPage(QScrollArea):
         for i, row in enumerate(self.event_rows):
             e = row.event
             day = (e.actual_start or e.baseline_start or e.current_start or '')[:10]
+            if e.status in FAILED_STATUSES | {'cancelled'}:
+                day = outcome_day(e)
             timing = 'Не заполнено' if row.missing_time else 'Факт подтверждён' if row.actual_seconds else 'Весь день' if row.all_day else 'Нет факта в периоде'
             values = (e.title, date.fromisoformat(day).strftime('%d.%m.%Y') if day else '—', STATUSES[e.status],
                       origins[row.origin], numeric(row.planned_seconds / 60) + ' / ' + numeric(row.actual_seconds / 60),

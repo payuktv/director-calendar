@@ -26,11 +26,14 @@ STATUS_COLORS = {
     "done": ("#369A83", "#EDF8F4"),
     "partial": ("#8E743F", "#F3EFE3"),
     "moved": ("#397ED8", "#EAF2FF"),
+    "failed_assistant": ("#C25347", "#FCEDE8"),
+    "failed_director": ("#C25347", "#FCEDE8"),
 }
 
 DARK_STATUS_COLORS = {
     "done": ("#6ED2B4", "#1A3B36"), "cancelled": ("#ED9AB0", "#402735"),
     "partial": ("#C6B57D", "#363329"), "moved": ("#8ABAF6", "#253B59"),
+    "failed_assistant": ("#F19B8F", "#422B29"), "failed_director": ("#F19B8F", "#422B29"),
 }
 
 

@@ -63,7 +63,7 @@ def test_period_switch_and_independence_from_calendar_search_and_layers(window):
 
 def test_missing_card_opens_real_editor_and_saved_fact_updates_analytics(window):
     a = window.analytics_page
-    eid = event(window, status='done')
+    eid = event(window, status='partial')
     window.store.freeze_day(DAY)
     window.reload()
     assert a.cards['missing'].value.text() == '1'
@@ -198,3 +198,30 @@ def test_calendar_and_report_use_start_and_duration_with_strict_frozen_tolerance
     assert 'отклонение' in window.table.item(0, 5).text()
     assert a.event_table.item(0, 5).foreground().style() == Qt.BrushStyle.NoBrush
     assert a.event_table.item(0, 6).foreground().color() == color('danger')
+
+
+@pytest.mark.parametrize('theme', ['light', 'dark'])
+def test_failure_cards_and_actor_filters_match_totals_in_both_themes(window, theme):
+    apply_theme(theme)
+    assistant = event(window, status='failed_assistant')
+    director = event(window, status='failed_director')
+    cancelled = event(window, status='cancelled')
+    event(window, status='partial')
+    window.store.freeze_day(DAY)
+    overnight = window.store.create_event('Previous period', 'Работа', '2026-10-18T23:30:00', DAY+'T00:30:00', status='failed_director')
+    window.reload()
+    a = window.analytics_page
+    assert a.cards['failed'].value.text() == '2'
+    assert 'Ассистент: 1 · директор: 1' in a.cards['failed'].note.text()
+    assert a.cards['cancelled'].value.text() == '1'
+    QTest.mouseClick(a.cards['failed'], Qt.MouseButton.LeftButton)
+    assert {row.event.id for row in a.event_rows} == {assistant, director}
+    assert overnight not in {row.event.id for row in a.event_rows}
+    a.event_filter.setCurrentIndex(a.event_filter.findData('failed_assistant'))
+    assert [row.event.id for row in a.event_rows] == [assistant]
+    a.event_filter.setCurrentIndex(a.event_filter.findData('failed_director'))
+    assert [row.event.id for row in a.event_rows] == [director]
+    QTest.mouseClick(a.cards['cancelled'], Qt.MouseButton.LeftButton)
+    assert [row.event.id for row in a.event_rows] == [cancelled]
+    assert a.day_table.item(0, 7).text() == '1' and a.day_table.item(0, 8).text() == '2'
+    assert 'Ассистент: 1 · директор: 1' == a.day_table.item(0, 8).toolTip()

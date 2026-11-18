@@ -148,6 +148,12 @@ class EventDialog(QDialog):
         form.addRow("Факт: начало", self.fact_start)
         form.addRow("Факт: конец", self.fact_end)
 
+        self.status_note = plain_label('', 'Muted')
+        self.status_note.setWordWrap(True)
+        form.addRow('', self.status_note)
+        self.status_input.currentIndexChanged.connect(self._status_changed)
+        self._status_changed()
+
         self.note_input = QLineEdit(event.note)
         self.note_input.setPlaceholderText("Причина переноса, итог встречи и т. д.")
         form.addRow("Комментарий", self.note_input)
@@ -163,6 +169,10 @@ class EventDialog(QDialog):
         buttons.button(QDialogButtonBox.StandardButton.Save).setObjectName("Primary")
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Отмена")
         outer.addWidget(buttons)
+
+    def _status_changed(self):
+        from .event_status import status_hint
+        self.status_note.setText(status_hint(self.status_input.currentData()))
 
     def save(self) -> None:
         try:

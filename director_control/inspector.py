@@ -95,7 +95,9 @@ class EventInspector(QFrame):
                 value = whole_day if all_day else (
                     f"{a:%d.%m} · {a:%H:%M} – {b:%H:%M}" if a.date() == b.date() else f"{a:%d.%m %H:%M} – {b:%d.%m %H:%M}")
             self.time_labels[key].setText(value)
-        self.note.setText(event.note or ("Фактическое время не заполнено." if not event.actual_start else ""))
+        needs_fact = (event.status in {'done', 'partial'} and not event.actual_start
+                      and not (info or {}).get('all_day'))
+        self.note.setText('\n'.join(part for part in (event.note, 'Ожидается фактическое время.' if needs_fact else '') if part))
 
 
 class CategoryBars(QWidget):

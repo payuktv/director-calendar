@@ -136,6 +136,44 @@ def _verify_calendar_writes(folder):
     assert prepare_version_update(store.path) is None
 
 
+def _verify_execution_status(folder):
+    """Exercise completion/failure records in the built runtime and both restores."""
+    from . import __version__
+    from .storage import Store
+    from .backups import create_backup, restore_backup
+    from .recovery import recover_database
+    from .updates import prepare_version_update
+
+    store = Store(folder / 'execution-status.db')
+    store.set_setting('app_last_version', __version__)
+    start, end = '2026-11-18T09:00:00', '2026-11-18T10:00:00'
+    done = store.create_event('Completed', 'Работа', start, end)
+    partial = store.create_event('Partial', 'Работа', start, end, status='partial')
+    failures = [store.create_event(status, 'Работа', start, end, status=status)
+                for status in ('failed_assistant', 'failed_director')]
+    store.freeze_day('2026-11-18')
+    store.update_event(done, status='done')
+    assert store.get_event(done).actual_start == start and store.get_event(done).actual_end == end
+    store.update_event(done, actual_end='2026-11-18T09:30:00')
+    assert store.get_event(partial).actual_start is None
+    metrics = store.analytics_report('2026-11-18', 'day').totals
+    assert metrics.failed_total == metrics.failed == 2 and metrics.missing_time == 1
+    assert metrics.cancelled_total == 0 and metrics.actual_seconds == 1800
+    copy = create_backup(store)
+    for emergency in (False, True):
+        live = Store(folder / f'execution-restored-{emergency}.db')
+        if emergency:
+            live.path.write_bytes(b'synthetic damaged database')
+            recover_database(live.path, copy)
+        else:
+            restore_backup(live, copy)
+        assert prepare_version_update(live.path) is None
+        reopened = Store(live.path)
+        for eid in (done, partial, *failures):
+            assert reopened.get_event(eid) == store.get_event(eid)
+        assert reopened.analytics_report('2026-11-18', 'day').totals == metrics
+
+
 def verify_installation(destination):
     from . import diagnostics
     from . import __version__
@@ -182,9 +220,11 @@ def verify_installation(destination):
         _verify_restored_settings(Path(temporary))
         _verify_restored_records(Path(temporary))
         _verify_calendar_writes(Path(temporary))
+        _verify_execution_status(Path(temporary))
         report.update(backup_settings_validated=True, backup_destination_local=True)
         report['backup_records_validated'] = True
         report['calendar_writes_validated'] = True
+        report['execution_status_validated'] = True
         assert ZoneInfo('Europe/Moscow')
         assert Path(certifi.where()).is_file()
         config = CalendarConfig('https://calendar.mail.ru/test/', 'synthetic@example.test')

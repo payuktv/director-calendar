@@ -108,24 +108,26 @@ def test_menu_changes_only_target_status_and_refreshes_ui_and_audit(app, tmp_pat
     window.show()
     app.processEvents()
     previous = "pending"
-    for status in ("done", "partial", "cancelled", "moved", "pending"):
+    for status in ("done", "partial", "cancelled", "failed_assistant", "failed_director", "moved", "pending"):
         window.select_event(other)
         count = len(store.audit_log())
         menu = choose_menu_action(app, lambda: window.show_event_context_menu(target, window.mapToGlobal(QPoint(430, 350))), status)
         assert menu["statuses"] == STATUSES and menu["checked"] == [previous]
         event = store.get_event(target)
-        assert event.status == status and replace(event, status=before.status, revision=before.revision) == before
+        expected = before if has_fact else replace(before, actual_start=before.current_start, actual_end=before.current_end)
+        assert event.status == status and replace(event, status=before.status, revision=before.revision) == expected
         assert event.revision > before.revision
         assert store.get_event(other) == untouched
         assert window.selected_event_id() == target
-        source_suffix = " · есть в Mail.ru" if status == "cancelled" else ""
+        source_suffix = " · есть в Mail.ru" if status in {"cancelled", "failed_assistant", "failed_director"} else ""
         assert window.inspector.status.text() == STATUSES[status] + source_suffix
         expected_label = STATUSES[status] + (" · отклонение" if has_fact and status == "done" else "")
         assert window.table.item(window.row_ids.index(target), 5).text() == expected_label + source_suffix
         assert window.cards["done"].value.text() == ("1" if status == "done" else "0")
         assert len(store.audit_log()) == count + 1
         last = store.audit_log()[0]
-        assert last["event_id"] == target and set(json.loads(last["details"])) == {"status"}
+        changed = {"status", "actual_start", "actual_end"} if status == "done" and not has_fact else {"status"}
+        assert last["event_id"] == target and set(json.loads(last["details"])) == changed
         previous = status
     assert store.calendar_info()[target]["local_status"] == 1
     cancelled = replace(snapshot, events=tuple(replace(item, cancelled=True) for item in snapshot.events))

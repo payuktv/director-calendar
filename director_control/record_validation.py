@@ -8,6 +8,8 @@ from datetime import date, datetime
 import json
 import math
 
+from .event_status import STATUSES
+
 
 ERROR = 'В базе некорректные записи приложения. Выбери другую резервную копию.'
 MAX_JSON_DEPTH = 32
@@ -57,7 +59,7 @@ def validate_event_content(row):
     validate_text(row['title'], nonempty=True, maximum=200)
     validate_text(row['category'], nonempty=True, maximum=60)
     validate_text(row['note'])
-    _require(row['status'] in ('pending', 'done', 'partial', 'cancelled', 'moved'))
+    _require(row['status'] in STATUSES)
     for layer in ('current', 'baseline', 'actual'):
         _interval(row.get(layer + '_start'), row.get(layer + '_end'))
 

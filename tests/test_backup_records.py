@@ -19,6 +19,7 @@ BAD_RECORDS = [
     ('categories', 'track', 'invalid'), ('categories', 'track', 2),
     ('events', 'title', b'private-value'), ('events', 'title', ''),
     ('events', 'note', b'private-value'), ('events', 'note', 'private\0value'),
+    ('events', 'status', 'unknown_failure'),
     ('events', 'external_key', b'private-value'),
     ('events', 'created_at', 'invalid'), ('events', 'updated_at', b'private-value'),
     ('events', 'revision', 'invalid'), ('events', 'revision', -1),
