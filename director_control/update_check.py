@@ -1,12 +1,12 @@
-"""Read public release metadata; never download or execute an installer."""
+"""Fetch the stable release and its verified portable package metadata."""
 from dataclasses import dataclass
 import json
-import re
 
 from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
-REPOSITORY_URL = 'https://github.com/payuktv/director-calendar'
+from .package_update import Package, REPOSITORY_URL, version_key
+
 LATEST_API_URL = 'https://api.github.com/repos/payuktv/director-calendar/releases/latest'
 MAX_RESPONSE_BYTES = 256 * 1024
 CHECK_TIMEOUT_MS = 15000
@@ -14,17 +14,11 @@ NETWORK_ERROR = 'Не удалось проверить обновления. П
 INVALID_RESPONSE = 'Не удалось проверить обновления: получен некорректный ответ.'
 
 
-def version_key(value):
-    if not isinstance(value, str) or not re.fullmatch(r'(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){2}', value):
-        raise ValueError('Invalid release version')
-    return tuple(map(int, value.split('.')))
-
-
 @dataclass(frozen=True)
 class Release:
     version: str
     page_url: str
-    installer_url: str
+    package: Package
 
 
 def parse_release(payload):
@@ -40,21 +34,23 @@ def parse_release(payload):
         version = tag[1:]
         version_key(version)
         page = f'{REPOSITORY_URL}/releases/tag/{tag}'
-        installer = f'{REPOSITORY_URL}/releases/download/{tag}/DirectorCalendar-{version}-Setup-x64.exe'
         if data.get('html_url') != page or not isinstance(data.get('published_at'), str) or not data['published_at']:
             raise ValueError('Invalid release page')
         assets = data.get('assets')
         if not isinstance(assets, list):
-            raise ValueError('Missing installer')
+            raise ValueError('Missing update assets')
         matches = [a for a in assets if isinstance(a, dict)
-                   and a.get('name') == f'DirectorCalendar-{version}-Setup-x64.exe']
+                   and a.get('name') == f'DirectorCalendar-{version}-portable-x64.zip']
         if len(matches) != 1:
-            raise ValueError('Missing or ambiguous installer')
+            raise ValueError('Missing or ambiguous update package')
         asset = matches[0]
-        if (asset.get('state') != 'uploaded' or type(asset.get('size')) is not int
-                or asset['size'] <= 0 or asset.get('browser_download_url') != installer):
-            raise ValueError('Invalid installer')
-        return Release(version, page, installer)
+        digest = asset.get('digest')
+        if not isinstance(digest, str) or not digest.startswith('sha256:'):
+            raise ValueError('Missing SHA-256 digest')
+        package = Package(version, asset.get('size'), digest[7:])
+        if asset.get('state') != 'uploaded' or asset.get('browser_download_url') != package.url:
+            raise ValueError('Invalid update package')
+        return Release(version, page, package)
     except (UnicodeError, TypeError, KeyError, RecursionError) as exc:
         raise ValueError('Invalid release response') from exc
 

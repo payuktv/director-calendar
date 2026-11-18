@@ -1,8 +1,8 @@
-# Director Calendar — v1.2.0
+# Director Calendar — v1.3.0
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
-**Status:** stable v1.2.0. The original v1.0 feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The application interface is currently in Russian; the English labels below describe its controls.
+**Status:** stable v1.3.0. The original v1.0 feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The application interface is currently in Russian; the English labels below describe its controls.
 
 ## Features
 
@@ -15,7 +15,7 @@ A local Windows desktop application for tracking a CEO's schedule, original plan
 - Light/dark themes, desktop shortcuts and single-instance protection.
 - Verified manual/daily backups, update backups and startup recovery for damaged databases.
 - Standalone Windows x64 installer and portable ZIP. Python is bundled.
-- On-demand update checks from Settings, with version comparison and browser links to the new installer and release notes.
+- Automatic Windows updates from verified portable releases, with an optional restart from Settings.
 
 ![Calendar, light theme](docs/screenshots/calendar-week.png)
 ![Calendar, dark theme](docs/screenshots/calendar-week-dark.png)
@@ -26,24 +26,24 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.2.0](https://github.com/payuktv/director-calendar/releases/tag/v1.2.0)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.3.0](https://github.com/payuktv/director-calendar/releases/tag/v1.3.0)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-1.2.0-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-1.3.0-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; verified files are uploaded directly without intermediate Actions artifact storage. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-1.2.0-portable-x64.zip`. Keep `DirectorCalendar.exe` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-1.3.0-portable-x64.zip`. Keep `DirectorCalendar.exe` alongside `version.txt` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
-Close the application, run the new installer and reopen the existing shortcut. Updates are installed manually; there is no automatic update download.
+From v1.3.0, the installed and portable Windows editions check at startup and daily while open. Automatic downloads are enabled by default in **Settings → Application updates**. A new stable release downloads in the background and opens at the next normal launch. **Restart now** applies it sooner once editing, synchronization and backup operations have finished. You can turn off automatic downloads and use **Check for updates → Update** when convenient.
 
-Starting with v1.1.0, use **Settings → Application updates → Check for updates**. It compares the installed version with the latest published stable GitHub release. A newer version offers **Download installer** and **What's new**, both opened in the default browser. Downloading does not close the calendar or start installation. Close the calendar before running the downloaded installer yourself. Versions up to v1.0.2 do not contain this panel: download and install the current version from Releases once to enable it for future updates.
+To move from v1.2.0 or earlier, install v1.3.0 once or extract its complete portable ZIP. Versions v1.1.0 and v1.2.0 can find this transitional installer through their existing update panel. Subsequent versions use the portable ZIP directly with the existing shortcut. The version shown in the calendar reflects the running package. Windows Installed Apps identifies the original installer.
 
-Checks run only when requested, without GitHub credentials or calendar data. The interface stays responsive, with a 15-second deadline; closing the window cancels the request. Network failures, unavailable releases and malformed responses are reported as failed checks, never as evidence that the installed version is current. Drafts, pre-releases, unfinished installers and download links outside this repository are rejected. No separate update server or public version file is required; publishing a complete stable GitHub release makes it available to the checker.
+The updater requests public release metadata over HTTPS, checks the ZIP's exact size and SHA-256, and tests the extracted runtime before making it available. Only the official repository and GitHub release asset hosts are used. Downloads and staging run in a separate process. Closing the calendar cancels an unfinished transfer. Each verified version lives under `.director-updates` beside the application, so portable installations need a writable folder. The database, credentials and pre-update backup use their existing locations.
 
 | Item | Default location |
 | --- | --- |
@@ -237,6 +237,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v1.3.0 | Installer-free background updates, verified portable packages and restart on demand |
 | v1.2.0 | Automatic actual time on completion, partial-time queue and failure attribution with separate statistics |
 | v1.1.0 | In-app version checks, browser links to updates and neutral publisher metadata |
 | v1.0.2 | Refined fixed-plan background shades: fresher light green and a dark tint without brightening |
@@ -268,10 +269,10 @@ Earlier implementation details remain available in the repository's commit and p
 
 - One local user/database and one Mail.ru calendar; no multi-PC synchronization or calendar write-back.
 - Manual plan fixation; no automatic daily fixation or background service when the app is closed.
-- No periodic Mail.ru polling or automatic application update download.
+- Mail.ru synchronization follows the configured startup and manual refresh settings.
 - Secondly/minutely recurrences and timed events with zero/undefined duration are unsupported. Invalid input stops parsing without applying the import. Series changes can require manual review of old occurrences.
 - The database stores local display-zone times without offsets; changing the zone after events exist is blocked.
-- Authenticode signing is not configured yet. Additional Windows/display coverage and automatic updates remain post-v1.0 work; the agreed target-system acceptance is complete.
+- The installer is currently unsigned. Additional Windows and display coverage remains planned.
 
 ## Data privacy and further documentation
 

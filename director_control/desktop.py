@@ -32,6 +32,10 @@ def shortcut_spec(root: Path | None = None, executable: Path | None = None,
     if frozen is None:
         frozen = bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
     if frozen:
+        from .package_update import install_root
+        base = install_root(executable)
+        if base != executable.parent:
+            executable = base / executable.name
         target, arguments, working_directory = executable, (), executable.parent
     else:
         root = (root or Path(__file__).resolve().parent.parent).resolve()
@@ -44,7 +48,7 @@ def shortcut_spec(root: Path | None = None, executable: Path | None = None,
         if not entry.is_file() or not target.is_file():
             raise RuntimeError("Не найден компонент оконного запуска. Повтори установку приложения и создай ярлык снова.")
         arguments, working_directory = (str(entry),), root
-    icon = app_icon_path()
+    icon = target if frozen else app_icon_path()
     return ShortcutSpec(target, arguments, working_directory, icon if icon.is_file() else target)
 
 

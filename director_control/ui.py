@@ -626,7 +626,9 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(0, 8, 12, 24)
         v.setSpacing(20)
         from .update_ui import UpdatePanel
-        self.update_panel = UpdatePanel()
+        self.update_panel = UpdatePanel(store=self.store)
+        self.update_panel.restart_requested.connect(self._restart_for_update)
+        self.update_panel.update_ready.connect(self._update_ready)
         v.addWidget(self.update_panel)
         self.mail_panel = MailPanel(self.store, self.selected_sync_day)
         self.mail_panel.changed.connect(self.reload)
@@ -925,6 +927,17 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             error_box(self, exc)
 
+    def _update_ready(self, version):
+        self.statusBar().showMessage(f'Версия {version} готова к следующему запуску. Перезапустить сейчас можно в Настройках.', 15000)
+
+    def _restart_for_update(self):
+        if not self.update_panel.ready_version:
+            return
+        if self.mail_panel.busy or self.backup_panel.busy or QApplication.activeModalWidget() is not None:
+            self.update_panel.status.setText('Заверши открытую операцию и нажми «Перезапустить сейчас» ещё раз.')
+            return
+        self.restart_after_close = self.close()
+
     def closeEvent(self, event):
         if self.backup_panel.busy:
             QMessageBox.information(self, 'Резервные копии', 'Дождись завершения копирования или восстановления базы.')
@@ -998,8 +1011,16 @@ def run_app() -> int:
         instance.activated.connect(activate)
         window.show()
         window.backup_panel.start()
-        return app.exec()
+        window.update_panel.start_automatic()
+        result = app.exec()
     finally:
         diagnostics.set_notifier(None)
         instance.close()
+    if getattr(window, 'restart_after_close', False):
+        from . import __version__
+        from .package_update import launch_ready
+        if launch_ready(sys.executable, __version__) is None:
+            from .desktop import show_message
+            show_message('Не удалось открыть обновление. Запусти календарь обычным ярлыком.', error=True)
+    return result
 

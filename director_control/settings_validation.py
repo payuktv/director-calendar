@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 _CHOICES = {
-    **{key: {'0', '1'} for key in ('backup_auto', 'mail_auto', 'mail_remember', 'ui_analytics_only_tracked')},
+    **{key: {'0', '1'} for key in ('backup_auto', 'mail_auto', 'mail_remember', 'ui_analytics_only_tracked', 'app_auto_updates')},
     'ui_theme': {'light', 'dark'},
     'ui_calendar_view': {'day', 'week', 'month', 'agenda'},
     'ui_analytics_mode': {'day', 'week', 'month'},

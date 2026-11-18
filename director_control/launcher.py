@@ -14,6 +14,15 @@ def main() -> int:
         diagnostics.install_hooks()
         from .windows_lifecycle import hold_installer_mutex
         hold_installer_mutex()
+        from . import __version__
+        from .package_update import launch_ready, packaged
+        if packaged():
+            try:
+                if launch_ready(sys.executable, __version__) is not None:
+                    return 0
+            except OSError as exc:
+                diagnostics.record_error('startup', exc)
+                show_message('Не удалось запустить подготовленное обновление. Открываем текущую версию.', error=True)
         from .ui import run_app
         return run_app()
     except Exception as exc:

@@ -14,6 +14,7 @@ on:
       - 'director_control/windows_lifecycle.py'
       - 'director_control/sync_process.py'
       - 'director_control/update_check.py'
+      - 'director_control/package_update.py'
       - 'director_control/update_ui.py'
       - 'main.py'
       - '.github/workflows/windows-build.yml'

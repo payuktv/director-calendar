@@ -126,25 +126,27 @@ def parse_isolated(blobs, config, start, end, *, timeout=SYNC_SECONDS):
                         'start': start.isoformat(), 'end': end.isoformat()}, timeout=timeout)
 
 
+# Windowed frozen executables may have sys.stdin/stdout=None even when
+# their native handles are explicitly redirected by the parent.
+def pipe_stream(stream, handle_id, mode):
+    if stream is not None:
+        return stream.buffer
+    import ctypes
+    import msvcrt
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.GetStdHandle.argtypes = [ctypes.c_uint32]
+    kernel.GetStdHandle.restype = ctypes.c_void_p
+    handle = kernel.GetStdHandle(handle_id & 0xffffffff)
+    if handle in (None, ctypes.c_void_p(-1).value):
+        raise OSError('Missing worker pipe')
+    return os.fdopen(msvcrt.open_osfhandle(handle, os.O_BINARY), mode)
+
+
 def worker_main():
     # Install OS limits before importing any parser or consuming untrusted input.
     try:
         limit_resources()
         from .mail_calendar import CalendarConfig, CalendarError, fetch_snapshot, parse_calendars
-        # Windowed frozen executables may have sys.stdin/stdout=None even when
-        # their native handles are explicitly redirected by the parent.
-        def pipe_stream(stream, handle_id, mode):
-            if stream is not None:
-                return stream.buffer
-            import ctypes
-            import msvcrt
-            kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-            kernel.GetStdHandle.argtypes = [ctypes.c_uint32]
-            kernel.GetStdHandle.restype = ctypes.c_void_p
-            handle = kernel.GetStdHandle(handle_id & 0xffffffff)
-            if handle in (None, ctypes.c_void_p(-1).value):
-                raise OSError('Missing worker pipe')
-            return os.fdopen(msvcrt.open_osfhandle(handle, os.O_BINARY), mode)
 
         input_stream = pipe_stream(sys.stdin, -10, 'rb')
         output = pipe_stream(sys.stdout, -11, 'wb')
