@@ -10,6 +10,7 @@ import sqlite3
 import tempfile
 from zoneinfo import ZoneInfo
 
+from .i18n import tr
 from . import __version__
 from . import database_guard as guard
 from .settings_validation import validate_settings
@@ -40,7 +41,7 @@ def validate_database(path):
             con.execute('BEGIN')
             version = con.execute('PRAGMA user_version').fetchone()[0]
             if version > SCHEMA_VERSION:
-                raise ValueError('Копия создана более новой версией приложения. Сначала обнови приложение.')
+                raise ValueError(tr('Копия создана более новой версией приложения. Сначала обнови приложение.'))
             # Never run integrity checks, data queries or migrations on foreign SQL.
             guard.validate_schema(con)
             tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -50,13 +51,13 @@ def validate_database(path):
             if version >= 4:
                 required |= {'baseline_rules', 'calendar_syncs'}
             if not required <= tables:
-                raise ValueError('Это не резервная копия Director Calendar: отсутствуют таблицы приложения.')
+                raise ValueError(tr('Это не резервная копия Director Calendar: отсутствуют таблицы приложения.'))
             if con.execute('PRAGMA quick_check(1)').fetchall() != [('ok',)] or con.execute('PRAGMA foreign_key_check').fetchone():
-                raise ValueError('В копии обнаружены повреждения или нарушенные связи записей.')
+                raise ValueError(tr('В копии обнаружены повреждения или нарушенные связи записей.'))
             fields = {row[1] for row in con.execute('PRAGMA table_info(events)')}
             if not {'id', 'title', 'category', 'source', 'status', 'note', 'external_key', 'created_at', 'updated_at',
                     'current_start', 'current_end', 'baseline_start', 'baseline_end', 'actual_start', 'actual_end'} <= fields:
-                raise ValueError('В копии отсутствуют обязательные поля событий.')
+                raise ValueError(tr('В копии отсутствуют обязательные поля событий.'))
             columns = {'categories': {'name', 'color', 'track'}, 'settings': {'key', 'value'},
                        'audit': {'id', 'event_id', 'title', 'action', 'details', 'changed_at'},
                        'day_freezes': {'day', 'frozen_at'}}
@@ -67,10 +68,10 @@ def validate_database(path):
                 columns['baseline_rules'] = {'event_id', 'category', 'track', 'tolerance_minutes'}
                 columns['calendar_syncs'] = {'id', 'calendar_key', 'start', 'end', 'status', 'finished_at'}
                 if 'revision' not in fields:
-                    raise ValueError('В копии отсутствует версия записи события.')
+                    raise ValueError(tr('В копии отсутствует версия записи события.'))
             for table, required_columns in columns.items():
                 if not required_columns <= {row[1] for row in con.execute('PRAGMA table_info(' + table + ')')}:
-                    raise ValueError('В копии отсутствуют обязательные поля приложения.')
+                    raise ValueError(tr('В копии отсутствуют обязательные поля приложения.'))
             validate_records(con, tables, budget)
             withdrawn = '''e.source='caldav' AND e.current_start IS NULL AND e.current_end IS NULL
                 AND e.baseline_start IS NULL AND e.baseline_end IS NULL
@@ -80,16 +81,16 @@ def validate_database(path):
                     AND a.action='Убрано из актуального плана Mail.ru')''' if 'calendar_events' in tables else '0'
             if con.execute('SELECT 1 FROM events e WHERE current_start IS NULL AND actual_start IS NULL '
                            'AND NOT (' + withdrawn + ') LIMIT 1').fetchone():
-                raise ValueError('В копии есть событие без планового и фактического времени.')
+                raise ValueError(tr('В копии есть событие без планового и фактического времени.'))
             if version >= 4 and con.execute('''SELECT 1 FROM events e LEFT JOIN baseline_rules b ON b.event_id=e.id
                     WHERE e.source IN ('local','caldav') AND e.baseline_start IS NOT NULL AND b.event_id IS NULL LIMIT 1''').fetchone():
-                raise ValueError('В копии отсутствуют правила зафиксированного плана.')
+                raise ValueError(tr('В копии отсутствуют правила зафиксированного плана.'))
             validate_settings(con, budget)
             budget.check()
             return version
     except sqlite3.DatabaseError as exc:
         budget.check()
-        raise ValueError('Не удалось прочитать резервную копию. Проверь, что выбран исправный файл базы данных.') from exc
+        raise ValueError(tr('Не удалось прочитать резервную копию. Проверь, что выбран исправный файл базы данных.')) from exc
 
 
 def _copy_database(source, target):
@@ -101,16 +102,16 @@ def _copy_database(source, target):
         def progress(status, remaining, total):
             budget.check()
             if total * page_size > guard.MAX_DATABASE_BYTES:
-                raise ValueError('Размер базы превышает допустимые 512 МиБ.')
+                raise ValueError(tr('Размер базы превышает допустимые 512 МиБ.'))
         src.backup(dst, pages=128, progress=progress)
         # Make every snapshot a self-contained file, including sources in WAL mode.
         if dst.execute('PRAGMA journal_mode=DELETE').fetchone()[0].lower() != 'delete':
-            raise ValueError('Не удалось подготовить автономный файл резервной копии.')
+            raise ValueError(tr('Не удалось подготовить автономный файл резервной копии.'))
 
 
 def version_tuple(value):
     if not isinstance(value, str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value):
-        raise ValueError('Некорректная сохранённая версия приложения. Выбери другую копию или обратись за помощью.')
+        raise ValueError(tr('Некорректная сохранённая версия приложения. Выбери другую копию или обратись за помощью.'))
     return tuple(int(part) for part in value.split('.'))
 
 
@@ -129,8 +130,7 @@ def validate_compatible_database(path, version=__version__):
         return None
     previous = row[0]
     if version_tuple(previous) > current:
-        raise ValueError(f'База уже открывалась в более новой версии v{previous}; установлена v{version}. '
-                         'Сначала обнови приложение или выбери более старую совместимую копию.')
+        raise ValueError(tr("База уже открывалась в более новой версии v{0}; установлена v{1}. Сначала обнови приложение или выбери более старую совместимую копию.").format(previous, version))
     return previous
 
 
@@ -172,10 +172,10 @@ def backup_folder(store):
 
 def save_backup_settings(store, enabled, folder, keep):
     if not 1 <= int(keep) <= 365:
-        raise ValueError('Количество автоматических копий: от 1 до 365.')
+        raise ValueError(tr('Количество автоматических копий: от 1 до 365.'))
     folder = str(Path(folder).expanduser().resolve()) if folder.strip() else ''
     if folder and Path(folder).exists() and not Path(folder).is_dir():
-        raise ValueError('Для копий нужно выбрать папку.')
+        raise ValueError(tr('Для копий нужно выбрать папку.'))
     values = {'backup_auto': '1' if enabled else '0', 'backup_folder': folder, 'backup_keep': str(keep)}
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
@@ -192,7 +192,7 @@ def save_backup_settings(store, enabled, folder, keep):
 def _prune(store, folder):
     keep = int(store.get_setting('backup_keep', '30'))
     if not 1 <= keep <= 365:
-        raise ValueError('Некорректное количество автоматических копий.')
+        raise ValueError(tr('Некорректное количество автоматических копий.'))
     pattern = re.compile(r'auto-' + database_key(store) + r'-\d{8}-\d{6}-\d{6}\.db$')
     owned = sorted((p for p in folder.glob('auto-*.db') if pattern.fullmatch(p.name)), reverse=True)
     for path in owned[keep:]:
@@ -240,7 +240,7 @@ def _restore_backup_settings(con, local=None):
 def restore_backup(store, source):
     source = Path(source).resolve()
     if source == store.path.resolve():
-        raise ValueError('Выбери резервную копию, а не открытую рабочую базу.')
+        raise ValueError(tr('Выбери резервную копию, а не открытую рабочую базу.'))
     validate_compatible_database(source)
     safety = create_backup(store, kind='before-restore')
     local = _local_backup_settings(safety)
@@ -260,12 +260,12 @@ def restore_backup(store, source):
         con = sqlite3.connect(store.path, timeout=1)
         try:
             if con.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0] != 0:
-                raise ValueError('База занята другим процессом. Закрой остальные экземпляры приложения.')
+                raise ValueError(tr('База занята другим процессом. Закрой остальные экземпляры приложения.'))
         finally:
             con.close()
         for suffix in ('-wal', '-shm', '-journal'):
             if Path(str(store.path) + suffix).exists():
-                raise ValueError('База занята другим процессом. Повтори восстановление после его закрытия.')
+                raise ValueError(tr('База занята другим процессом. Повтори восстановление после его закрытия.'))
         temporary.chmod(store.path.stat().st_mode & 0o777)
         os.replace(temporary, store.path)
         return safety

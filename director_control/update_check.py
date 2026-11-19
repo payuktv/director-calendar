@@ -5,6 +5,7 @@ import json
 from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
+from .i18n import current_language, tr
 from .package_update import Package, REPOSITORY_URL, version_key
 
 LATEST_API_URL = 'https://api.github.com/repos/payuktv/director-calendar/releases/latest'
@@ -23,20 +24,23 @@ class Release:
 
 
 def release_description(body):
-    """Extract the user-facing Russian section, falling back to older release notes."""
+    """Select the matching section, retaining single-language notes from older releases."""
     lines = body.splitlines() if isinstance(body, str) else []
-    notes = []
-    russian = False
+    english, russian = [], []
+    notes = english
     for line in lines:
         line = line.strip()
         if line == '## Что нового':
-            notes.clear()
-            russian = True
-        elif line.startswith('Source commit:') or (russian and line.startswith('## ')):
+            notes = russian
+        elif line.startswith('Source commit:') or (notes is russian and line.startswith('## ')):
             break
         elif not line.startswith('# v'):
             notes.append('• ' + line[2:] if line.startswith(('- ', '* ')) else line)
-    return '\n'.join(notes).strip()[:12000] or 'Описание изменений пока не опубликовано.'
+    sections = [english, russian] if current_language() == 'en' else [russian, english]
+    for section in sections:
+        if text := '\n'.join(section).strip():
+            return text[:12000]
+    return tr('Описание изменений пока не опубликовано.')
 
 
 def parse_release(payload):
@@ -119,7 +123,7 @@ class UpdateChecker(QObject):
         try:
             reply = self.manager.get(request)
         except Exception:
-            self.failed.emit(NETWORK_ERROR)
+            self.failed.emit(tr(NETWORK_ERROR))
             return
         self.reply = reply
         reply.setReadBufferSize(MAX_RESPONSE_BYTES + 1)
@@ -135,12 +139,12 @@ class UpdateChecker(QObject):
         remaining = MAX_RESPONSE_BYTES + 1 - len(self.body)
         self.body.extend(bytes(reply.read(remaining)))
         if len(self.body) > MAX_RESPONSE_BYTES:
-            self.abort_message = INVALID_RESPONSE
+            self.abort_message = tr(INVALID_RESPONSE)
             reply.abort()
 
     def _timeout(self):
         if self.reply is not None:
-            self.abort_message = 'Проверка заняла слишком много времени. Попробуй снова.'
+            self.abort_message = tr('Проверка заняла слишком много времени. Попробуй снова.')
             self.reply.abort()
 
     def _finished(self):
@@ -158,16 +162,16 @@ class UpdateChecker(QObject):
         result = None
         if not error:
             if status in (403, 429):
-                error = 'GitHub временно ограничил проверки. Попробуй позже.'
+                error = tr('GitHub временно ограничил проверки. Попробуй позже.')
             elif status == 404:
-                error = 'Сведения об обновлениях пока недоступны. Попробуй позже.'
+                error = tr('Сведения об обновлениях пока недоступны. Попробуй позже.')
             elif status != 200 or reply.error() != QNetworkReply.NetworkError.NoError:
-                error = NETWORK_ERROR
+                error = tr(NETWORK_ERROR)
             else:
                 try:
                     result = parse_release(bytes(self.body))
                 except ValueError:
-                    error = INVALID_RESPONSE
+                    error = tr(INVALID_RESPONSE)
         self.body.clear()
         reply.deleteLater()
         self.busy_changed.emit(False)

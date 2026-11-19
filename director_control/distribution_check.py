@@ -238,6 +238,15 @@ def verify_installation(destination):
         finally:
             backend.delete_password('DirectorCalendar.DistributionCheck', account)
         app = QApplication.instance() or QApplication([])
+        from PySide6.QtWidgets import QDialogButtonBox
+        from .i18n import configure_widgets, tr
+        for language, settings, cancel in [('en', 'Settings', 'Cancel'), ('ru', 'Настройки', 'Отмена')]:
+            configure_widgets(language)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+            assert tr('Настройки') == settings
+            assert buttons.button(QDialogButtonBox.StandardButton.Cancel).text().replace('&', '') == cancel
+            buttons.deleteLater()
+        report['interface_languages'] = ['en', 'ru']
         app.setWindowIcon(QIcon(str(app_icon_path())))
         assert not app.windowIcon().isNull()
         try:

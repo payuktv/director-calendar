@@ -1,6 +1,7 @@
 """Use the Windows Credential Manager explicitly; never fall back to plaintext."""
 import os
 
+from .i18n import tr
 from .mail_calendar import CalendarError
 from .diagnostics import record_error
 
@@ -23,7 +24,7 @@ class Credentials:
             return WinVaultKeyring().get_password("DirectorControl.CalDAV", account_key) or ""
         except Exception:
             record_error('credentials.read')
-            raise CalendarError("Не удалось открыть хранилище паролей Windows. Введи пароль заново.") from None
+            raise CalendarError(tr("Не удалось открыть хранилище паролей Windows. Введи пароль заново.")) from None
 
     def set(self, account_key: str, password: str, remember: bool) -> None:
         if self.can_remember:
@@ -36,6 +37,6 @@ class Credentials:
                     backend.delete_password("DirectorControl.CalDAV", account_key)
             except Exception:
                 record_error('credentials.write')
-                raise CalendarError("Не удалось обновить хранилище паролей Windows. Настройки не сохранены.") from None
+                raise CalendarError(tr("Не удалось обновить хранилище паролей Windows. Настройки не сохранены.")) from None
         self._session[account_key] = password
 

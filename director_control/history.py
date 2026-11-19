@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 
-from .storage import STATUSES
+from .i18n import current_language, tr
+from .storage import STATUSES, category_label
 
 ACTION_LABELS = {
     'Создание': 'Создано событие',
@@ -24,6 +25,8 @@ ACTION_LABELS = {
     'Настройки копирования': 'Изменены настройки копий',
     'Восстановление из копии': 'Восстановлена база данных',
     'Очистка старых примеров': 'Удалены старые примеры',
+    'Убрано из актуального плана Mail.ru': 'Убрано из актуального плана Mail.ru',
+    'Проваленное событие отсутствует в Mail.ru': 'Проваленное событие отсутствует в Mail.ru',
 }
 FIELD_LABELS = {
     'title': 'Название', 'category': 'Категория', 'status': 'Статус', 'note': 'Комментарий',
@@ -37,6 +40,7 @@ FIELD_LABELS = {
     'backup_keep': 'Хранить автоматических копий', 'tolerance_minutes': 'Допустимое отклонение',
     'контролировать': 'Участие категории в контроле', 'удалено': 'Удалено старых примеров',
     'копия': 'Использованная копия', 'страховая копия': 'Страховая копия перед восстановлением',
+    'требует проверки': 'требует проверки',
 }
 HIDDEN_FIELDS = {'id', 'event_id', 'revision', 'created_at', 'updated_at', 'external_key'}
 SOURCES = {'local': 'Локально в приложении', 'caldav': 'Mail.ru', 'manual': 'Архив приложения'}
@@ -49,7 +53,7 @@ def normalise(value: str) -> str:
 
 def display_time(value, *, seconds=False):
     if not value:
-        return 'не заполнено'
+        return tr('не заполнено')
     try:
         stamp = datetime.fromisoformat(str(value))
         if len(str(value)) == 10:
@@ -61,26 +65,28 @@ def display_time(value, *, seconds=False):
 
 def _value(field, value):
     if value is None:
-        return 'не заполнено'
+        return tr('не заполнено')
     if field == 'status':
-        return STATUSES.get(str(value), str(value))
+        return tr(STATUSES[str(value)]) if str(value) in STATUSES else str(value)
     if field == 'source':
-        return SOURCES.get(str(value), str(value))
+        return tr(SOURCES[str(value)]) if str(value) in SOURCES else str(value)
+    if field == 'category':
+        return category_label(str(value))
     if field in {'backup_auto', 'контролировать', 'track'}:
-        return 'включено' if value in (True, 1, '1') else 'выключено'
+        return tr('включено') if value in (True, 1, '1') else tr('выключено')
     if field == 'backup_folder' and not value:
-        return 'папка по умолчанию'
+        return tr('папка по умолчанию')
     if field in {'current_start', 'current_end', 'baseline_start', 'baseline_end', 'actual_start', 'actual_end', 'start', 'end', 'day'}:
         return display_time(value)
     if field == 'tolerance_minutes':
-        return str(value) + ' мин'
+        return str(value) + tr(' мин')
     if isinstance(value, bool):
-        return 'да' if value else 'нет'
+        return tr('да') if value else tr('нет')
     if isinstance(value, list):
-        return '; '.join(_value('', item) for item in value) or 'нет данных'
+        return '; '.join(_value('', item) for item in value) or tr('нет данных')
     if isinstance(value, dict):
-        return '; '.join(_lines(value)) or 'нет данных'
-    return str(value) if str(value) else 'не заполнено'
+        return '; '.join(_lines(value)) or tr('нет данных')
+    return str(value) if str(value) else tr('не заполнено')
 
 
 def _lines(data):
@@ -89,11 +95,12 @@ def _lines(data):
         if field in HIDDEN_FIELDS:
             continue
         if field == 'источник' and isinstance(value, dict):
-            lines.append('Состояние в Mail.ru:')
+            lines.append(tr('Состояние в Mail.ru:'))
             lines.extend('  ' + line for line in _lines(value))
             continue
         # Known old-format fields remain readable; future fields keep their values.
-        label = FIELD_LABELS.get(field, field if any('а' <= c.lower() <= 'я' or c.lower() == 'ё' for c in field) else 'Дополнительные данные')
+        label = tr(FIELD_LABELS[field]) if field in FIELD_LABELS else (
+            field if any('а' <= c.lower() <= 'я' or c.lower() == 'ё' for c in field) else tr('Дополнительные данные'))
         if isinstance(value, dict) and ('было' in value or 'стало' in value):
             lines.append(f'{label}: {_value(field, value.get("было"))} → {_value(field, value.get("стало"))}')
         else:
@@ -107,13 +114,17 @@ class Description:
     details: str
 
 
-@lru_cache(maxsize=4096)
 def describe(action: str, raw: str) -> Description:
-    label = ACTION_LABELS.get(action, action)
+    return _describe(action, raw, current_language())
+
+
+@lru_cache(maxsize=4096)
+def _describe(action: str, raw: str, language: str) -> Description:
+    label = tr(ACTION_LABELS[action]) if action in ACTION_LABELS else action
     try:
         data = json.loads(raw)
     except (ValueError, TypeError):
-        return Description(label, 'Описание прежнего формата:\n' + str(raw) if raw else 'Подробности не сохранены')
+        return Description(label, tr('Описание прежнего формата:\n') + str(raw) if raw else tr('Подробности не сохранены'))
     if not isinstance(data, dict):
         return Description(label, _value('', data))
     if action == 'Контроль категории':
@@ -121,19 +132,27 @@ def describe(action: str, raw: str) -> Description:
     elif action == 'Настройка контроля времени':
         data = {'tolerance_minutes': data}
     elif action == 'Нет в ответе Mail.ru':
-        return Description(label, 'Событие не найдено в загруженном периоде Mail.ru. Проверь источник: это не подтверждает удаление события.')
+        return Description(label, tr('Событие не найдено в загруженном периоде Mail.ru. Проверь источник: это не подтверждает удаление события.'))
     elif action == 'Отменённое событие отсутствует в Mail.ru':
-        return Description(label, 'Событие отменено и отсутствует в полностью загруженном периоде Mail.ru. '
-                           'План, локальные данные и история сохранены. Дополнительная проверка не требуется.')
+        return Description(label, tr('Событие отменено и отсутствует в полностью загруженном периоде Mail.ru. '
+                           'План, локальные данные и история сохранены. Дополнительная проверка не требуется.'))
     lines = _lines(data)
-    return Description(label, '\n'.join(lines) if lines else 'Подробности не сохранены')
+    return Description(label, '\n'.join(lines) if lines else tr('Подробности не сохранены'))
 
 
 def matches(title, action, raw, changed_at, query):
     description = describe(action, raw)
-    document = normalise(' '.join((title, action, description.action, description.details,
+    document = normalise(' '.join((title, history_title(title, action), action, description.action, description.details,
                                   changed_at, display_time(changed_at, seconds=True))))
     return all(term in document for term in normalise(query).split())
+
+
+def history_title(title, action):
+    if action in ('Контроль категории', 'Создание категории'):
+        return category_label(title)
+    if action in ('Настройки копирования', 'Восстановление из копии', 'Настройка контроля времени', 'Очистка старых примеров'):
+        return tr(title)
+    return title
 
 
 @dataclass(frozen=True)

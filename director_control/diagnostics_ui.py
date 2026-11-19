@@ -3,6 +3,7 @@ from PySide6.QtCore import QObject, Signal, Slot, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QGroupBox, QHBoxLayout, QMessageBox, QPushButton, QVBoxLayout
 
+from .i18n import tr
 from . import diagnostics
 from .inspector import plain_label
 
@@ -25,11 +26,11 @@ class ErrorNotice(QObject):
     def _show_error(self, written):
         if self.message is not None and self.message.isVisible():
             return
-        self.message = QMessageBox(QMessageBox.Icon.Warning, 'Ошибка приложения',
-            'Возникла непредвиденная ошибка. Последнее действие могло не завершиться. '
-            'Проверь результат и перезапусти приложение.\n\n' +
-            ('Диагностика сохранена в журнале. Он доступен в Настройках → Диагностика.' if written else
-             'Не удалось записать диагностику. Проверь доступ и свободное место в папке данных.'))
+        self.message = QMessageBox(QMessageBox.Icon.Warning, tr('Ошибка приложения'),
+            tr('Возникла непредвиденная ошибка. Последнее действие могло не завершиться. '
+            'Проверь результат и перезапусти приложение.\n\n') +
+            (tr('Диагностика сохранена в журнале. Он доступен в Настройках → Диагностика.') if written else
+             tr('Не удалось записать диагностику. Проверь доступ и свободное место в папке данных.')))
         self.message.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.message.finished.connect(self._closed)
         self.message.open()
@@ -40,7 +41,7 @@ class ErrorNotice(QObject):
 
 class DiagnosticsPanel(QGroupBox):
     def __init__(self, parent=None):
-        super().__init__('Диагностика', parent)
+        super().__init__(tr('Диагностика'), parent)
         self.setProperty('settingsSection', True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -49,19 +50,19 @@ class DiagnosticsPanel(QGroupBox):
         self.path_label.setWordWrap(True)
         self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.path_label)
-        note = plain_label('Журнал хранит тип ошибки и место в коде: без текстов ошибок, паролей и содержимого календаря. '
+        note = plain_label(tr('Журнал хранит тип ошибки и место в коде: без текстов ошибок, паролей и содержимого календаря. '
                            'До четырёх файлов по 1 МБ; старые записи заменяются автоматически. '
-                           'Файлы никуда не отправляются.', 'Muted')
+                           'Файлы никуда не отправляются.'), 'Muted')
         note.setWordWrap(True)
         layout.addWidget(note)
         self.status = plain_label('')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         row = QHBoxLayout()
-        self.open_button = QPushButton('Открыть папку журнала')
+        self.open_button = QPushButton(tr('Открыть папку журнала'))
         self.open_button.clicked.connect(self.open_folder)
         row.addWidget(self.open_button)
-        self.copy_button = QPushButton('Скопировать путь')
+        self.copy_button = QPushButton(tr('Скопировать путь'))
         self.copy_button.clicked.connect(self.copy_path)
         row.addWidget(self.copy_button)
         row.addStretch()
@@ -69,8 +70,8 @@ class DiagnosticsPanel(QGroupBox):
 
     def showEvent(self, event):
         self.path_label.setText(str(diagnostics.log_path()))
-        self.status.setText('Журнал доступен.' if diagnostics.available() else
-                            'Журнал недоступен. Проверь доступ и свободное место в папке данных.')
+        self.status.setText(tr('Журнал доступен.') if diagnostics.available() else
+                            tr('Журнал недоступен. Проверь доступ и свободное место в папке данных.'))
         super().showEvent(event)
 
     def open_folder(self):
@@ -80,8 +81,8 @@ class DiagnosticsPanel(QGroupBox):
                 raise OSError('Cannot open diagnostics directory')
         except Exception as exc:
             diagnostics.record_error('diagnostics.open', exc)
-            self.status.setText('Не удалось открыть папку. Скопируй путь и открой её через Проводник.')
+            self.status.setText(tr('Не удалось открыть папку. Скопируй путь и открой её через Проводник.'))
 
     def copy_path(self):
         QApplication.clipboard().setText(str(diagnostics.log_path()))
-        self.status.setText('Путь к журналу скопирован.')
+        self.status.setText(tr('Путь к журналу скопирован.'))

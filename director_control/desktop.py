@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from contextlib import contextmanager
 from uuid import UUID
 
+from .i18n import tr
+
 
 def shortcuts_available() -> bool:
     return sys.platform == "win32"
@@ -46,7 +48,7 @@ def shortcut_spec(root: Path | None = None, executable: Path | None = None,
         if not target.is_file():
             target = executable.with_name("pythonw.exe")
         if not entry.is_file() or not target.is_file():
-            raise RuntimeError("Не найден компонент оконного запуска. Повтори установку приложения и создай ярлык снова.")
+            raise RuntimeError(tr("Не найден компонент оконного запуска. Повтори установку приложения и создай ярлык снова."))
         arguments, working_directory = (str(entry),), root
     icon = target if frozen else app_icon_path()
     return ShortcutSpec(target, arguments, working_directory, icon if icon.is_file() else target)
@@ -149,7 +151,7 @@ def _save_shortcut(spec: ShortcutSpec, path: Path) -> None:
 
 def create_desktop_shortcut(desktop_dir: Path | None = None) -> Path:
     if not shortcuts_available():
-        raise RuntimeError("Создание ярлыка на рабочем столе доступно в Windows.")
+        raise RuntimeError(tr("Создание ярлыка на рабочем столе доступно в Windows."))
     spec = shortcut_spec()
     try:
         directory = desktop_dir.resolve() if desktop_dir is not None else desktop_directory()
@@ -161,7 +163,7 @@ def create_desktop_shortcut(desktop_dir: Path | None = None) -> Path:
             raise OSError("Shortcut was not saved.")
         return path
     except (OSError, ValueError) as exc:
-        raise RuntimeError("Не удалось создать ярлык. Проверь доступ к рабочему столу и повтори.") from exc
+        raise RuntimeError(tr("Не удалось создать ярлык. Проверь доступ к рабочему столу и повтори.")) from exc
 
 
 def show_message(message: str, *, error: bool = False) -> None:
@@ -181,5 +183,5 @@ def installer_main() -> int:
     except Exception as exc:
         show_message(str(exc), error=True)
         return 1
-    show_message("На рабочем столе создан ярлык «Director Calendar».\n\nОткрывай календарь двойным щелчком по нему.")
+    show_message(tr("На рабочем столе создан ярлык «Director Calendar».\n\nОткрывай календарь двойным щелчком по нему."))
     return 0

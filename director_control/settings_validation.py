@@ -4,10 +4,13 @@ import json
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .i18n import LANGUAGE_CHOICES, tr
+
 
 _CHOICES = {
     **{key: {'0', '1'} for key in ('backup_auto', 'mail_auto', 'mail_remember', 'ui_analytics_only_tracked', 'app_auto_updates')},
     'ui_theme': {'light', 'dark'},
+    'ui_language': LANGUAGE_CHOICES,
     'ui_calendar_view': {'day', 'week', 'month', 'agenda'},
     'ui_analytics_mode': {'day', 'week', 'month'},
     'ui_history_page_size': {'50', '100', '200'},
@@ -61,4 +64,4 @@ def validate_settings(con, budget):
                 _last_backup(value)
         except (ValueError, TypeError, RecursionError, ZoneInfoNotFoundError, OSError):
             # No raw setting values (paths or account details) in the error.
-            raise ValueError('В базе некорректные настройки приложения. Выбери другую резервную копию.') from None
+            raise ValueError(tr('В базе некорректные настройки приложения. Выбери другую резервную копию.')) from None

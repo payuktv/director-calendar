@@ -12,6 +12,8 @@ import subprocess
 import sys
 from time import monotonic
 
+from .i18n import current_language, select_language, tr
+
 MAX_MEMORY = 512 * 1024 * 1024
 CPU_SECONDS = 20
 MAX_MESSAGE = 32 * 1024 * 1024
@@ -75,10 +77,10 @@ def _worker_command():
 def _run_worker(payload, *, cancelled=lambda: False, timeout=SYNC_SECONDS):
     from .mail_calendar import CalendarError, CalendarSnapshot, RemoteEvent
     if cancelled():
-        raise CalendarError('Обновление отменено. Данные не изменены.')
-    request = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        raise CalendarError(tr('Обновление отменено. Данные не изменены.'))
+    request = json.dumps(dict(payload, language=current_language()), ensure_ascii=False).encode('utf-8')
     if len(request) > MAX_MESSAGE:
-        raise CalendarError('Ответ календаря слишком большой. Данные не изменены.')
+        raise CalendarError(tr('Ответ календаря слишком большой. Данные не изменены.'))
     deadline = monotonic() + timeout
     process = subprocess.Popen(_worker_command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, creationflags=(subprocess.CREATE_NO_WINDOW
@@ -86,18 +88,18 @@ def _run_worker(payload, *, cancelled=lambda: False, timeout=SYNC_SECONDS):
     try:
         while True:
             if cancelled():
-                raise CalendarError('Обновление отменено. Данные не изменены.')
+                raise CalendarError(tr('Обновление отменено. Данные не изменены.'))
             if monotonic() >= deadline:
-                raise CalendarError('Превышено время обработки календаря. Данные не изменены.')
+                raise CalendarError(tr('Превышено время обработки календаря. Данные не изменены.'))
             try:
                 output, _ = process.communicate(input=request, timeout=min(.05, max(.001, deadline - monotonic())))
                 break
             except subprocess.TimeoutExpired:
                 request = None  # communicate retains pending input across timeouts.
         if cancelled():
-            raise CalendarError('Обновление отменено. Данные не изменены.')
+            raise CalendarError(tr('Обновление отменено. Данные не изменены.'))
         if process.returncode or len(output) > MAX_MESSAGE:
-            raise CalendarError('Обработка календаря остановлена: превышен лимит ресурсов или ошибка процесса. Данные не изменены.')
+            raise CalendarError(tr('Обработка календаря остановлена: превышен лимит ресурсов или ошибка процесса. Данные не изменены.'))
         try:
             result = json.loads(output)
             if 'error' in result:
@@ -108,7 +110,7 @@ def _run_worker(payload, *, cancelled=lambda: False, timeout=SYNC_SECONDS):
         except CalendarError:
             raise
         except Exception:
-            raise CalendarError('Не удалось получить результат обработки календаря. Данные не изменены.') from None
+            raise CalendarError(tr('Не удалось получить результат обработки календаря. Данные не изменены.')) from None
     finally:
         if process.poll() is None:
             process.kill()
@@ -154,6 +156,7 @@ def worker_main():
         if len(raw) > MAX_MESSAGE:
             return 1
         request = json.loads(raw)
+        select_language('en' if request.get('language') == 'en' else 'ru')
         config = CalendarConfig(**request['config'])
         start, end = date.fromisoformat(request['start']), date.fromisoformat(request['end'])
         # Third-party diagnostic output must never enter the result protocol.
