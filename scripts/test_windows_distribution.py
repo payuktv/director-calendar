@@ -136,7 +136,8 @@ def uninstall(folder, env):
 def verify_package_update(exe, env, previous_version, original_database, expected):
     """Run the exact portable release with an independent, previous-version profile."""
     from director_control import __version__
-    from director_control.package_update import Package, prepare_package, launch_ready
+    from director_control.package_update import (Package, activate_package, launch_ready, pending_notes,
+                                                 pending_target, prepare_package, ready_target)
 
     archive = ROOT / f'dist/artifacts/DirectorCalendar-{__version__}-portable-x64.zip'
     with archive.open('rb') as stream:
@@ -170,6 +171,16 @@ def verify_package_update(exe, env, previous_version, original_database, expecte
     assert database.read_bytes() == before
     assert (target.parent / 'version.txt').read_text(encoding='ascii').strip() == __version__
     update_env = dict(env, DIRECTOR_CONTROL_DATA_DIR=str(profile))
+    # Even a pre-consent launcher looking for a direct v* slot must keep the
+    # running version until the user explicitly requests a restart.
+    assert pending_target(exe.parent, previous_version) == target
+    assert ready_target(exe.parent, previous_version) is None
+    assert not list((exe.parent / '.director-updates').glob('v*'))
+    assert launch_ready(exe, previous_version, environ=update_env) is None
+    assert '## Что нового' in pending_notes(target)
+    target = activate_package(exe, previous_version, __version__)
+    assert pending_target(exe.parent, previous_version) is None
+    assert ready_target(exe.parent, previous_version) == target
     process = launch_ready(exe, previous_version, environ=update_env)
     assert process is not None
     process, hwnd = wait_for_window(process, update_env)

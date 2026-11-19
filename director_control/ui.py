@@ -270,7 +270,18 @@ class MainWindow(QMainWindow):
         self._update_theme_controls()
         side.addWidget(self.theme_toggle)
         from . import __version__
-        side.addWidget(plain_label("Версия " + __version__, "Muted"))
+        footer = QHBoxLayout()
+        self.update_indicator = QPushButton()
+        self.update_indicator.setObjectName("UpdateIndicator")
+        self.update_indicator.setAccessibleName("Открыть обновление календаря")
+        self.update_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_indicator.setFixedSize(32, 32)
+        self.update_indicator.setIcon(icon("download"))
+        self.update_indicator.hide()
+        footer.addWidget(self.update_indicator)
+        footer.addWidget(plain_label("Версия " + __version__, "Muted"))
+        footer.addStretch()
+        side.addLayout(footer)
         shell.addWidget(self.sidebar)
         workspace = QWidget()
         workspace.setObjectName("Workspace")
@@ -319,6 +330,8 @@ class MainWindow(QMainWindow):
         dark = current_theme() == "dark"
         self.theme_toggle.setText("Светлая тема" if dark else "Тёмная тема")
         self.theme_toggle.setIcon(icon("sun" if dark else "moon"))
+        if hasattr(self, "update_indicator"):
+            self.update_indicator.setIcon(icon("download"))
         self.theme_toggle.setToolTip("Переключить на светлую тему" if dark else "Переключить на тёмную тему")
         for button, name in zip(self.nav_buttons, ("calendar", "chart", "history", "settings")):
             button.setIcon(icon(name, theme_color("icon").name()))
@@ -627,6 +640,8 @@ class MainWindow(QMainWindow):
         v.setSpacing(20)
         from .update_ui import UpdatePanel
         self.update_panel = UpdatePanel(store=self.store)
+        self.update_panel.indicator_changed.connect(self._update_indicator)
+        self.update_indicator.clicked.connect(self.update_panel.show_details)
         self.update_panel.restart_requested.connect(self._restart_for_update)
         self.update_panel.update_ready.connect(self._update_ready)
         v.addWidget(self.update_panel)
@@ -927,14 +942,52 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             error_box(self, exc)
 
+    def _update_indicator(self, hint):
+        self.update_indicator.setToolTip(hint)
+        self.update_indicator.setAccessibleDescription(hint)
+        self.update_indicator.setVisible(bool(hint))
+        if hasattr(self, 'update_notice') and self.update_panel.ready_version != self.update_panel.offered_version:
+            self.update_notice.hide()
+
     def _update_ready(self, version):
-        self.statusBar().showMessage(f'Версия {version} готова к следующему запуску. Перезапустить сейчас можно в Настройках.', 15000)
+        if not hasattr(self, 'update_notice'):
+            self.update_notice = QFrame()
+            layout = QHBoxLayout(self.update_notice)
+            layout.setContentsMargins(12, 4, 12, 4)
+            self.update_notice_text = plain_label()
+            layout.addWidget(self.update_notice_text)
+            restart = self.button('Перезапустить', self._restart_for_update)
+            layout.addWidget(restart)
+            later = self.button('Позже', self.update_notice.hide)
+            layout.addWidget(later)
+            self.statusBar().addWidget(self.update_notice)
+            self.notice_timer = QTimer(self)
+            self.notice_timer.setSingleShot(True)
+            self.notice_timer.timeout.connect(self.update_notice.hide)
+        self.update_notice_text.setText(f'Версия {version} скачана. Для установки нужен перезапуск.')
+        self.statusBar().show()
+        self.update_notice.show()
+        self.notice_timer.start(20000)
 
     def _restart_for_update(self):
         if not self.update_panel.ready_version:
             return
         if self.mail_panel.busy or self.backup_panel.busy or QApplication.activeModalWidget() is not None:
-            self.update_panel.status.setText('Заверши открытую операцию и нажми «Перезапустить сейчас» ещё раз.')
+            message = 'Заверши открытую операцию и подтверди перезапуск ещё раз.'
+            self.update_panel.status.setText(message)
+            self.statusBar().showMessage(message, 12000)
+            return
+        from . import __version__
+        from .package_update import activate_package
+        import sys
+        try:
+            activate_package(sys.executable, __version__, self.update_panel.ready_version)
+        except (OSError, ValueError) as exc:
+            from .diagnostics import record_error
+            record_error('ui.action', exc)
+            message = 'Не удалось активировать обновление. Проверь обновления в настройках и попробуй снова.'
+            self.update_panel.status.setText(message)
+            self.statusBar().showMessage(message, 15000)
             return
         self.restart_after_close = self.close()
 

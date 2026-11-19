@@ -98,6 +98,8 @@ QFrame#Segments { background: $segments; border-radius: 9px; }
 QPushButton#Arrow { padding: 4px; font-size: 20px; min-width: 28px; }
 QPushButton#Danger { color: $danger; }
 QPushButton#ThemeToggle { text-align: left; padding: 10px 12px; }
+QPushButton#UpdateIndicator { background: $soft_accent; border: 1px solid $hover_border; padding: 4px; }
+QPushButton#UpdateIndicator:hover { background: $pressed; border-color: $focus_border; }
 QPushButton#Link { color: $accent; background: transparent; border: none; text-align: left; padding-left: 0; }
 QTabWidget::pane { border: none; background: transparent; }
 QTabWidget#AnalyticsDetails QTabBar::tab { background: $segments; color: $segment_text; border: none; border-radius: 7px; padding: 9px 16px; margin: 0 5px 8px 0; }
@@ -215,6 +217,7 @@ def apply_theme(name):
 
 
 _PATHS = {
+    "download": '<path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/>',
     "moon": '<path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13z"/>',
     "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
     "calendar": '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18M7 14h2m4 0h2m-8 4h2"/>',

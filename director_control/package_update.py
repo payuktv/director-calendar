@@ -22,6 +22,9 @@ from zipfile import BadZipFile, ZipFile, ZIP_DEFLATED, ZIP_STORED
 REPOSITORY_URL = 'https://github.com/payuktv/director-calendar'
 APP = 'DirectorCalendar.exe'
 CACHE = '.director-updates'
+# Legacy launchers only look for v* directly under CACHE. Their uninstallers
+# already recognize .owner-marked stage-* directories as private staging.
+PENDING = 'stage-pending'
 OWNER = b'Director Calendar update cache v1\n'
 MAX_DOWNLOAD = 256 * 1024 * 1024
 MAX_EXPANDED = 768 * 1024 * 1024
@@ -92,8 +95,7 @@ def _small_bytes(path, limit):
         return stream.read(limit + 1)
 
 
-def _cache(root, create=False):
-    cache = root / CACHE
+def _owned_directory(cache, create=False):
     if not _plain_path(cache):
         raise ValueError('Linked update directory')
     if create:
@@ -118,11 +120,10 @@ def _ready(folder, version):
             and not _linked(folder / '_internal') and (folder / '_internal').is_dir())
 
 
-def ready_target(root, current):
-    """Only committed, newer versions are eligible, even after interrupted staging."""
+def _latest(directory, current):
     current_key = version_key(current)
     try:
-        cache = _cache(root)
+        cache = _owned_directory(directory)
         slots = [(version_key(p.name[1:]), p) for p in cache.iterdir()
                  if p.name.startswith('v') and _VERSION.fullmatch(p.name[1:])]
         for key, folder in sorted(slots, reverse=True):
@@ -133,6 +134,29 @@ def ready_target(root, current):
     except (OSError, ValueError):
         pass
     return None
+
+
+def ready_target(root, current):
+    """Only activated packages may be launched by a normal shortcut."""
+    return _latest(root / CACHE, current)
+
+
+def pending_target(root, current):
+    try:
+        cache = _owned_directory(root / CACHE)
+    except (OSError, ValueError):
+        return None
+    return _latest(cache / PENDING, current)
+
+
+def pending_notes(target):
+    path = target.parent / '_internal' / 'director_control' / 'release-notes.md'
+    try:
+        if _plain_path(path):
+            return _small_bytes(path, 65536).decode('utf-8-sig')
+    except (OSError, UnicodeError):
+        pass
+    return ''
 
 
 def launch_ready(executable, current, *, environ=None):
@@ -312,6 +336,8 @@ def _remove_work(cache, work):
 def _prune(cache, keep):
     for folder in cache.iterdir():
         try:
+            if folder.name == PENDING:
+                continue
             if folder.name.startswith('stage-'):
                 _remove_work(cache, folder)
             elif folder.name.startswith('v') and _VERSION.fullmatch(folder.name[1:]) and folder.name not in keep:
@@ -339,12 +365,18 @@ def prepare_package(executable, current, package, *, open_asset=open_package, pr
     if version_key(package.version) <= version_key(current):
         raise ValueError('Update must be newer')
     root = install_root(executable)
-    cache = _cache(root, create=True)
-    slot = cache / ('v' + package.version)
+    cache = _owned_directory(root / CACHE, create=True)
     with _locked(cache):
         ready = ready_target(root, current)
         if ready and version_key(ready.parent.name[1:]) >= version_key(package.version):
-            return ready
+            raise ValueError('A newer or equal package has already been activated')
+        pending = _owned_directory(cache / PENDING, create=True)
+        slot = pending / ('v' + package.version)
+        latest = _latest(pending, current)
+        if latest and version_key(latest.parent.name[1:]) > version_key(package.version):
+            raise ValueError('A newer package is already pending')
+        if _ready(slot, package.version) and _small_bytes(slot / '.ready', 64) == package.sha256.encode('ascii'):
+            return slot / APP
         if slot.exists() or _linked(slot):
             raise ValueError('Update destination is occupied')
         keep = {'v' + current}
@@ -362,10 +394,32 @@ def prepare_package(executable, current, package, *, open_asset=open_package, pr
             probe(staging, package.version)
             (staging / '.ready').write_bytes(package.sha256.encode('ascii'))
             # Both locations are within the same guarded cache and filesystem.
-            if staging.resolve().parent != work.resolve() or slot.resolve().parent != cache.resolve():
+            if staging.resolve().parent != work.resolve() or slot.resolve().parent != pending.resolve():
                 raise ValueError('Invalid promotion path')
             staging.rename(slot)
+            _prune(pending, {slot.name})
             return slot / APP
+
+
+def activate_package(executable, current, version):
+    """Make exactly the confirmed version visible to old and new launchers."""
+    if version_key(version) <= version_key(current):
+        raise ValueError('Activation must advance the running version')
+    root = install_root(executable)
+    cache = _owned_directory(root / CACHE)
+    with _locked(cache):
+        active = ready_target(root, current)
+        if active and version_key(active.parent.name[1:]) >= version_key(version):
+            if active.parent.name == 'v' + version:
+                return active
+            raise ValueError('A newer package has already been activated')
+        pending = _owned_directory(cache / PENDING)
+        slot = pending / ('v' + version)
+        dest = cache / slot.name
+        if not _ready(slot, version) or dest.exists() or _linked(dest):
+            raise ValueError('The confirmed package is unavailable')
+        slot.rename(dest)
+        return dest / APP
 
 
 def worker_main(args):
