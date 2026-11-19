@@ -38,6 +38,15 @@ def test_numeric_versions_and_verified_package_are_preserved():
     assert (release.package.size, release.package.sha256) == (51000000, 'a' * 64)
 
 
+@pytest.mark.parametrize('body, text', [
+    (None, 'Описание изменений пока не опубликовано.'),
+    ('# v1.2.3\n\nFixed the calendar.\n\nSource commit: abc', 'Fixed the calendar.'),
+    ('## Что нового\n- План\n- Отчёты\n\n## Installation\nEnglish', '• План\n• Отчёты'),
+])
+def test_release_description_has_published_changes_or_a_clear_fallback(body, text):
+    assert updates.release_description(body) == text
+
+
 @pytest.mark.parametrize('version', ['v1.2.3', '01.2.3', '1.2', '1.2.3-rc1', '1.2.3+build',
                                      '1.2.3\n', '1.2.-1', '1.2.1234567890', True, None])
 def test_invalid_versions_are_rejected(version):
@@ -247,71 +256,120 @@ class Preparer(QObject):
         self.package = None
 
 
-def test_update_panel_downloads_package_and_restarts_only_on_user_action(app, monkeypatch, tmp_path):
+def test_startup_offer_later_manual_reopen_download_and_restart(app, monkeypatch, tmp_path):
     from director_control import update_ui
-    reply = Reply()
-    checker, good, bad = checker_for(reply)
-    preparer = Preparer()
-    panel = update_ui.UpdatePanel(checker=checker, preparer=preparer, installed_version='1.0.2', supported=True)
-    restarts = []
+    checker, _, _ = checker_for(Reply())
+    prep = Preparer()
+    panel = update_ui.UpdatePanel(checker=checker, preparer=prep, installed_version='1.0.2', supported=True)
+    restarts, notices, hints = [], [], []
     panel.restart_requested.connect(lambda: restarts.append(True))
-    opened = []
-    monkeypatch.setattr(update_ui.QDesktopServices, 'openUrl', lambda url: opened.append(url.toString()) or True)
-    assert not checker.manager.requests
+    panel.update_ready.connect(notices.append)
+    panel.indicator_changed.connect(hints.append)
+    monkeypatch.setattr(update_ui, 'pending_target', lambda *args: None)
+    panel.start_automatic()
+    assert panel.startup.isActive() and panel.daily.isActive()
+    panel._auto_check()
+    data = release_data()
+    data['body'] = '# v1.0.3\n\nEnglish notes.\n\n## Что нового\n\n- Итоги недели\n\nSource commit: xyz'
+    checker.reply.feed(payload(data))
+    assert panel.dialog.isVisible() and not prep.busy and not restarts
+    assert '1.0.3' in panel.dialog.title.text() and hints[-1]
+    assert panel.dialog.description.toPlainText() == '• Итоги недели'
+    panel.dialog.later.click()
+    checker.manager.reply = Reply()
+    panel._auto_check()
+    checker.reply.feed(payload(data))
+    assert not panel.dialog.isVisible() and not prep.busy
+    checker.manager.reply = Reply()
     panel.check_button.click()
-    assert not panel.check_button.isEnabled() and panel.download_button.isHidden()
-    reply.feed(payload())
-    assert not opened and not panel.check_button.isEnabled()
-    assert '1.0.3' in panel.status.text() and not panel.download_button.isHidden()
-    assert preparer.package == good[0].package and not restarts
-    preparer.progress.emit(38)
-    assert panel.progress.value() == 38 and not panel.progress.isHidden()
-    preparer.package = None
-    monkeypatch.setattr(update_ui, 'ready_target', lambda *a: tmp_path / 'v1.0.3' / 'DirectorCalendar.exe')
-    preparer.prepared.emit()
-    assert not restarts and panel.download_button.text() == 'Перезапустить сейчас'
-    panel.download_button.click()
+    checker.reply.feed(payload(data))
+    assert panel.dialog.isVisible()
+    panel.dialog.confirm.click()
+    assert not panel.dialog.isVisible() and prep.package == panel.release.package
+    assert not restarts and not notices and not panel.progress.isHidden()
+    prep.progress.emit(38)
+    assert panel.progress.value() == 38
+    panel.show_details()
+    assert panel.dialog.confirm.isHidden()
+    panel.dialog.later.click()
+    target = tmp_path / 'v1.0.3' / 'DirectorCalendar.exe'
+    monkeypatch.setattr(update_ui, 'pending_target', lambda *args: target)
+    prep.package = None
+    prep.prepared.emit()
+    assert notices == ['1.0.3'] and not restarts and not panel.dialog.isVisible()
+    panel.details_button.click()
+    assert panel.dialog.confirm.text() == 'Перезапустить и установить'
+    panel.dialog.later.click()
+    assert not restarts
+    panel.show_details()
+    panel.dialog.confirm.click()
     assert restarts == [True]
-    panel.notes_button.click()
-    assert opened == [good[0].page_url]
+    panel.cancel()
     panel.close()
 
 
-def test_automatic_preference_cancel_and_manual_retry(app, tmp_path, monkeypatch):
+def test_disabled_auto_checks_and_manual_retry(app, tmp_path, monkeypatch):
     from director_control import update_ui
     from director_control.storage import Store
     store = Store(tmp_path / 'preferences.db')
+    store.set_setting('app_auto_updates', '0')
     checker, _, _ = checker_for(Reply())
     prep = Preparer()
     panel = update_ui.UpdatePanel(store=store, checker=checker, preparer=prep, installed_version='1.0.2', supported=True)
-    monkeypatch.setattr(update_ui, 'ready_target', lambda *args: None)
+    monkeypatch.setattr(update_ui, 'pending_target', lambda *args: None)
     panel.start_automatic()
-    assert panel.startup.isActive() and panel.daily.isActive()
-    panel.automatic.setChecked(False)
-    assert store.get_setting('app_auto_updates') == '0'
-    assert not panel.startup.isActive() and not panel.daily.isActive()
+    assert not panel.automatic.isChecked() and not panel.startup.isActive() and not panel.daily.isActive()
     panel._auto_check()
     assert not checker.manager.requests
     panel.check_button.click()
     checker.reply.feed(payload())
-    assert not prep.busy and panel.download_button.text() == 'Обновить до 1.0.3'
-    panel.download_button.click()
-    assert prep.busy and not panel.check_button.isEnabled()
-    panel.download_button.click()
-    assert not prep.busy and panel.ready_version is None and panel.progress.isHidden()
-    panel.download_button.click()
+    assert panel.dialog.isVisible() and not prep.busy
+    panel.dialog.confirm.click()
     assert prep.busy
+    panel.cancel_button.click()
+    assert not prep.busy and panel.ready_version is None and panel.progress.isHidden()
+    panel.details_button.click()
+    assert panel.dialog.confirm.text() == 'Повторить загрузку'
+    panel.dialog.confirm.click()
+    assert prep.busy
+    panel.automatic.setChecked(True)
+    assert panel.daily.isActive() and store.get_setting('app_auto_updates') == '1'
     panel.cancel()
     assert not prep.busy
     panel.close()
 
 
+def test_pending_update_can_be_reopened_offline_after_ordinary_close(app, tmp_path, monkeypatch):
+    from director_control import update_ui
+    target = tmp_path / 'v1.0.3' / 'DirectorCalendar.exe'
+    notes = target.parent / '_internal/director_control/release-notes.md'
+    notes.parent.mkdir(parents=True)
+    notes.write_text('# v1.0.3\n\n## Что нового\n\nЗаметки', encoding='utf-8')
+    monkeypatch.setattr(update_ui, 'pending_target', lambda *args: target)
+    checker, _, _ = checker_for(Reply(status=500))
+    panel = update_ui.UpdatePanel(checker=checker, preparer=Preparer(), installed_version='1.0.2', supported=True)
+    panel.start_automatic()
+    assert panel.dialog.isVisible()
+    panel.dialog.reject()
+    panel._auto_check()
+    checker.reply.feed(b'')
+    assert panel.ready_version == '1.0.3' and not panel.dialog.isVisible()
+    panel.details_button.click()
+    assert panel.dialog.description.toPlainText() == 'Заметки'
+    assert panel.dialog.confirm.text() == 'Перезапустить и установить'
+    panel.cancel()
+    panel.close()
+
+
 def test_requested_restart_waits_for_sync_backup_and_open_form(app, tmp_path, monkeypatch):
+    from director_control import package_update
     from PySide6.QtWidgets import QDialog
     from director_control.storage import Store
     from director_control.ui import MainWindow
     window = MainWindow(Store(tmp_path / 'restart.db'))
     window.update_panel.ready_version = '2.0.0'
+    confirmations = []
+    monkeypatch.setattr(package_update, 'activate_package', lambda exe, current, version: confirmations.append(version))
     closed = []
     monkeypatch.setattr(window, 'close', lambda: closed.append(True) or True)
     with monkeypatch.context() as patch:
@@ -326,9 +384,47 @@ def test_requested_restart_waits_for_sync_backup_and_open_form(app, tmp_path, mo
     app.processEvents()
     window._restart_for_update()
     dialog.reject()
-    assert not closed and not getattr(window, 'restart_after_close', False)
+    assert not closed and not confirmations and not getattr(window, 'restart_after_close', False)
     window._restart_for_update()
-    assert closed == [True] and window.restart_after_close
+    assert confirmations == ['2.0.0'] and closed == [True] and window.restart_after_close
+    window.deleteLater()
+    from PySide6.QtCore import QEvent
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def test_home_indicator_reopens_notes_and_ready_notice_requires_a_click(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QPushButton
+    from director_control import update_ui, package_update
+    from director_control.storage import Store
+    from director_control.ui import MainWindow
+    monkeypatch.setattr(update_ui, 'packaged', lambda: True)
+    monkeypatch.setattr(update_ui, 'pending_target', lambda *a: None)
+    window = MainWindow(Store(tmp_path / 'home.db'))
+    window.show()
+    app.processEvents()
+    panel = window.update_panel
+    assert window.tabs.currentIndex() == 0 and window.update_indicator.isHidden()
+    panel.checker._manager = Manager(Reply())
+    panel._auto_check()
+    panel.checker.reply.feed(payload(release_data('5.0.0')))
+    assert panel.dialog.isVisible() and window.update_indicator.isVisible()
+    panel.dialog.later.click()
+    window.update_indicator.click()
+    assert panel.dialog.isVisible() and '5.0.0' in panel.dialog.title.text()
+    panel.dialog.reject()
+    monkeypatch.setattr(update_ui, 'pending_target', lambda *a: tmp_path / 'v5.0.0' / 'DirectorCalendar.exe')
+    panel._prepared()
+    app.processEvents()
+    assert window.update_notice.isVisible() and window.isVisible()
+    buttons = {b.text(): b for b in window.update_notice.findChildren(QPushButton)}
+    buttons['Позже'].click()
+    assert window.update_notice.isHidden() and window.update_indicator.isVisible()
+    requests = []
+    monkeypatch.setattr(package_update, 'activate_package', lambda exe, current, version: requests.append(version))
+    assert not requests
+    panel._notify_ready()
+    buttons['Перезапустить'].click()
+    assert requests == ['5.0.0'] and window.restart_after_close and not window.isVisible()
     window.deleteLater()
     from PySide6.QtCore import QEvent
     app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
@@ -342,21 +438,22 @@ def test_same_or_older_release_never_offers_downgrade(app, installed, expected):
     panel = UpdatePanel(checker=checker, installed_version=installed)
     panel.check_button.click()
     reply.feed(payload())
-    assert expected in panel.status.text() and panel.download_button.isHidden()
+    assert expected in panel.status.text() and panel.details_button.isHidden() and panel.dialog is None
     panel.close()
 
 
-def test_failed_recheck_clears_previous_offer(app):
+def test_failed_recheck_keeps_previous_offer_accessible(app):
     from director_control.update_ui import UpdatePanel
     checker, _, _ = checker_for(Reply())
     panel = UpdatePanel(checker=checker, installed_version='1.0.2')
     panel.check_button.click()
     checker.reply.feed(payload())
+    panel.dialog.reject()
     checker.manager.reply = Reply(status=500)
     panel.check_button.click()
-    assert panel.release is None and panel.download_button.isHidden()
     checker.reply.feed(b'private server detail')
-    assert panel.release is None and 'private' not in panel.status.text() and panel.check_button.isEnabled()
+    assert panel.offered_version == '1.0.3' and not panel.details_button.isHidden()
+    assert not panel.dialog.isVisible() and 'private' not in panel.status.text() and panel.check_button.isEnabled()
     panel.close()
 
 

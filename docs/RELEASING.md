@@ -3,7 +3,7 @@
 ## Prepare a version
 
 1. Update the numeric version in `pyproject.toml` and `director_control/__init__.py` for an application change. Keep the README current. Distribution-process-only changes do not require an application version bump before its first published release.
-2. Add `releases/vMAJOR.MINOR.PATCH.md`, headed by `# vMAJOR.MINOR.PATCH`, with English changes, installation/update instructions and known limitations. Use `v` for tags, release titles, commit and PR version references; package metadata and installer filenames remain numeric.
+2. Add `releases/vMAJOR.MINOR.PATCH.md`, headed by `# vMAJOR.MINOR.PATCH`, with English changes, installation/update instructions and known limitations. Append a plain-text Russian section headed by `## Что нового` for the desktop dialog. The build includes the same notes in the portable package for offline access after download. Use `v` for tags, release titles, commit and PR version references; package metadata and installer filenames remain numeric.
 3. Merge the reviewed changes into `main` after normal PR checks pass. Changing a file under `releases/` on `main` starts **Release**. It can also be run manually from Actions using `main`.
 
 ## Publication gates
@@ -50,7 +50,7 @@ Pass evidence is recorded against the candidate version. Promote the same functi
 
 Post-v1.0 work includes Authenticode signing, automated advisory monitoring, stronger dependency/action pinning and additional platform/display coverage. Automatic package updates shipped in v1.3.0. Fresh security disclosures receive a reachability and severity assessment.
 
-The current portable ZIP must contain the application, its native libraries and a matching `version.txt`. The mandatory `portable_update_verified` acceptance check interrupts and resumes the real ZIP transfer, probes the extracted executable, opens it on a previous-version test database, verifies the backup and checks that uninstall preserves unrelated files inside an updated copy.
+The current portable ZIP must contain the application, its native libraries and a matching `version.txt`. The mandatory `portable_update_verified` acceptance check interrupts and resumes the real ZIP transfer, probes the extracted executable, checks that the shortcut ignores the prepared package until explicit activation, opens it on a previous-version test database, verifies the backup and checks that uninstall preserves unrelated files inside an updated copy.
 
 ## Native security and installed contents
 

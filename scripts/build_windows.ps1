@@ -55,6 +55,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Executable build failed.' }
 $App = "$SourceRoot/dist/DirectorCalendar"
 if (-not (Test-Path "$App/DirectorCalendar.exe")) { throw 'Missing executable.' }
 $Version | Set-Content -LiteralPath "$App/version.txt" -Encoding ascii
+Copy-Item -LiteralPath "$SourceRoot/releases/v$Version.md" -Destination "$App/_internal/director_control/release-notes.md"
 if (-not $ISCC) { $ISCC = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" }
 if (-not (Test-Path $ISCC)) { throw 'Install Inno Setup 6 or pass -ISCC.' }
 # ISCC has no Windows version resource (FileVersion is 0.0.0.0).

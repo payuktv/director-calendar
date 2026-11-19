@@ -45,7 +45,7 @@ def exe(tmp_path):
 
 
 @pytest.mark.parametrize('separator', ['/', '\\'])
-def test_ready_on_next_launch_from_original_shortcut_after_complete_verification(exe, monkeypatch, separator):
+def test_shortcut_requires_confirmed_activation_after_complete_verification(exe, monkeypatch, separator):
     data = bundle('1.10.0', separator=separator)
     observations = []
     def probe(folder, version):
@@ -53,8 +53,14 @@ def test_ready_on_next_launch_from_original_shortcut_after_complete_verification
         observations.append(updater.ready_target(exe.parent, '1.9.0'))
     target = stage(exe, '1.9.0', '1.10.0', data=data, probe=probe)
     assert observations == [None] and exe.read_bytes() == b'working bootstrap'
+    assert updater.ready_target(exe.parent, '1.9.0') is None
+    assert updater.pending_target(exe.parent, '1.9.0') == target
+    assert updater.launch_ready(exe, '1.9.0') is None
+    with pytest.raises(ValueError):
+        updater.activate_package(exe, '1.9.0', '1.10.1')
+    target = updater.activate_package(exe, '1.9.0', '1.10.0')
+    assert updater.pending_target(exe.parent, '1.9.0') is None
     assert updater.ready_target(exe.parent, '1.9.0') == target
-    assert updater.ready_target(exe.parent, '1.10.0') is None
     assert updater.install_root(target) == exe.parent
     assert shortcut_spec(executable=target, frozen=True).target == exe
     with pytest.raises(ValueError):
@@ -71,7 +77,8 @@ def test_ready_on_next_launch_from_original_shortcut_after_complete_verification
 @pytest.mark.parametrize('failure', ['truncated', 'too large', 'wrong digest', 'wrong version', 'incomplete', 'probe'])
 def test_bad_or_interrupted_package_cannot_displace_last_working_version(exe, failure, monkeypatch):
     monkeypatch.setattr(updater, 'sleep', lambda _: None)
-    first = stage(exe, '1.3.0', '1.4.0')
+    stage(exe, '1.3.0', '1.4.0')
+    first = updater.activate_package(exe, '1.3.0', '1.4.0')
     good = bundle('1.5.0')
     data, meta = good, package('1.5.0', good)
     def probe(path, version):
@@ -96,16 +103,20 @@ def test_bad_or_interrupted_package_cannot_displace_last_working_version(exe, fa
         stage(first, '1.4.0', '1.5.0', data=data, metadata=meta, probe=probe)
     assert updater.ready_target(exe.parent, '1.3.0') == first
     assert updater.ready_target(exe.parent, '1.4.0') is None
-    assert not list((exe.parent / updater.CACHE).glob('stage-*'))
+    assert updater.pending_target(exe.parent, '1.4.0') is None
+    assert [p.name for p in (exe.parent / updater.CACHE).glob('stage-*')] == [updater.PENDING]
 
 
 def test_retry_and_multiple_releases_prune_only_recorded_old_files(exe):
-    first = stage(exe, '1.3.0', '1.4.0')
+    stage(exe, '1.3.0', '1.4.0')
+    first = updater.activate_package(exe, '1.3.0', '1.4.0')
     note = first.parent / '_internal/personal.txt'
     note.write_text('mine')
     second = stage(first, '1.4.0', '1.5.0')
     assert stage(first, '1.4.0', '1.5.0', probe=lambda *_: pytest.fail('duplicate')) == second
-    third = stage(second, '1.5.0', '1.6.0')
+    second = updater.activate_package(first, '1.4.0', '1.5.0')
+    stage(second, '1.5.0', '1.6.0')
+    third = updater.activate_package(second, '1.5.0', '1.6.0')
     assert not first.exists() and note.read_text() == 'mine'
     assert second.is_file() and updater.ready_target(exe.parent, '1.3.0') == third
     assert exe.is_file()
@@ -119,6 +130,20 @@ def test_unrelated_existing_directory_is_never_adopted_or_cleaned(exe):
     with pytest.raises(ValueError):
         stage(exe, '1.3.0', '1.4.0')
     assert list(cache.iterdir()) == [note]
+
+
+def test_replacing_a_pending_package_never_activates_either_version(exe):
+    first = stage(exe, '1.4.0', '1.4.1')
+    broken = bundle('1.4.2', marker='1.4.1')
+    with pytest.raises(ValueError):
+        stage(exe, '1.4.0', '1.4.2', data=broken)
+    assert updater.pending_target(exe.parent, '1.4.0') == first
+    second = stage(exe, '1.4.0', '1.4.2')
+    assert updater.pending_target(exe.parent, '1.4.0') == second and not first.exists()
+    with pytest.raises(ValueError):
+        updater.activate_package(exe, '1.4.0', '1.4.1')
+    assert updater.launch_ready(exe, '1.4.0') is None
+    assert updater.activate_package(exe, '1.4.0', '1.4.2').is_file()
 
 
 @pytest.mark.parametrize('name', ['outside.txt', '_internal/../outside', '_internal/file:alternate',
@@ -175,7 +200,8 @@ def test_resumption_verifies_byte_range_and_complete_digest(exe, monkeypatch, re
         assert updater.ready_target(exe.parent, '1.3.1') is None
     else:
         result = prepare()
-        assert result == updater.ready_target(exe.parent, '1.3.1')
+        assert result == updater.pending_target(exe.parent, '1.3.1')
+        assert updater.ready_target(exe.parent, '1.3.1') is None
     assert offsets == [0, cut]
 
 

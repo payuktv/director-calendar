@@ -19,6 +19,24 @@ class Release:
     version: str
     page_url: str
     package: Package
+    notes: str
+
+
+def release_description(body):
+    """Extract the user-facing Russian section, falling back to older release notes."""
+    lines = body.splitlines() if isinstance(body, str) else []
+    notes = []
+    russian = False
+    for line in lines:
+        line = line.strip()
+        if line == '## Что нового':
+            notes.clear()
+            russian = True
+        elif line.startswith('Source commit:') or (russian and line.startswith('## ')):
+            break
+        elif not line.startswith('# v'):
+            notes.append('• ' + line[2:] if line.startswith(('- ', '* ')) else line)
+    return '\n'.join(notes).strip()[:12000] or 'Описание изменений пока не опубликовано.'
 
 
 def parse_release(payload):
@@ -50,7 +68,7 @@ def parse_release(payload):
         package = Package(version, asset.get('size'), digest[7:])
         if asset.get('state') != 'uploaded' or asset.get('browser_download_url') != package.url:
             raise ValueError('Invalid update package')
-        return Release(version, page, package)
+        return Release(version, page, package, release_description(data.get('body')))
     except (UnicodeError, TypeError, KeyError, RecursionError) as exc:
         raise ValueError('Invalid release response') from exc
 
