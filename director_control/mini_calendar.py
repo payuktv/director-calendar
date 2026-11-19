@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from .widget_text import localized
 from .i18n import tr, ui_locale
 from .theme import icon, color as theme_color, is_dark
 
@@ -45,6 +46,8 @@ class MiniDateGrid(QCalendarWidget):
 
     def changeEvent(self, event):
         super().changeEvent(event)
+        if event.type() == QEvent.Type.LocaleChange and hasattr(self, "month_button"):
+            self._update_header(self.yearShown(), self.monthShown())
         if event.type() in (QEvent.Type.ApplicationPaletteChange, QEvent.Type.PaletteChange,
                             QEvent.Type.StyleChange) and hasattr(self, "_view"):
             self.refresh_theme()
@@ -132,13 +135,13 @@ class MiniCalendar(MiniDateGrid):
         row = QHBoxLayout(header)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(2)
-        self.previous = self._arrow("chevron_left", tr("Предыдущий месяц"))
-        self.next = self._arrow("chevron_right", tr("Следующий месяц"))
+        self.previous = self._arrow("chevron_left", "Предыдущий месяц")
+        self.next = self._arrow("chevron_right", "Следующий месяц")
         self.month_button = QToolButton()
         self.month_button.setObjectName("MiniMonth")
         self.month_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.month_button.setToolTip(tr("Выбрать месяц или год"))
-        self.month_button.setAccessibleName(tr("Выбор месяца и года"))
+        localized(self.month_button, toolTip="Выбрать месяц или год")
+        localized(self.month_button, accessibleName="Выбор месяца и года")
         row.addWidget(self.previous)
         row.addWidget(self.month_button, 1)
         row.addWidget(self.next)
@@ -162,8 +165,7 @@ class MiniCalendar(MiniDateGrid):
         button.setIcon(icon(name, theme_color("mini_icon").name()))
         button.setIconSize(QSize(14, 14))
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setToolTip(label)
-        button.setAccessibleName(label)
+        localized(button, toolTip=label, accessibleName=label)
         return button
 
     def _update_header(self, year, month):

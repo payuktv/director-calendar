@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .widget_text import Message, diagnostic_message, form_row, localized
 from .i18n import tr
 from .credentials import Credentials
 from .diagnostics import record_error
@@ -53,7 +54,8 @@ class MailPanel(QGroupBox):
     busy_changed = Signal(bool)
 
     def __init__(self, store, selected_day, parent=None):
-        super().__init__(tr("Календарь Mail.ru"), parent)
+        super().__init__(parent)
+        localized(self, title="Календарь Mail.ru")
         self.setProperty("settingsSection", True)
         self.store = store
         self.selected_day = selected_day
@@ -69,48 +71,49 @@ class MailPanel(QGroupBox):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.url = QLineEdit(store.get_setting("mail_url"))
         self.url.setPlaceholderText("https://calendar.mail.ru/principals/…/calendars/…/")
-        form.addRow(tr("Ссылка CalDAV"), self.url)
+        form_row(form, "Ссылка CalDAV", self.url)
         self.login = QLineEdit(store.get_setting("mail_login"))
-        self.login.setPlaceholderText(tr("Полный адрес почты"))
-        form.addRow(tr("Логин"), self.login)
+        localized(self.login, placeholderText="Полный адрес почты")
+        form_row(form, "Логин", self.login)
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password.setPlaceholderText(tr("Пароль внешнего приложения; пусто — использовать сохранённый"))
-        form.addRow(tr("Пароль приложения"), self.password)
+        localized(self.password, placeholderText="Пароль внешнего приложения; пусто — использовать сохранённый")
+        form_row(form, "Пароль приложения", self.password)
         self.zone = QComboBox()
         self.zone.addItems(["Europe/Moscow", "UTC"])
         self.zone.setCurrentText(store.get_setting("mail_timezone", "Europe/Moscow"))
-        form.addRow(tr("Часовой пояс расписания"), self.zone)
-        self.remember = QCheckBox(tr("Сохранить пароль в хранилище Windows"))
+        form_row(form, "Часовой пояс расписания", self.zone)
+        self.remember = localized(QCheckBox(), text="Сохранить пароль в хранилище Windows")
         self.remember.setChecked(store.get_setting("mail_remember", "1") == "1" and self.credentials.can_remember)
         self.remember.setEnabled(self.credentials.can_remember)
         form.addRow("", self.remember)
-        self.auto = QCheckBox(tr("Обновлять при запуске приложения"))
+        self.auto = localized(QCheckBox(), text="Обновлять при запуске приложения")
         self.auto.setChecked(store.get_setting("mail_auto", "1") == "1")
         form.addRow("", self.auto)
         layout.addLayout(form)
         layout.addSpacing(4)
         actions = QHBoxLayout()
         actions.setSpacing(12)
-        self.save_button = QPushButton(tr("Сохранить подключение и обновить"))
+        self.save_button = localized(QPushButton(), text="Сохранить подключение и обновить")
         self.save_button.clicked.connect(self.save_connection)
         actions.addWidget(self.save_button)
-        self.sync_button = QPushButton(tr("Обновить из Mail.ru"))
+        self.sync_button = localized(QPushButton(), text="Обновить из Mail.ru")
         self.sync_button.clicked.connect(self.sync)
         actions.addWidget(self.sync_button)
-        self.cancel_button = QPushButton(tr('Отменить обновление'))
+        self.cancel_button = localized(QPushButton(), text='Отменить обновление')
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_sync)
         actions.addWidget(self.cancel_button)
         actions.addStretch()
         layout.addLayout(actions)
         layout.addSpacing(4)
-        self.status = QLabel(tr("Последнее успешное обновление: ") + (store.get_setting("mail_last_sync").replace("T", " ") or tr("ещё не было")))
+        last = store.get_setting("mail_last_sync").replace("T", " ")
+        self.status = localized(QLabel(), text=Message("Последнее успешное обновление: {0}", last or Message("ещё не было")))
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        note = QLabel(tr("Загружаем 30 дней до и 90 дней после выбранной даты. Время отображается в выбранном часовом поясе. "
+        note = localized(QLabel(), text="Загружаем 30 дней до и 90 дней после выбранной даты. Время отображается в выбранном часовом поясе. "
                       "Название и плановое время меняй в Mail.ru; категорию, факт и итоги — здесь. "
-                      "Исчезнувшие будущие события без фиксации и локальных отметок убираются из плана; остальные требуют проверки. Пароль не хранится в базе или GitHub."))
+                      "Исчезнувшие будущие события без фиксации и локальных отметок убираются из плана; остальные требуют проверки. Пароль не хранится в базе или GitHub.")
         note.setWordWrap(True)
         note.setObjectName("Muted")
         layout.addWidget(note)
@@ -127,18 +130,19 @@ class MailPanel(QGroupBox):
         return self.store.sync_warning(day, config.calendar_key)
 
     def sync_failed(self, text):
+        message = diagnostic_message(text)
         if getattr(self, '_sync_context', None):
             config, start, end = self._sync_context
             try:
                 self.store.record_sync_failure(config.calendar_key, start, end)
             except Exception:
                 record_error('mail.record_failure')
-                text += tr(' Не удалось сохранить результат попытки обновления.')
-        self.show_status(text)
+                message = Message('{0} Не удалось сохранить результат попытки обновления.', message)
+        self.show_status(message)
 
-    def show_status(self, text):
-        self.status.setText(text)
-        self.message.emit(text)
+    def show_status(self, source):
+        localized(self.status, text=source)
+        self.message.emit(self.status.text())
 
     def startup(self):
         if self.store.get_setting("mail_url") and self.auto.isChecked():
@@ -171,10 +175,10 @@ class MailPanel(QGroupBox):
             self.password.clear()
             self.sync()
         except CalendarError as exc:
-            self.show_status(str(exc))
+            self.show_status(diagnostic_message(str(exc)))
         except Exception:
             record_error('mail.configure')
-            self.show_status(tr("Не удалось сохранить подключение. Проверь настройки и повтори."))
+            self.show_status("Не удалось сохранить подключение. Проверь настройки и повтори.")
 
     def sync(self):
         if self.busy:
@@ -196,7 +200,7 @@ class MailPanel(QGroupBox):
             self.worker.failed.connect(self.sync_failed)
             self.worker.finished.connect(self.finished)
             self.set_controls(False)
-            self.show_status(tr("Обновляем календарь Mail.ru…"))
+            self.show_status("Обновляем календарь Mail.ru…")
             self.worker.start()
             self.busy_changed.emit(True)
         except CalendarError as exc:
@@ -217,9 +221,12 @@ class MailPanel(QGroupBox):
             result = self.store.apply_calendar_snapshot(snapshot)
             last = self.store.get_setting("mail_last_sync").replace("T", " ")
             if snapshot.complete:
-                self.show_status(tr("Mail.ru обновлён {0}: новых {1}, изменено {2}, убрано из плана {3}, требуют проверки {4}.").format(last, result['added'], result['updated'], result['withdrawn'], result['missing']))
+                self.show_status(Message("Mail.ru обновлён {0}: новых {1}, изменено {2}, убрано из плана {3}, требуют проверки {4}.",
+                                         last, result['added'], result['updated'], result['withdrawn'], result['missing']))
             else:
-                self.show_status(tr("Mail.ru загружен частично: новых {0}, изменено {1}; недоступных записей {2}. Прежние записи сохранены, исчезновения не проверялись. ").format(result['added'], result['updated'], len(snapshot.unavailable)) + snapshot.unavailable[0])
+                summary = Message("Mail.ru загружен частично: новых {0}, изменено {1}; недоступных записей {2}. Прежние записи сохранены, исчезновения не проверялись. ",
+                                  result['added'], result['updated'], len(snapshot.unavailable))
+                self.show_status(Message('{0}{1}', summary, diagnostic_message(snapshot.unavailable[0])))
             self.changed.emit()
         except Exception:
             record_error('mail.apply')
@@ -236,7 +243,7 @@ class MailPanel(QGroupBox):
             self._cancel_requested = True
             self.worker.requestInterruption()
             self.cancel_button.setEnabled(False)
-            self.show_status(tr('Отменяем обновление Mail.ru…'))
+            self.show_status('Отменяем обновление Mail.ru…')
 
     def finished(self):
         self.set_controls(True)

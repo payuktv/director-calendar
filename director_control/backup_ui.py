@@ -7,9 +7,10 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QSpinBox, QVBoxLayout,
 )
 
+from .widget_text import Message, diagnostic_message, form_row, localized
 from .i18n import tr
 from .backups import backup_folder, create_backup, restore_backup, save_backup_settings, scheduled_backup
-from .inspector import plain_label
+from .inspector import plain_label, text_label
 from .diagnostics import record_error
 
 
@@ -37,20 +38,21 @@ class BackupPanel(QGroupBox):
     restored = Signal(str)
 
     def __init__(self, store, can_restore, parent=None):
-        super().__init__(tr('Данные и резервные копии'), parent)
+        super().__init__(parent)
+        localized(self, title='Данные и резервные копии')
         self.setProperty('settingsSection', True)
         self.store, self.can_restore = store, can_restore
         self.worker = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
-        path = plain_label(tr('База данных: ') + str(store.path))
+        path = text_label(Message('База данных: {0}', str(store.path)))
         path.setWordWrap(True)
         layout.addWidget(path)
         form = QFormLayout()
         form.setHorizontalSpacing(24)
         form.setVerticalSpacing(14)
-        self.auto = QCheckBox(tr('Создавать копию каждый день при работе приложения'))
+        self.auto = localized(QCheckBox(), text='Создавать копию каждый день при работе приложения')
         self.auto.setChecked(store.get_setting('backup_auto', '1') == '1')
         form.addRow('', self.auto)
         folder_row = QHBoxLayout()
@@ -58,33 +60,33 @@ class BackupPanel(QGroupBox):
         self.folder = QLineEdit(store.get_setting('backup_folder'))
         self.folder.setPlaceholderText(str(store.path.parent / 'backups'))
         folder_row.addWidget(self.folder)
-        self.choose_button = QPushButton(tr('Выбрать папку'))
+        self.choose_button = localized(QPushButton(), text='Выбрать папку')
         self.choose_button.clicked.connect(self.choose_folder)
         folder_row.addWidget(self.choose_button)
-        form.addRow(tr('Папка копий'), folder_row)
+        form_row(form, 'Папка копий', folder_row)
         self.keep = QSpinBox()
         self.keep.setRange(1, 365)
         self.keep.setValue(int(store.get_setting('backup_keep', '30')))
         self.keep.setMaximumWidth(160)
-        form.addRow(tr('Хранить автоматических копий'), self.keep)
+        form_row(form, 'Хранить автоматических копий', self.keep)
         layout.addLayout(form)
-        note = plain_label(tr('По умолчанию храним 30 ежедневных копий. Ручные копии и копии перед восстановлением не удаляются автоматически. '
-                           'Можно выбрать папку на другом диске.'), 'Muted')
+        note = text_label('По умолчанию храним 30 ежедневных копий. Ручные копии и копии перед восстановлением не удаляются автоматически. '
+                           'Можно выбрать папку на другом диске.', 'Muted')
         note.setWordWrap(True)
         layout.addWidget(note)
         actions = QHBoxLayout()
         actions.setSpacing(12)
-        self.save_button = QPushButton(tr('Сохранить настройки копий'))
+        self.save_button = localized(QPushButton(), text='Сохранить настройки копий')
         self.save_button.clicked.connect(self.save_settings)
         actions.addWidget(self.save_button)
         actions.addStretch()
         layout.addLayout(actions)
         operations = QHBoxLayout()
         operations.setSpacing(12)
-        self.manual_button = QPushButton(tr('Создать резервную копию'))
+        self.manual_button = localized(QPushButton(), text='Создать резервную копию')
         self.manual_button.clicked.connect(self.make_manual)
         operations.addWidget(self.manual_button)
-        self.restore_button = QPushButton(tr('Восстановить из копии…'))
+        self.restore_button = localized(QPushButton(), text='Восстановить из копии…')
         self.restore_button.clicked.connect(self.restore)
         operations.addWidget(self.restore_button)
         operations.addStretch()
@@ -112,7 +114,7 @@ class BackupPanel(QGroupBox):
             last = {}
         if not isinstance(last, dict):
             last = {}
-        self.status.setText(tr('Последняя автоматическая копия: ') + (last.get('day') or tr('ещё не создана')))
+        localized(self.status, text=Message('Последняя автоматическая копия: {0}', last.get('day') or Message('ещё не создана')))
 
     def start(self):
         self.timer.start()
@@ -130,7 +132,7 @@ class BackupPanel(QGroupBox):
     def save_settings(self):
         try:
             save_backup_settings(self.store, self.auto.isChecked(), self.folder.text().strip(), self.keep.value())
-            self.status.setText(tr('Настройки копирования сохранены.'))
+            localized(self.status, text='Настройки копирования сохранены.')
             self.check()
         except Exception as exc:
             record_error('backup.settings', exc)
@@ -164,7 +166,7 @@ class BackupPanel(QGroupBox):
             control.setEnabled(False)
         if action == 'restore':
             self.window().setEnabled(False)
-        self.status.setText(tr('Восстанавливаем базу…') if action == 'restore' else tr('Проверяем и сохраняем резервную копию…'))
+        localized(self.status, text='Восстанавливаем базу…' if action == 'restore' else 'Проверяем и сохраняем резервную копию…')
         self.worker = BackupWorker(self.store, action, source, self)
         self.worker.finished.connect(self._finished)
         self.worker.start()
@@ -178,7 +180,7 @@ class BackupPanel(QGroupBox):
         for control in (self.auto, self.folder, self.keep, self.choose_button, self.save_button, self.manual_button, self.restore_button):
             control.setEnabled(True)
         if error:
-            self.status.setText(tr('Операция не завершена: ') + error)
+            localized(self.status, text=Message('Операция не завершена: {0}', diagnostic_message(error)))
             self.notice.emit(self.status.text())
             if action != 'auto':
                 QMessageBox.warning(self, tr('Резервные копии'), error)
@@ -187,7 +189,7 @@ class BackupPanel(QGroupBox):
             QMessageBox.information(self, tr('База восстановлена'), tr('Данные восстановлены. Открой приложение снова.\nСтраховая копия прежних данных:\n') + str(result))
             self.restored.emit(str(result))
         elif action == 'manual':
-            self.status.setText(tr('Копия создана: ') + str(result))
+            localized(self.status, text=Message('Копия создана: {0}', str(result)))
             QMessageBox.information(self, tr('Резервная копия создана'), str(result))
         else:
             self.refresh()

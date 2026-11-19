@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 
-from PySide6.QtCore import QDate, QDateTime, QTime, QTimer, Qt, QSize
+from PySide6.QtCore import QDate, QDateTime, QDeadlineTimer, QTime, QTimer, Qt, QSize
 from PySide6.QtGui import QBrush, QIcon, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDateTimeEdit, QDialog,
@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
     QTabWidget, QVBoxLayout, QWidget, QButtonGroup, QStackedWidget,
 )
 
-from .i18n import LANGUAGE_CHOICES, configure_widgets, tr, ui_locale
+from .widget_text import Message, add_choice, add_tab, form_row, localized, retranslate_widgets, set_headers, text_source
+from .i18n import LANGUAGE_CHOICES, configure_widgets, current_language, tr, ui_locale
 from .storage import Event, STATUSES, Store, category_label, default_data_dir
 from .source_state import source_state
 from .mail_ui import MailPanel
@@ -21,7 +22,7 @@ from .mail_ui import MailPanel
 
 from .theme import apply_theme, current_theme, color as theme_color, icon
 from .calendar_view import CalendarBoard, MONTHS, MONTHS_GEN, period_days, event_interval, color_for
-from .inspector import EventInspector, plain_label
+from .inspector import EventInspector, plain_label, text_label
 from .status_menu import EventStatusMenu
 from .mini_calendar import MiniCalendar
 from .date_picker import install_date_picker
@@ -197,7 +198,7 @@ class StatCard(QFrame):
         v = QVBoxLayout(self)
         v.setContentsMargins(10, 6, 10, 6)
         v.setSpacing(1)
-        title = QLabel(name)
+        title = localized(QLabel(), text=name)
         title.setObjectName("CardTitle")
         self.value = QLabel("—")
         self.value.setObjectName("CardValue")
@@ -218,7 +219,7 @@ class MainWindow(QMainWindow):
         self.mode = store.get_setting("ui_calendar_view", "week")
         if self.mode not in {"day", "week", "month", "agenda"}:
             self.mode = "week"
-        self.setWindowTitle(tr("Director Calendar — расписание руководителя"))
+        localized(self, windowTitle="Director Calendar — расписание руководителя")
         self.setMinimumSize(1000, 650)
         available = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
         self.resize(max(1000, min(1480, available.width() - 40)) if available else 1480,
@@ -248,9 +249,9 @@ class MainWindow(QMainWindow):
         side.addSpacing(28)
         self.nav_group = QButtonGroup(self)
         self.nav_buttons = []
-        for i, (label, name) in enumerate(((tr("Календарь"), "calendar"), (tr("Аналитика"), "chart"),
-                                          (tr("История"), "history"), (tr("Настройки"), "settings"))):
-            button = QPushButton(label)
+        for i, (label, name) in enumerate((("Календарь", "calendar"), ("Аналитика", "chart"),
+                                          ("История", "history"), ("Настройки", "settings"))):
+            button = localized(QPushButton(), text=label)
             button.setIcon(icon(name, theme_color("icon").name()))
             button.setIconSize(QSize(18, 18))
             button.setObjectName("Nav")
@@ -276,13 +277,13 @@ class MainWindow(QMainWindow):
         footer = QHBoxLayout()
         self.update_indicator = QPushButton()
         self.update_indicator.setObjectName("UpdateIndicator")
-        self.update_indicator.setAccessibleName(tr("Открыть обновление календаря"))
+        localized(self.update_indicator, accessibleName="Открыть обновление календаря")
         self.update_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
         self.update_indicator.setFixedSize(32, 32)
         self.update_indicator.setIcon(icon("download"))
         self.update_indicator.hide()
         footer.addWidget(self.update_indicator)
-        footer.addWidget(plain_label(tr("Версия ") + __version__, "Muted"))
+        footer.addWidget(text_label(Message("Версия {0}", __version__), "Muted"))
         footer.addStretch()
         side.addLayout(footer)
         shell.addWidget(self.sidebar)
@@ -294,20 +295,20 @@ class MainWindow(QMainWindow):
         head = QHBoxLayout()
         titles = QVBoxLayout()
         titles.setSpacing(4)
-        self.page_title = plain_label(tr("Календарь"), "PageTitle")
-        self.page_subtitle = plain_label(tr("Рабочий ритм руководителя — в одном месте"), "Muted")
+        self.page_title = plain_label("", "PageTitle")
+        self.page_subtitle = plain_label("", "Muted")
         titles.addWidget(self.page_title)
         titles.addWidget(self.page_subtitle)
         head.addLayout(titles)
         head.addStretch()
         self.search = QLineEdit()
         self.search.setObjectName("Search")
-        self.search.setPlaceholderText(tr("Поиск в открытом периоде"))
+        localized(self.search, placeholderText="Поиск в открытом периоде")
         self.search.setClearButtonEnabled(True)
         self.search.setFixedWidth(210)
         self.search.textChanged.connect(self.reload)
         head.addWidget(self.search)
-        self.mail_refresh = self.button(tr("Обновить Mail.ru"), lambda: self.mail_panel.sync(), primary=True)
+        self.mail_refresh = self.button("Обновить Mail.ru", lambda: self.mail_panel.sync(), primary=True)
         self.mail_refresh.setIcon(icon("sync", "white"))
         head.addWidget(self.mail_refresh)
         layout.addLayout(head)
@@ -347,12 +348,15 @@ class MainWindow(QMainWindow):
         # Rebuild table foreground brushes; painted calendars use tokens directly.
         self.reload()
 
-    def navigate(self, index):
+    def _set_page_heading(self, index):
         names = (tr("Календарь"), tr("Аналитика"), tr("История изменений"), tr("Настройки"))
         descriptions = (tr("Рабочий ритм руководителя — в одном месте"), tr("План, факт и качество учёта за выбранный период"),
                         tr("Изменения расписания и решений"), tr("Подключение календаря и рабочие параметры"))
         self.page_title.setText(names[index])
         self.page_subtitle.setText(descriptions[index])
+
+    def navigate(self, index):
+        self._set_page_heading(index)
         self.nav_buttons[index].setChecked(True)
         self.search.setVisible(index == 0)
         if index == 2:
@@ -384,7 +388,7 @@ class MainWindow(QMainWindow):
         self.reload()
 
     def button(self, title: str, callback, primary: bool = False) -> QPushButton:
-        button = QPushButton(title)
+        button = localized(QPushButton(), text=title)
         if primary:
             button.setObjectName("Primary")
         button.clicked.connect(callback)
@@ -400,10 +404,10 @@ class MainWindow(QMainWindow):
         self.period_title = plain_label("", "PeriodTitle")
         period.addWidget(self.period_title)
         period.addStretch()
-        self.add_event_button = self.button(tr("Добавить событие"), self.add_event, primary=True)
+        self.add_event_button = self.button("Добавить событие", self.add_event, primary=True)
         self.add_event_button.setIcon(icon("plus", "white"))
-        self.add_event_button.setAccessibleName(tr("Добавить событие"))
-        self.add_event_button.setToolTip(tr("Добавить локальное событие · Ctrl+N"))
+        localized(self.add_event_button, accessibleName="Добавить событие")
+        localized(self.add_event_button, toolTip="Добавить локальное событие · Ctrl+N")
         period.addWidget(self.add_event_button)
         segments = QFrame()
         segments.setObjectName("Segments")
@@ -412,8 +416,8 @@ class MainWindow(QMainWindow):
         buttons.setSpacing(1)
         self.view_group = QButtonGroup(self)
         self.view_buttons = {}
-        for mode, label in (("day", tr("День")), ("week", tr("Неделя")), ("month", tr("Месяц")), ("agenda", tr("Список"))):
-            button = QPushButton(label)
+        for mode, label in (("day", "День"), ("week", "Неделя"), ("month", "Месяц"), ("agenda", "Список")):
+            button = localized(QPushButton(), text=label)
             button.setObjectName("Segment")
             button.setCheckable(True)
             button.setChecked(mode == self.mode)
@@ -428,7 +432,7 @@ class MainWindow(QMainWindow):
             button = self.button(label, lambda checked=False, offset=offset: self.shift_period(offset))
             button.setObjectName("Arrow")
             toolbar.addWidget(button)
-        toolbar.addWidget(self.button(tr("Сегодня"), lambda: self.set_date(self.calendar.today())))
+        toolbar.addWidget(self.button("Сегодня", lambda: self.set_date(self.calendar.today())))
         self.date_input = QDateEdit(QDate.currentDate())
         self.date_input.setLocale(ui_locale())
         install_date_picker(self.date_input)
@@ -437,12 +441,12 @@ class MainWindow(QMainWindow):
         self.date_input.dateChanged.connect(self.calendar_date_changed)
         toolbar.addWidget(self.date_input)
         self.layer = QComboBox()
-        for label, key in ((tr("Расписание"), "current"), (tr("Исходный план"), "baseline"), (tr("Факт"), "actual")):
-            self.layer.addItem(label, key)
+        for label, key in (("Расписание", "current"), ("Исходный план", "baseline"), ("Факт", "actual")):
+            add_choice(self.layer, label, key)
         self.layer.currentIndexChanged.connect(self.reload)
         toolbar.addWidget(self.layer)
         toolbar.addStretch()
-        self.freeze_button = self.button(tr("Зафиксировать план"), self.freeze)
+        self.freeze_button = self.button("Зафиксировать план", self.freeze)
         toolbar.addWidget(self.freeze_button)
         toolbar.addWidget(self.button("CSV", self.export))
         v.addLayout(toolbar)
@@ -464,7 +468,7 @@ class MainWindow(QMainWindow):
         self.calendar.agenda_requested.connect(lambda: self.set_view("agenda"))
         self.calendar_stack.addWidget(self.calendar)
         self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels([tr("Мероприятие"), tr("Категория"), tr("Исходный план"), tr("Актуально"), tr("Факт"), tr("Статус"), tr("Источник")])
+        set_headers(self.table, ["Мероприятие", "Категория", "Исходный план", "Актуально", "Факт", "Статус", "Источник"])
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -487,12 +491,12 @@ class MainWindow(QMainWindow):
         v.addLayout(body, 1)
         cards = QHBoxLayout()
         cards.setSpacing(6)
-        self.cards = {name: StatCard(label) for name, label in (("planned", tr("В плане")), ("done", tr("Выполнено")),
-            ("pending", tr("Без подтверждения")), ("unplanned", tr("Вне плана")), ("rate", tr("Исполнение")), ("gaps", tr("Окна 07–19")))}
+        self.cards = {name: StatCard(label) for name, label in (("planned", "В плане"), ("done", "Выполнено"),
+            ("pending", "Без подтверждения"), ("unplanned", "Вне плана"), ("rate", "Исполнение"), ("gaps", "Окна 07–19"))}
         for card in self.cards.values():
             cards.addWidget(card, 1)
         v.addLayout(cards)
-        self.tabs.addTab(page, tr("Календарь"))
+        add_tab(self.tabs, page, "Календарь")
 
     def set_date(self, day):
         if isinstance(day, QDate):
@@ -627,13 +631,13 @@ class MainWindow(QMainWindow):
         self.analytics_description = self.analytics_page.quality
         self.category_bars = self.analytics_page.category_bars
         self.analytics_table = self.analytics_page.category_table
-        self.tabs.addTab(self.analytics_page, tr('Аналитика'))
+        add_tab(self.tabs, self.analytics_page, 'Аналитика')
 
     def _build_history_tab(self):
         self.history_page = HistoryPage(self.store)
         self.history_page.open_requested.connect(self.open_event)
         self.history_table = self.history_page.table
-        self.tabs.addTab(self.history_page, tr('История изменений'))
+        add_tab(self.tabs, self.history_page, 'История изменений')
 
     def _build_settings_tab(self):
         page = QWidget()
@@ -641,22 +645,19 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 8, 12, 24)
         v.setSpacing(20)
-        language_box = QGroupBox(tr("Язык приложения"))
+        language_box = localized(QGroupBox(), title="Язык приложения")
         language_box.setProperty("settingsSection", True)
         language_layout = QFormLayout(language_box)
         language_layout.setContentsMargins(24, 24, 24, 24)
         self.language_input = QComboBox()
         self.language_input.setMaximumWidth(260)
-        for choice, label in zip(LANGUAGE_CHOICES, (tr("Автоматически"), "Русский", "English")):
-            self.language_input.addItem(label, choice)
+        for choice, label in zip(LANGUAGE_CHOICES, ("Автоматически", "Русский", "English")):
+            add_choice(self.language_input, label, choice)
         self._language_choice = self.store.get_setting("ui_language", "auto")
         selected = self.language_input.findData(self._language_choice)
         self.language_input.setCurrentIndex(max(0, selected))
         self.language_input.currentIndexChanged.connect(self._save_language)
-        language_layout.addRow(tr("Язык"), self.language_input)
-        language_note = plain_label(tr("Язык изменится при следующем запуске календаря."), "Muted")
-        language_note.setWordWrap(True)
-        language_layout.addRow("", language_note)
+        form_row(language_layout, "Язык", self.language_input)
         v.addWidget(language_box)
         from .update_ui import UpdatePanel
         self.update_panel = UpdatePanel(store=self.store)
@@ -667,12 +668,11 @@ class MainWindow(QMainWindow):
         v.addWidget(self.update_panel)
         self.mail_panel = MailPanel(self.store, self.selected_sync_day)
         self.mail_panel.changed.connect(self.reload)
-        self.mail_panel.message.connect(self.mail_status.setText)
-        self.mail_panel.message.connect(self.mail_status.show)
+        self.mail_panel.message.connect(lambda: self._show_panel_notice(self.mail_panel.status))
         self.mail_panel.busy_changed.connect(lambda busy: self.freeze_button.setEnabled(not busy))
         self.mail_panel.busy_changed.connect(lambda busy: self.mail_refresh.setEnabled(not busy))
         v.addWidget(self.mail_panel)
-        options = QGroupBox(tr("Контроль времени"))
+        options = localized(QGroupBox(), title="Контроль времени")
         options.setProperty("settingsSection", True)
         f = QFormLayout(options)
         f.setContentsMargins(24, 24, 24, 24)
@@ -682,24 +682,24 @@ class MainWindow(QMainWindow):
         self.tolerance = QSpinBox()
         self.tolerance.setMaximumWidth(160)
         self.tolerance.setRange(0, 180)
-        self.tolerance.setSuffix(tr(" мин"))
+        localized(self.tolerance, suffix=" мин")
         self.tolerance.setValue(int(self.store.get_setting("tolerance_minutes", "10")))
-        f.addRow(tr("Допустимое отклонение от плана"), self.tolerance)
-        save_options = self.button(tr("Сохранить настройки"), self.save_settings)
+        form_row(f, "Допустимое отклонение от плана", self.tolerance)
+        save_options = self.button("Сохранить настройки", self.save_settings)
         save_options.setMaximumWidth(220)
         f.addRow("", save_options)
-        rules_note = plain_label(tr('Новые настройки применяются при следующей фиксации плана. Правила уже зафиксированных дней сохраняются.'), 'Muted')
+        rules_note = text_label('Новые настройки применяются при следующей фиксации плана. Правила уже зафиксированных дней сохраняются.', 'Muted')
         rules_note.setWordWrap(True)
         f.addRow('', rules_note)
         v.addWidget(options)
-        categories_box = QGroupBox(tr("Категории и контроль выполнения"))
+        categories_box = localized(QGroupBox(), title="Категории и контроль выполнения")
         categories_box.setProperty("settingsSection", True)
         cv = QVBoxLayout(categories_box)
         cv.setContentsMargins(24, 24, 24, 24)
         cv.setSpacing(16)
         self.category_table = QTableWidget(0, 2)
         self.category_table.setMinimumHeight(240)
-        self.category_table.setHorizontalHeaderLabels([tr("Категория"), tr("Отслеживать выполнение")])
+        set_headers(self.category_table, ["Категория", "Отслеживать выполнение"])
         self.category_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.category_table.verticalHeader().hide()
         self.category_table.verticalHeader().setDefaultSectionSize(38)
@@ -708,26 +708,25 @@ class MainWindow(QMainWindow):
         add = QHBoxLayout()
         add.setSpacing(12)
         self.new_category = QLineEdit()
-        self.new_category.setPlaceholderText(tr("Название новой категории"))
+        localized(self.new_category, placeholderText="Название новой категории")
         add.addWidget(self.new_category)
-        add.addWidget(self.button(tr("Добавить категорию"), self.add_category))
+        add.addWidget(self.button("Добавить категорию", self.add_category))
         cv.addLayout(add)
         v.addWidget(categories_box)
-        launch_box = QGroupBox(tr("Запуск приложения"))
+        launch_box = localized(QGroupBox(), title="Запуск приложения")
         launch_box.setProperty("settingsSection", True)
         launch_layout = QVBoxLayout(launch_box)
         launch_layout.setContentsMargins(24, 24, 24, 24)
         launch_layout.setSpacing(16)
-        self.shortcut_button = self.button(tr("Создать ярлык на рабочем столе"), self.create_desktop_shortcut)
+        self.shortcut_button = self.button("Создать ярлык на рабочем столе", self.create_desktop_shortcut)
         self.shortcut_button.setEnabled(shortcuts_available())
         launch_layout.addWidget(self.shortcut_button, 0, Qt.AlignmentFlag.AlignLeft)
-        launch_note = plain_label(tr("Ярлык открывает календарь двойным щелчком, без окна командной строки."), "Muted")
+        launch_note = text_label("Ярлык открывает календарь двойным щелчком, без окна командной строки.", "Muted")
         launch_note.setWordWrap(True)
         launch_layout.addWidget(launch_note)
         v.addWidget(launch_box)
         self.backup_panel = BackupPanel(self.store, lambda: not self.mail_panel.busy)
-        self.backup_panel.notice.connect(self.mail_status.setText)
-        self.backup_panel.notice.connect(self.mail_status.show)
+        self.backup_panel.notice.connect(lambda: self._show_panel_notice(self.backup_panel.status))
         self.backup_panel.restored.connect(self._after_restore)
         v.addWidget(self.backup_panel)
         from .diagnostics_ui import DiagnosticsPanel
@@ -737,7 +736,11 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(page)
-        self.tabs.addTab(scroll, tr("Настройки"))
+        add_tab(self.tabs, scroll, "Настройки")
+
+    def _show_panel_notice(self, label):
+        localized(self.mail_status, text=text_source(label))
+        self.mail_status.show()
 
     def reload(self, *_):
         if not hasattr(self, "mail_panel"):
@@ -779,7 +782,8 @@ class MainWindow(QMainWindow):
         query = self.search.text().strip().casefold()
         events = []
         for event in self.store.events_between(lower, upper):
-            if query and query not in " ".join((event.title, category_label(event.category), event.note)).casefold():
+            if query and query not in " ".join((event.title, event.category, category_label(event.category, language="en"),
+                                                event.note)).casefold():
                 continue
             events.append(event)
         events = events_in_layer(events, self.layer.currentData(), datetime.fromisoformat(lower), datetime.fromisoformat(upper))
@@ -848,6 +852,7 @@ class MainWindow(QMainWindow):
             current = self.category_table.item(row, 0)
             existing = self.category_table.cellWidget(row, 1)
             if current and current.data(Qt.ItemDataRole.UserRole) == cat["name"] and isinstance(existing, QCheckBox):
+                current.setText(category_label(cat["name"]))
                 existing.blockSignals(True)
                 existing.setChecked(bool(cat["track"]))
                 existing.setText(tr("Да") if cat["track"] else tr("Нет"))
@@ -936,8 +941,26 @@ class MainWindow(QMainWindow):
             self.language_input.setCurrentIndex(max(0, self.language_input.findData(self._language_choice)))
             self.language_input.blockSignals(False)
             error_box(self, exc)
-        else:
-            self._language_choice = choice
+            return
+        self._language_choice = choice
+        previous = current_language()
+        configure_widgets(choice)
+        if current_language() == previous:
+            return
+        # Keep the active widgets, drafts, timers and workers. Only their presentation changes.
+        shown_month = self.mini.yearShown(), self.mini.monthShown()
+        retranslate_widgets(self)
+        self._set_page_heading(self.tabs.currentIndex())
+        self._update_theme_controls()
+        self.add_event_button.setText(tr("Добавить событие") if self.width() >= 1240 else tr("Добавить"))
+        self.update_panel.refresh_language()
+        if warning := getattr(self, '_update_warning', None):
+            source, deadline = warning
+            remaining = deadline.remainingTime()
+            if remaining > 0 and self.statusBar().currentMessage():
+                self.statusBar().showMessage(tr(source), remaining)
+        self.reload()
+        self.mini.setCurrentPage(*shown_month)
 
     def add_category(self):
         try:
@@ -991,26 +1014,29 @@ class MainWindow(QMainWindow):
             layout.setContentsMargins(12, 4, 12, 4)
             self.update_notice_text = plain_label()
             layout.addWidget(self.update_notice_text)
-            restart = self.button(tr('Перезапустить'), self._restart_for_update)
+            restart = self.button('Перезапустить', self._restart_for_update)
             layout.addWidget(restart)
-            later = self.button(tr('Позже'), self.update_notice.hide)
+            later = self.button('Позже', self.update_notice.hide)
             layout.addWidget(later)
             self.statusBar().addWidget(self.update_notice)
             self.notice_timer = QTimer(self)
             self.notice_timer.setSingleShot(True)
             self.notice_timer.timeout.connect(self.update_notice.hide)
-        self.update_notice_text.setText(tr("Версия {0} скачана. Для установки нужен перезапуск.").format(version))
+        localized(self.update_notice_text, text=Message("Версия {0} скачана. Для установки нужен перезапуск.", version))
         self.statusBar().show()
         self.update_notice.show()
         self.notice_timer.start(20000)
+
+    def _show_update_warning(self, source, timeout):
+        localized(self.update_panel.status, text=source)
+        self._update_warning = (source, QDeadlineTimer(timeout))
+        self.statusBar().showMessage(tr(source), timeout)
 
     def _restart_for_update(self):
         if not self.update_panel.ready_version:
             return
         if self.mail_panel.busy or self.backup_panel.busy or QApplication.activeModalWidget() is not None:
-            message = tr('Заверши открытую операцию и подтверди перезапуск ещё раз.')
-            self.update_panel.status.setText(message)
-            self.statusBar().showMessage(message, 12000)
+            self._show_update_warning('Заверши открытую операцию и подтверди перезапуск ещё раз.', 12000)
             return
         from . import __version__
         from .package_update import activate_package
@@ -1020,9 +1046,7 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError) as exc:
             from .diagnostics import record_error
             record_error('ui.action', exc)
-            message = tr('Не удалось активировать обновление. Проверь обновления в настройках и попробуй снова.')
-            self.update_panel.status.setText(message)
-            self.statusBar().showMessage(message, 15000)
+            self._show_update_warning('Не удалось активировать обновление. Проверь обновления в настройках и попробуй снова.', 15000)
             return
         self.restart_after_close = self.close()
 

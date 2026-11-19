@@ -12,11 +12,12 @@ from PySide6.QtWidgets import (
     QSizePolicy, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
+from .widget_text import Message, add_choice, add_tab, localized, set_headers
 from .i18n import decimal_text, tr
 from .analytics import export_report, period_bounds
 from .calendar_view import text
 from .date_picker import install_date_picker
-from .inspector import CategoryBars, plain_label
+from .inspector import CategoryBars, plain_label, text_label
 from .storage import STATUSES, category_label
 from .event_status import FAILED_STATUSES, outcome_day
 from .theme import color
@@ -52,7 +53,7 @@ class AnalyticsMetric(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(5)
-        caption = plain_label(title, 'CardTitle')
+        caption = text_label(title, 'CardTitle')
         caption.setWordWrap(True)
         layout.addWidget(caption)
         self.value, self.note = plain_label('—', 'CardValue'), plain_label('', 'Muted')
@@ -62,9 +63,9 @@ class AnalyticsMetric(QFrame):
         self.actionable = actionable
         if actionable:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.setToolTip(tr('Нажми, чтобы открыть соответствующий список событий'))
+            localized(self, toolTip='Нажми, чтобы открыть соответствующий список событий')
             self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            self.setAccessibleName(title + tr('. Открыть список событий'))
+            localized(self, accessibleName=Message('{0}. Открыть список событий', Message(title)))
 
     def mouseReleaseEvent(self, event):
         if self.actionable and event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
@@ -169,7 +170,7 @@ class DailyBars(QWidget):
 
 def make_table(headers):
     table = QTableWidget(0, len(headers))
-    table.setHorizontalHeaderLabels(headers)
+    set_headers(table, headers)
     table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
     table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -208,8 +209,8 @@ class AnalyticsPage(QScrollArea):
         segment_layout.setContentsMargins(3, 3, 3, 3)
         segment_layout.setSpacing(1)
         self.mode_buttons, self.mode_group = {}, QButtonGroup(self)
-        for key, title in (('day', tr('День')), ('week', tr('Неделя')), ('month', tr('Месяц'))):
-            button = QPushButton(title)
+        for key, title in (('day', 'День'), ('week', 'Неделя'), ('month', 'Месяц')):
+            button = localized(QPushButton(), text=title)
             button.setObjectName('Segment')
             button.setCheckable(True)
             button.setChecked(key == self.mode)
@@ -222,10 +223,10 @@ class AnalyticsPage(QScrollArea):
         for label, step in (('‹', -1), ('›', 1)):
             button = QPushButton(label)
             button.setObjectName('Arrow')
-            button.setAccessibleName(tr('Предыдущий период') if step < 0 else tr('Следующий период'))
+            localized(button, accessibleName='Предыдущий период' if step < 0 else 'Следующий период')
             button.clicked.connect(lambda checked=False, step=step: self.shift(step))
             toolbar.addWidget(button)
-        today = QPushButton(tr('Сегодня'))
+        today = localized(QPushButton(), text='Сегодня')
         today.clicked.connect(lambda: self.set_anchor(date.today()))
         toolbar.addWidget(today)
         self.date_input = QDateEdit(QDate(anchor.year, anchor.month, anchor.day))
@@ -236,24 +237,23 @@ class AnalyticsPage(QScrollArea):
         self.date_input.dateChanged.connect(self._changed)
         toolbar.addWidget(self.date_input)
         self.export_button = QPushButton('CSV')
-        self.export_button.setToolTip(tr('Экспорт сводки и дней за весь выбранный период'))
+        localized(self.export_button, toolTip='Экспорт сводки и дней за весь выбранный период')
         self.export_button.clicked.connect(self.export)
         toolbar.addWidget(self.export_button)
         layout.addLayout(toolbar)
         self.range_title = plain_label('', 'PeriodTitle')
         layout.addWidget(self.range_title)
         scope = QHBoxLayout()
-        self.only_tracked = QCheckBox(tr('Только контролируемые категории'))
+        self.only_tracked = localized(QCheckBox(), text='Только контролируемые категории')
         self.only_tracked.setChecked(store.get_setting('ui_analytics_only_tracked', '1') == '1')
         self.only_tracked.toggled.connect(self._scope_changed)
         scope.addWidget(self.only_tracked)
         scope.addStretch()
-        self.rules_button = QPushButton(tr('Как считаем'))
+        self.rules_button = localized(QPushButton(), text='Как считаем')
         self.rules_button.setCheckable(True)
         scope.addWidget(self.rules_button)
         layout.addLayout(scope)
-        self.rules = plain_label(
-            tr('Исполнение: выполненные события / исходный зафиксированный план; проценты дней не усредняются. '
+        self.rules = text_label('Исполнение: выполненные события / исходный зафиксированный план; проценты дней не усредняются. '
             'Время: только заполненный факт со статусом «Выполнено» или «Частично», обрезанный границами периода. '
             'При выборе «Выполнено» пустой факт заполняется текущим временем события; его можно исправить. '
             '«Частично» без факта ожидает заполнения. '
@@ -266,7 +266,7 @@ class AnalyticsPage(QScrollArea):
             'по событиям с началом факта в периоде. Точный допуск включён в норму. '
             'Задачи исходного плана относятся к дате его начала; отсутствие факта — к исходной, иначе текущей дате. '
             'События на весь день не создают 24 часа и не требуют времени. '
-            'Для зафиксированных событий контроль, категория плана и допуск берутся на момент фиксации.'), 'Muted')
+            'Для зафиксированных событий контроль, категория плана и допуск берутся на момент фиксации.', 'Muted')
         self.rules.setWordWrap(True)
         self.rules.hide()
         self.rules_button.toggled.connect(self.rules.setVisible)
@@ -277,12 +277,12 @@ class AnalyticsPage(QScrollArea):
         grid = QGridLayout()
         grid.setSpacing(10)
         self.cards = {}
-        for i, (key, title) in enumerate((('completion', tr('Исполнение исходного плана')),
-                                         ('unplanned', tr('Доля внеплановой работы')),
-                                         ('missing', tr('Ожидают фактического времени')),
-                                         ('actual', tr('Подтверждённое время')),
-                                         ('start', tr('Отклонение начала · среднее |Δ|')),
-                                         ('duration', tr('Отклонение длительности · |Δ|')))):
+        for i, (key, title) in enumerate((('completion', 'Исполнение исходного плана'),
+                                         ('unplanned', 'Доля внеплановой работы'),
+                                         ('missing', 'Ожидают фактического времени'),
+                                         ('actual', 'Подтверждённое время'),
+                                         ('start', 'Отклонение начала · среднее |Δ|'),
+                                         ('duration', 'Отклонение длительности · |Δ|'))):
             card = AnalyticsMetric(title, key == 'missing')
             self.cards[key] = card
             grid.addWidget(card, i // 3, i % 3)
@@ -290,7 +290,7 @@ class AnalyticsPage(QScrollArea):
         self.cards['missing'].clicked.connect(self.show_missing)
         layout.addLayout(grid)
         outcomes = QHBoxLayout()
-        for key, title in (('cancelled', tr('Отменено')), ('failed', tr('Провалено'))):
+        for key, title in (('cancelled', 'Отменено'), ('failed', 'Провалено')):
             card = AnalyticsMetric(title, True)
             self.cards[key] = card
             outcomes.addWidget(card, 1)
@@ -306,18 +306,18 @@ class AnalyticsPage(QScrollArea):
         dynamics = QWidget()
         dv = QVBoxLayout(dynamics)
         legend = QHBoxLayout()
-        for title, token in ((tr('Исходный план'), 'PlanLegend'), (tr('Факт'), 'ActualLegend'), (tr('Вне плана'), 'UnplannedLegend')):
-            legend.addWidget(plain_label('●  ' + title, token))
+        for title, token in (('Исходный план', 'PlanLegend'), ('Факт', 'ActualLegend'), ('Вне плана', 'UnplannedLegend')):
+            legend.addWidget(text_label(Message('●  {0}', Message(title)), token))
         legend.addStretch()
         dv.addLayout(legend)
         self.daily_bars = DailyBars()
         self.daily_bars.day_selected.connect(self.show_day)
         dv.addWidget(self.daily_bars, 1)
-        self.details.addTab(dynamics, tr('Динамика'))
-        self.day_table = make_table([tr('День'), tr('В плане'), tr('Выполнено'), tr('Исполнение'), tr('План, ч'), tr('Факт, ч'), tr('Вне плана'), tr('Отменено'), tr('Провалено')])
+        add_tab(self.details, dynamics, 'Динамика')
+        self.day_table = make_table(['День', 'В плане', 'Выполнено', 'Исполнение', 'План, ч', 'Факт, ч', 'Вне плана', 'Отменено', 'Провалено'])
         self.day_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.day_table.activated.connect(lambda index: self.show_day(list(self.report.daily)[index.row()]) if self.report else None)
-        self.details.addTab(self.day_table, tr('По дням'))
+        add_tab(self.details, self.day_table, 'По дням')
         categories = QWidget()
         cv = QVBoxLayout(categories)
         self.category_bars = CategoryBars()
@@ -325,41 +325,41 @@ class AnalyticsPage(QScrollArea):
         category_scroll.setWidgetResizable(True)
         category_scroll.setWidget(self.category_bars)
         cv.addWidget(category_scroll, 1)
-        self.category_table = make_table([tr('Категория'), tr('Исходный план, мин'), tr('Подтверждённый факт, мин')])
+        self.category_table = make_table(['Категория', 'Исходный план, мин', 'Подтверждённый факт, мин'])
         self.category_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.category_table.setMinimumHeight(150)
         cv.addWidget(self.category_table)
-        self.details.addTab(categories, tr('Категории'))
+        add_tab(self.details, categories, 'Категории')
         events = QWidget()
         ev = QVBoxLayout(events)
         filters = QHBoxLayout()
         self.event_filter = QComboBox()
-        for title, key in ((tr('Все события'), 'all'), (tr('Ожидают фактического времени'), 'missing'),
-                           (tr('Отменено'), 'cancelled'), (tr('Провалено — все причины'), 'failed'),
-                           (tr('Провалено · ассистент'), 'failed_assistant'), (tr('Провалено · директор'), 'failed_director'),
-                           (tr('Внеплановая работа'), 'unplanned'), (tr('Отклонения вне допуска'), 'deviation'),
-                           (tr('Без зафиксированного плана'), 'unfixed')):
-            self.event_filter.addItem(title, key)
+        for title, key in (('Все события', 'all'), ('Ожидают фактического времени', 'missing'),
+                           ('Отменено', 'cancelled'), ('Провалено — все причины', 'failed'),
+                           ('Провалено · ассистент', 'failed_assistant'), ('Провалено · директор', 'failed_director'),
+                           ('Внеплановая работа', 'unplanned'), ('Отклонения вне допуска', 'deviation'),
+                           ('Без зафиксированного плана', 'unfixed')):
+            add_choice(self.event_filter, title, key)
         self.event_filter.currentIndexChanged.connect(self._fill_events)
         filters.addWidget(self.event_filter)
-        self.reset_day = QPushButton(tr('Весь период'))
+        self.reset_day = localized(QPushButton(), text='Весь период')
         self.reset_day.clicked.connect(self.clear_day)
         self.reset_day.hide()
         filters.addWidget(self.reset_day)
         filters.addStretch()
         ev.addLayout(filters)
-        self.events_note = plain_label(tr('Двойной щелчок или Enter — открыть карточку события'), 'Muted')
+        self.events_note = text_label('Двойной щелчок или Enter — открыть карточку события', 'Muted')
         self.events_note.setWordWrap(True)
         ev.addWidget(self.events_note)
-        self.event_table = make_table([tr('Событие'), tr('Дата'), tr('Статус'), tr('Работа'), tr('План / факт\nмин'),
-                                       tr('Начало\nΔ мин'), tr('Длительность\nΔ мин'), tr('Допуск\nмин'), tr('Учёт времени')])
+        self.event_table = make_table(['Событие', 'Дата', 'Статус', 'Работа', 'План / факт\nмин',
+                                       'Начало\nΔ мин', 'Длительность\nΔ мин', 'Допуск\nмин', 'Учёт времени'])
         self.event_table.horizontalHeader().setFixedHeight(52)
         self.event_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         for i, width in enumerate((240, 98, 195, 145, 115, 105, 120, 85, 165)):
             self.event_table.setColumnWidth(i, width)
         self.event_table.activated.connect(self._open_event)
         ev.addWidget(self.event_table, 1)
-        self.details.addTab(events, tr('События'))
+        add_tab(self.details, events, 'События')
         layout.addWidget(self.details, 1)
 
     @property

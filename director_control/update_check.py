@@ -20,7 +20,11 @@ class Release:
     version: str
     page_url: str
     package: Package
-    notes: str
+    notes_body: str
+
+    @property
+    def notes(self):
+        return release_description(self.notes_body)
 
 
 def release_description(body):
@@ -72,7 +76,8 @@ def parse_release(payload):
         package = Package(version, asset.get('size'), digest[7:])
         if asset.get('state') != 'uploaded' or asset.get('browser_download_url') != package.url:
             raise ValueError('Invalid update package')
-        return Release(version, page, package, release_description(data.get('body')))
+        body = data.get('body')
+        return Release(version, page, package, body if isinstance(body, str) else '')
     except (UnicodeError, TypeError, KeyError, RecursionError) as exc:
         raise ValueError('Invalid release response') from exc
 

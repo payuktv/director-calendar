@@ -13,6 +13,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QTextLay
 from PySide6.QtWidgets import QApplication, QScrollArea, QStackedWidget, QToolTip, QVBoxLayout, QWidget
 
 from .i18n import tr
+from .widget_text import localized
 from .storage import STATUSES, category_label
 from .schedule import event_interval
 from .theme import color as theme_color, is_dark
@@ -541,7 +542,7 @@ class CalendarBoard(QWidget):
         self.timed, self.all_day = {}, {}
         self.metadata = {}
         self.frozen_days = frozenset()
-        self.setToolTip(tr("Зелёный фон дня — исходный план зафиксирован"))
+        localized(self, toolTip="Зелёный фон дня — исходный план зафиксирован")
         self.stack = QStackedWidget()
         timeline = QWidget()
         layout = QVBoxLayout(timeline)
