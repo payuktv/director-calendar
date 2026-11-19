@@ -3,9 +3,10 @@ from PySide6.QtCore import QObject, Signal, Slot, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QGroupBox, QHBoxLayout, QMessageBox, QPushButton, QVBoxLayout
 
+from .widget_text import localized
 from .i18n import tr
 from . import diagnostics
-from .inspector import plain_label
+from .inspector import plain_label, text_label
 
 
 class ErrorNotice(QObject):
@@ -41,7 +42,8 @@ class ErrorNotice(QObject):
 
 class DiagnosticsPanel(QGroupBox):
     def __init__(self, parent=None):
-        super().__init__(tr('Диагностика'), parent)
+        super().__init__(parent)
+        localized(self, title='Диагностика')
         self.setProperty('settingsSection', True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -50,19 +52,19 @@ class DiagnosticsPanel(QGroupBox):
         self.path_label.setWordWrap(True)
         self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.path_label)
-        note = plain_label(tr('Журнал хранит тип ошибки и место в коде: без текстов ошибок, паролей и содержимого календаря. '
+        note = text_label('Журнал хранит тип ошибки и место в коде: без текстов ошибок, паролей и содержимого календаря. '
                            'До четырёх файлов по 1 МБ; старые записи заменяются автоматически. '
-                           'Файлы никуда не отправляются.'), 'Muted')
+                           'Файлы никуда не отправляются.', 'Muted')
         note.setWordWrap(True)
         layout.addWidget(note)
         self.status = plain_label('')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         row = QHBoxLayout()
-        self.open_button = QPushButton(tr('Открыть папку журнала'))
+        self.open_button = localized(QPushButton(), text='Открыть папку журнала')
         self.open_button.clicked.connect(self.open_folder)
         row.addWidget(self.open_button)
-        self.copy_button = QPushButton(tr('Скопировать путь'))
+        self.copy_button = localized(QPushButton(), text='Скопировать путь')
         self.copy_button.clicked.connect(self.copy_path)
         row.addWidget(self.copy_button)
         row.addStretch()
@@ -70,8 +72,8 @@ class DiagnosticsPanel(QGroupBox):
 
     def showEvent(self, event):
         self.path_label.setText(str(diagnostics.log_path()))
-        self.status.setText(tr('Журнал доступен.') if diagnostics.available() else
-                            tr('Журнал недоступен. Проверь доступ и свободное место в папке данных.'))
+        localized(self.status, text='Журнал доступен.' if diagnostics.available() else
+                  'Журнал недоступен. Проверь доступ и свободное место в папке данных.')
         super().showEvent(event)
 
     def open_folder(self):
@@ -81,8 +83,8 @@ class DiagnosticsPanel(QGroupBox):
                 raise OSError('Cannot open diagnostics directory')
         except Exception as exc:
             diagnostics.record_error('diagnostics.open', exc)
-            self.status.setText(tr('Не удалось открыть папку. Скопируй путь и открой её через Проводник.'))
+            localized(self.status, text='Не удалось открыть папку. Скопируй путь и открой её через Проводник.')
 
     def copy_path(self):
         QApplication.clipboard().setText(str(diagnostics.log_path()))
-        self.status.setText(tr('Путь к журналу скопирован.'))
+        localized(self.status, text='Путь к журналу скопирован.')

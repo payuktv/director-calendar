@@ -4,6 +4,7 @@ from PySide6.QtGui import QFont, QPainter
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .i18n import decimal_text, tr
+from .widget_text import localized
 from .calendar_view import text
 from .storage import STATUSES, category_label
 from .source_state import source_state
@@ -18,6 +19,10 @@ def plain_label(value="", object_name=None):
     return label
 
 
+def text_label(source, object_name=None):
+    return localized(plain_label("", object_name), text=source)
+
+
 class EventInspector(QFrame):
     edit_requested = Signal()
     done_requested = Signal()
@@ -29,19 +34,19 @@ class EventInspector(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 23, 20, 20)
         layout.setSpacing(14)
-        layout.addWidget(plain_label(tr("В ФОКУСЕ"), "Eyebrow"))
-        self.title = plain_label(tr("Выбери событие"), "EventTitle")
+        layout.addWidget(text_label("В ФОКУСЕ", "Eyebrow"))
+        self.title = plain_label("", "EventTitle")
         self.title.setWordWrap(True)
         layout.addWidget(self.title)
-        self.category = plain_label(tr("Нажми на встречу в календаре"), "Muted")
+        self.category = plain_label("", "Muted")
         self.category.setWordWrap(True)
         layout.addWidget(self.category)
         self.status = plain_label("", "StatusPill")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.time_labels = {}
-        for key, title in (("baseline", tr("ИСХОДНЫЙ ПЛАН")), ("current", tr("АКТУАЛЬНОЕ ВРЕМЯ")), ("actual", tr("ФАКТ"))):
-            layout.addWidget(plain_label(title, "Eyebrow"))
+        for key, title in (("baseline", "ИСХОДНЫЙ ПЛАН"), ("current", "АКТУАЛЬНОЕ ВРЕМЯ"), ("actual", "ФАКТ")):
+            layout.addWidget(text_label(title, "Eyebrow"))
             value = plain_label("—")
             value.setWordWrap(True)
             self.time_labels[key] = value
@@ -50,11 +55,11 @@ class EventInspector(QFrame):
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
         layout.addStretch()
-        self.edit_button = QPushButton(tr("Открыть карточку"))
+        self.edit_button = localized(QPushButton(), text="Открыть карточку")
         self.edit_button.setObjectName("Primary")
         self.edit_button.clicked.connect(self.edit_requested)
         layout.addWidget(self.edit_button)
-        self.done_button = QPushButton(tr("Отметить выполненным"))
+        self.done_button = localized(QPushButton(), text="Отметить выполненным")
         self.done_button.clicked.connect(self.done_requested)
         layout.addWidget(self.done_button)
         self.set_event(None)

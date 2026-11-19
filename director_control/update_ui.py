@@ -5,9 +5,10 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signa
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QGroupBox, QHBoxLayout,
                                QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout)
 
+from .widget_text import Message, diagnostic_message, localized, render
 from .i18n import tr
 from . import __version__
-from .inspector import plain_label
+from .inspector import plain_label, text_label
 from .package_update import WORKER_IDLE_SECONDS, install_root, packaged, pending_notes, pending_target, version_key
 from .update_check import UpdateChecker, release_description
 
@@ -93,7 +94,7 @@ class UpdateDialog(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.setWindowTitle(tr('Обновление календаря'))
+        localized(self, windowTitle='Обновление приложения')
         self.resize(520, 335)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 18)
@@ -102,14 +103,14 @@ class UpdateDialog(QDialog):
         layout.addWidget(self.title)
         self.description = QPlainTextEdit()
         self.description.setReadOnly(True)
-        self.description.setAccessibleName(tr('Описание изменений'))
+        localized(self.description, accessibleName='Описание изменений')
         layout.addWidget(self.description, 1)
         self.state = plain_label('', 'Muted')
         self.state.setWordWrap(True)
         layout.addWidget(self.state)
         actions = QHBoxLayout()
         actions.addStretch()
-        self.later = QPushButton(tr('Позже'))
+        self.later = localized(QPushButton(), text='Позже')
         self.later.setDefault(True)
         self.later.clicked.connect(self.reject)
         actions.addWidget(self.later)
@@ -128,14 +129,15 @@ class UpdatePanel(QGroupBox):
 
     def __init__(self, parent=None, *, store=None, checker=None, preparer=None,
                  installed_version=__version__, supported=None):
-        super().__init__(tr('Обновления приложения'), parent)
+        super().__init__(parent)
+        localized(self, title='Обновления приложения')
         self.setProperty('settingsSection', True)
         self.store = store
         self.installed_version = installed_version
         version_key(installed_version)
         self.supported = packaged() if supported is None else supported
         self.release = self.ready_version = None
-        self.ready_description = ''
+        self.ready_notes_body = ''
         self.download_message = ''
         self.dialog = None
         self.announced_version = None
@@ -154,29 +156,28 @@ class UpdatePanel(QGroupBox):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
-        layout.addWidget(plain_label(tr("Установленная версия: {0}").format(installed_version)))
-        self.automatic = QCheckBox(tr('Проверять обновления при запуске и раз в сутки'))
+        layout.addWidget(text_label(Message("Установленная версия: {0}", installed_version)))
+        self.automatic = localized(QCheckBox(), text='Проверять обновления при запуске и раз в сутки')
         self.automatic.setChecked(self.supported and (store is None or store.get_setting('app_auto_updates', '1') == '1'))
         self.automatic.setVisible(self.supported)
         self.automatic.toggled.connect(self._preference_changed)
         layout.addWidget(self.automatic)
-        self.status = plain_label(tr('Скачивание и перезапуск требуют подтверждения.') if self.supported
-                                  else tr('Установка обновлений доступна в сборке для Windows.'))
+        self.status = text_label('Скачивание и перезапуск требуют подтверждения.' if self.supported else 'Установка обновлений доступна в сборке для Windows.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.progress = QProgressBar()
-        self.progress.setAccessibleName(tr('Загрузка обновления'))
+        localized(self.progress, accessibleName='Загрузка обновления')
         self.progress.hide()
         layout.addWidget(self.progress)
         row = QHBoxLayout()
-        self.check_button = QPushButton(tr('Проверить обновления'))
+        self.check_button = localized(QPushButton(), text='Проверить обновления')
         self.check_button.clicked.connect(self.check)
         row.addWidget(self.check_button)
-        self.details_button = QPushButton(tr('Об обновлении'))
+        self.details_button = localized(QPushButton(), text='Об обновлении')
         self.details_button.clicked.connect(self.show_details)
         self.details_button.hide()
         row.addWidget(self.details_button)
-        self.cancel_button = QPushButton(tr('Отменить загрузку'))
+        self.cancel_button = localized(QPushButton(), text='Отменить загрузку')
         self.cancel_button.clicked.connect(self._cancel_download)
         self.cancel_button.hide()
         row.addWidget(self.cancel_button)
@@ -216,7 +217,7 @@ class UpdatePanel(QGroupBox):
         self.indicator_changed.emit(hint)
         if self.dialog:
             self.dialog.title.setText(hint)
-            notes = self.release.notes if self.release and self.release.version == version else self.ready_description
+            notes = self.release.notes if self.release and self.release.version == version else release_description(self.ready_notes_body)
             if self.dialog.description.toPlainText() != notes:
                 self.dialog.description.setPlainText(notes)
             if ready:
@@ -224,7 +225,7 @@ class UpdatePanel(QGroupBox):
             elif self.preparer.busy:
                 state = tr('Загрузка идёт в фоне. Календарём можно пользоваться.')
             elif self.download_message:
-                state = self.download_message
+                state = render(self.download_message)
             elif self.supported:
                 state = tr("Размер загрузки: {0:.0f} МБ.").format(self.release.package.size / 2**20)
             else:
@@ -238,12 +239,15 @@ class UpdatePanel(QGroupBox):
     def start_automatic(self):
         if self.supported and self._read_pending():
             self._refresh()
-            self.status.setText(tr("Версия {0} скачана и ждёт установки.").format(self.ready_version))
+            localized(self.status, text=Message("Версия {0} скачана и ждёт установки.", self.ready_version))
             if self.automatic.isChecked():
                 self.show_details()
         if self.automatic.isChecked():
             self.startup.start(3000)
             self.daily.start()
+
+    def refresh_language(self):
+        self._refresh()
 
     def _preference_changed(self, enabled):
         if self.store is not None:
@@ -269,7 +273,7 @@ class UpdatePanel(QGroupBox):
         if self.checker.busy or self.preparer.busy:
             return
         self.manual_check = manual
-        self.status.setText(tr('Проверяем последнюю опубликованную версию…'))
+        localized(self.status, text='Проверяем последнюю опубликованную версию…')
         self.checker.start()
 
     def _result(self, release):
@@ -280,14 +284,15 @@ class UpdatePanel(QGroupBox):
         self._refresh()
         version = self.offered_version
         if version:
-            self.status.setText(tr("Версия {0} скачана и ждёт установки.").format(version) if self.ready_version == version
-                                else tr("Доступна версия {0}.").format(version))
+            source = "Версия {0} скачана и ждёт установки." if self.ready_version == version else "Доступна версия {0}."
+            localized(self.status, text=Message(source, version))
             if self.manual_check or version != self.announced_version:
                 self.show_details()
         elif latest == installed:
-            self.status.setText(tr("Установлена последняя опубликованная версия {0}.").format(self.installed_version))
+            localized(self.status, text=Message("Установлена последняя опубликованная версия {0}.", self.installed_version))
         else:
-            self.status.setText(tr("Установленная версия {0} новее последнего опубликованного выпуска {1}.").format(self.installed_version, release.version))
+            localized(self.status, text=Message("Установленная версия {0} новее последнего опубликованного выпуска {1}.",
+                                                self.installed_version, release.version))
 
     def show_details(self):
         if not self.offered_version:
@@ -317,7 +322,7 @@ class UpdatePanel(QGroupBox):
             return
         package = self.release.package
         self.download_message = ''
-        self.status.setText(tr("Загружаем и проверяем версию {0}…").format(package.version))
+        localized(self.status, text=Message("Загружаем и проверяем версию {0}…", package.version))
         self.progress.setValue(0)
         self.preparer.start(package)
         self._refresh()
@@ -325,7 +330,7 @@ class UpdatePanel(QGroupBox):
     def _read_pending(self):
         target = pending_target(install_root(sys.executable), self.installed_version)
         self.ready_version = target.parent.name[1:] if target else None
-        self.ready_description = release_description(pending_notes(target)) if target else ''
+        self.ready_notes_body = pending_notes(target) if target else ''
         return target is not None
 
     def _cancel_download(self):
@@ -333,12 +338,12 @@ class UpdatePanel(QGroupBox):
         if self._read_pending() and self.ready_version == self.offered_version:
             self._notify_ready()
         else:
-            self.download_message = tr('Загрузка отменена. Можно попробовать снова.')
+            self.download_message = 'Загрузка отменена. Можно попробовать снова.'
             self._failed(self.download_message)
 
     def _notify_ready(self):
         self._refresh()
-        self.status.setText(tr("Версия {0} скачана и ждёт установки.").format(self.ready_version))
+        localized(self.status, text=Message("Версия {0} скачана и ждёт установки.", self.ready_version))
         self.update_ready.emit(self.ready_version)
 
     def _prepared(self):
@@ -348,13 +353,13 @@ class UpdatePanel(QGroupBox):
             self._prepare_failed(tr('Не удалось открыть подготовленное обновление. Попробуй снова.'))
 
     def _prepare_failed(self, message):
-        self.download_message = message
+        self.download_message = diagnostic_message(message)
         self._failed(message)
         if self.window().isVisible():
             self.show_details()
 
     def _failed(self, message):
-        self.status.setText(message)
+        localized(self.status, text=diagnostic_message(message))
         self._refresh()
 
     def cancel(self):

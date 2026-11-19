@@ -35,8 +35,8 @@ DEFAULT_CATEGORIES = [
 _BUILTIN_CATEGORY_NAMES = {name for name, _, _ in DEFAULT_CATEGORIES} | {"Весь день (Mail.ru)"}
 
 
-def category_label(name):
-    return tr(name) if name in _BUILTIN_CATEGORY_NAMES else name
+def category_label(name, *, language=None):
+    return tr(name, language=language) if name in _BUILTIN_CATEGORY_NAMES else name
 
 
 def default_data_dir() -> Path:

@@ -26,8 +26,8 @@ def current_language():
     return _language
 
 
-def tr(source):
-    return MESSAGES.get(source, source) if _language == 'en' else source
+def tr(source, *, language=None):
+    return MESSAGES.get(source, source) if (language or _language) == 'en' else source
 
 
 def decimal_text(number):
@@ -40,7 +40,7 @@ def ui_locale():
 
 
 def configure_widgets(choice):
-    """Set the language before constructing widgets, including Qt's standard dialogs."""
+    """Apply the application language and Qt's standard dialog translations."""
     from PySide6.QtCore import QCoreApplication, QLibraryInfo, QLocale, QTranslator
     language = select_language(choice)
     QLocale.setDefault(ui_locale())

@@ -239,14 +239,6 @@ def verify_installation(destination):
             backend.delete_password('DirectorCalendar.DistributionCheck', account)
         app = QApplication.instance() or QApplication([])
         from PySide6.QtWidgets import QDialogButtonBox
-        from .i18n import configure_widgets, tr
-        for language, settings, cancel in [('en', 'Settings', 'Cancel'), ('ru', 'Настройки', 'Отмена')]:
-            configure_widgets(language)
-            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-            assert tr('Настройки') == settings
-            assert buttons.button(QDialogButtonBox.StandardButton.Cancel).text().replace('&', '') == cancel
-            buttons.deleteLater()
-        report['interface_languages'] = ['en', 'ru']
         app.setWindowIcon(QIcon(str(app_icon_path())))
         assert not app.windowIcon().isNull()
         try:
@@ -305,6 +297,14 @@ def verify_installation(destination):
         store = Store(store.path)
         assert store.get_event(eid).note == ''
         window = MainWindow(store)
+        window.tabs.setCurrentIndex(3)
+        for language, settings, cancel in [('en', 'Settings', 'Cancel'), ('ru', 'Настройки', 'Отмена')]:
+            window.language_input.setCurrentIndex(window.language_input.findData(language))
+            assert window.page_title.text() == window.nav_buttons[3].text() == settings
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+            assert buttons.button(QDialogButtonBox.StandardButton.Cancel).text().replace('&', '') == cancel
+            buttons.deleteLater()
+        report['interface_languages'] = ['en', 'ru']
         # The frozen app must retain Qt's HTTPS support, including its TLS plugin.
         # No live network dependency is needed for distribution acceptance.
         assert QSslSocket.supportsSsl(), 'The bundle has no working Qt TLS backend'
