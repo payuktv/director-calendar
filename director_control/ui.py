@@ -646,6 +646,7 @@ class MainWindow(QMainWindow):
         language_layout = QFormLayout(language_box)
         language_layout.setContentsMargins(24, 24, 24, 24)
         self.language_input = QComboBox()
+        self.language_input.setMaximumWidth(260)
         for choice, label in zip(LANGUAGE_CHOICES, (tr("Автоматически"), "Русский", "English")):
             self.language_input.addItem(label, choice)
         self._language_choice = self.store.get_setting("ui_language", "auto")
@@ -653,7 +654,9 @@ class MainWindow(QMainWindow):
         self.language_input.setCurrentIndex(max(0, selected))
         self.language_input.currentIndexChanged.connect(self._save_language)
         language_layout.addRow(tr("Язык"), self.language_input)
-        language_layout.addRow("", plain_label(tr("Язык изменится при следующем запуске календаря."), "Muted"))
+        language_note = plain_label(tr("Язык изменится при следующем запуске календаря."), "Muted")
+        language_note.setWordWrap(True)
+        language_layout.addRow("", language_note)
         v.addWidget(language_box)
         from .update_ui import UpdatePanel
         self.update_panel = UpdatePanel(store=self.store)
