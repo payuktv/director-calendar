@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from .i18n import tr, ui_locale
 from .theme import icon, color as theme_color, is_dark
 
 
@@ -16,7 +17,7 @@ class MiniDateGrid(QCalendarWidget):
         self.setObjectName("MiniDateGrid")
         self._cell_rects = {}
         self._hovered = None
-        self.setLocale(QLocale(QLocale.Language.Russian))
+        self.setLocale(ui_locale())
         self.setNavigationBarVisible(False)
         self.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
         self.setHorizontalHeaderFormat(QCalendarWidget.HorizontalHeaderFormat.ShortDayNames)
@@ -131,13 +132,13 @@ class MiniCalendar(MiniDateGrid):
         row = QHBoxLayout(header)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(2)
-        self.previous = self._arrow("chevron_left", "Предыдущий месяц")
-        self.next = self._arrow("chevron_right", "Следующий месяц")
+        self.previous = self._arrow("chevron_left", tr("Предыдущий месяц"))
+        self.next = self._arrow("chevron_right", tr("Следующий месяц"))
         self.month_button = QToolButton()
         self.month_button.setObjectName("MiniMonth")
         self.month_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.month_button.setToolTip("Выбрать месяц или год")
-        self.month_button.setAccessibleName("Выбор месяца и года")
+        self.month_button.setToolTip(tr("Выбрать месяц или год"))
+        self.month_button.setAccessibleName(tr("Выбор месяца и года"))
         row.addWidget(self.previous)
         row.addWidget(self.month_button, 1)
         row.addWidget(self.next)
@@ -190,7 +191,7 @@ class MiniCalendar(MiniDateGrid):
             action.setEnabled(first <= self.maximumDate() and last >= self.minimumDate())
             action.triggered.connect(lambda checked, month=month: self.setCurrentPage(self.yearShown(), month))
         menu.addSeparator()
-        menu.addAction("Выбрать год…", self._choose_year)
+        menu.addAction(tr("Выбрать год…"), self._choose_year)
         try:
             menu.exec(self.month_button.mapToGlobal(QPoint(0, self.month_button.height() + 4)))
         finally:
@@ -201,13 +202,13 @@ class MiniCalendar(MiniDateGrid):
         restore_popup = popup.windowType() == Qt.WindowType.Popup and popup.isVisible()
         year, month = self.yearShown(), self.monthShown()
         dialog = QInputDialog(self.window())
-        dialog.setWindowTitle("Год календаря")
-        dialog.setLabelText("Выбери год")
+        dialog.setWindowTitle(tr("Год календаря"))
+        dialog.setLabelText(tr("Выбери год"))
         dialog.setInputMode(QInputDialog.InputMode.IntInput)
         dialog.setIntRange(max(1, self.minimumDate().year()), self.maximumDate().year())
         dialog.setIntValue(year)
-        dialog.setOkButtonText("Выбрать")
-        dialog.setCancelButtonText("Отмена")
+        dialog.setOkButtonText(tr("Выбрать"))
+        dialog.setCancelButtonText(tr("Отмена"))
         if dialog.exec() == QDialog.DialogCode.Accepted:
             year = dialog.intValue()
         dialog.deleteLater()

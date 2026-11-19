@@ -8,9 +8,10 @@ from PySide6.QtWidgets import (
     QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
+from .i18n import tr
 from .date_picker import install_date_picker
 from .inspector import plain_label
-from .storage import STATUSES
+from .storage import STATUSES, category_label
 from .event_status import status_hint
 
 
@@ -18,11 +19,11 @@ class LocalEventDialog(QDialog):
     def __init__(self, store, start: datetime, event=None, parent=None):
         super().__init__(parent)
         if event is not None and event.source != "local":
-            raise ValueError("Эта форма предназначена для локальных событий.")
+            raise ValueError(tr("Эта форма предназначена для локальных событий."))
         self.store, self._event = store, event
         self.event_id = event.id if event else None
         self._saved = False
-        self.setWindowTitle("Локальное событие" if event else "Добавить событие")
+        self.setWindowTitle(tr("Локальное событие") if event else tr("Добавить событие"))
         self.setMinimumWidth(600)
         self.resize(680, 720)
         if QApplication.primaryScreen():
@@ -30,8 +31,8 @@ class LocalEventDialog(QDialog):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 22, 24, 22)
         outer.setSpacing(14)
-        outer.addWidget(plain_label("Локальное событие" if event else "Добавить событие", "EventTitle"))
-        note = plain_label("Сохраняется в приложении и не отправляется в Mail.ru.", "Muted")
+        outer.addWidget(plain_label(tr("Локальное событие") if event else tr("Добавить событие"), "EventTitle"))
+        note = plain_label(tr("Сохраняется в приложении и не отправляется в Mail.ru."), "Muted")
         note.setWordWrap(True)
         outer.addWidget(note)
         content = QWidget()
@@ -48,18 +49,19 @@ class LocalEventDialog(QDialog):
         outer.addWidget(scroll, 1)
         self.title_input = QLineEdit(event.title if event else "")
         self.title_input.setMaxLength(200)
-        self.title_input.setPlaceholderText("Что произошло или что нужно запланировать")
-        self.form.addRow("Название", self.title_input)
+        self.title_input.setPlaceholderText(tr("Что произошло или что нужно запланировать"))
+        self.form.addRow(tr("Название"), self.title_input)
         self.category_input = QComboBox()
-        self.category_input.addItems(row["name"] for row in store.categories())
-        self.category_input.setCurrentText(event.category if event else "Работа")
-        self.form.addRow("Категория", self.category_input)
+        for row in store.categories():
+            self.category_input.addItem(category_label(row["name"]), row["name"])
+        self.category_input.setCurrentIndex(self.category_input.findData(event.category if event else "Работа"))
+        self.form.addRow(tr("Категория"), self.category_input)
         self.kind_input = QComboBox()
-        self.kind_input.addItem("Постфактум — вне плана", "actual")
-        self.kind_input.addItem("Запланировать локально", "planned")
+        self.kind_input.addItem(tr("Постфактум — вне плана"), "actual")
+        self.kind_input.addItem(tr("Запланировать локально"), "planned")
         self.kind_input.setCurrentIndex(1 if event and event.current_start else 0)
         self.kind_input.setEnabled(event is None)
-        self.form.addRow("Тип записи", self.kind_input)
+        self.form.addRow(tr("Тип записи"), self.kind_input)
         self.kind_note = plain_label("", "Muted")
         self.kind_note.setWordWrap(True)
         self.kind_note.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
@@ -73,16 +75,16 @@ class LocalEventDialog(QDialog):
         self.form.addRow(self.end_label, self.end_input)
         self.status_input = QComboBox()
         for key, label in STATUSES.items():
-            self.status_input.addItem(label, key)
+            self.status_input.addItem(tr(label), key)
         self.status_input.setCurrentIndex(self.status_input.findData(event.status if event else "done"))
-        self.form.addRow("Статус", self.status_input)
-        self.fact_checkbox = QCheckBox("Указать фактическое время")
+        self.form.addRow(tr("Статус"), self.status_input)
+        self.fact_checkbox = QCheckBox(tr("Указать фактическое время"))
         self.fact_checkbox.setChecked(bool(event and event.actual_start))
         self.form.addRow("", self.fact_checkbox)
         self.fact_start = self.date_edit(event.actual_start if event and event.actual_start else initial_start)
         self.fact_end = self.date_edit(event.actual_end if event and event.actual_end else initial_end)
-        self.form.addRow("Факт: начало", self.fact_start)
-        self.form.addRow("Факт: конец", self.fact_end)
+        self.form.addRow(tr("Факт: начало"), self.fact_start)
+        self.form.addRow(tr("Факт: конец"), self.fact_end)
         self.fact_checkbox.toggled.connect(self._fact_enabled)
         self.status_note = plain_label('', 'Muted')
         self.status_note.setWordWrap(True)
@@ -90,11 +92,11 @@ class LocalEventDialog(QDialog):
         self.status_input.currentIndexChanged.connect(self._status_changed)
         self._status_changed()
         self.note_input = QPlainTextEdit(event.note if event else "")
-        self.note_input.setPlaceholderText("Результат, причина появления вне плана или другие подробности")
+        self.note_input.setPlaceholderText(tr("Результат, причина появления вне плана или другие подробности"))
         self.note_input.setMaximumHeight(100)
-        self.form.addRow("Комментарий", self.note_input)
+        self.form.addRow(tr("Комментарий"), self.note_input)
         if event and event.baseline_start:
-            baseline = plain_label("Исходный план зафиксирован и останется без изменений.", "Muted")
+            baseline = plain_label(tr("Исходный план зафиксирован и останется без изменений."), "Muted")
             baseline.setWordWrap(True)
             self.form.addRow("", baseline)
         self.error_label = plain_label("", "DangerText")
@@ -103,20 +105,20 @@ class LocalEventDialog(QDialog):
         outer.addWidget(self.error_label)
         actions = QHBoxLayout()
         if event:
-            self.delete_button = QPushButton("Удалить событие")
+            self.delete_button = QPushButton(tr("Удалить событие"))
             self.delete_button.setObjectName("Danger")
             self.delete_button.setEnabled(not event.baseline_start)
-            self.delete_button.setToolTip("Событие зафиксированного плана можно отменить, сохранив исходный план."
-                                          if event.baseline_start else "Удалить эту локальную запись с сохранением истории")
+            self.delete_button.setToolTip(tr("Событие зафиксированного плана можно отменить, сохранив исходный план.")
+                                          if event.baseline_start else tr("Удалить эту локальную запись с сохранением истории"))
             self.delete_button.clicked.connect(self.delete)
             actions.addWidget(self.delete_button)
         actions.addStretch()
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         self.save_button = buttons.button(QDialogButtonBox.StandardButton.Save)
-        self.save_button.setText("Сохранить" if event else "Создать")
+        self.save_button.setText(tr("Сохранить") if event else tr("Создать"))
         self.save_button.setObjectName("Primary")
         self.save_button.setEnabled(bool(self.title_input.text().strip()))
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Отмена")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr("Отмена"))
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         self.title_input.textChanged.connect(lambda value: self.save_button.setEnabled(bool(value.strip())))
@@ -149,10 +151,10 @@ class LocalEventDialog(QDialog):
 
     def _kind_changed(self):
         planned = self.kind_input.currentData() == "planned"
-        self.start_label.setText("План: начало" if planned else "Факт: начало")
-        self.end_label.setText("План: конец" if planned else "Факт: конец")
-        self.kind_note.setText("Попадёт в исходный план только при его фиксации."
-                               if planned else "Будет учтено вне плана. Даже последующая фиксация дня не добавит его в исходный план.")
+        self.start_label.setText(tr("План: начало") if planned else tr("Факт: начало"))
+        self.end_label.setText(tr("План: конец") if planned else tr("Факт: конец"))
+        self.kind_note.setText(tr("Попадёт в исходный план только при его фиксации.")
+                               if planned else tr("Будет учтено вне плана. Даже последующая фиксация дня не добавит его в исходный план."))
         for field in (self.fact_checkbox, self.fact_start, self.fact_end):
             self.form.setRowVisible(field, planned)
         self._fact_enabled()
@@ -163,7 +165,7 @@ class LocalEventDialog(QDialog):
         if self._saved:
             return
         planned = self.kind_input.currentData() == "planned"
-        data = dict(title=self.title_input.text(), category=self.category_input.currentText(),
+        data = dict(title=self.title_input.text(), category=self.category_input.currentData(),
                     status=self.status_input.currentData(), note=self.note_input.toPlainText(),
                     actual_start=None, actual_end=None)
         if planned:
@@ -188,8 +190,8 @@ class LocalEventDialog(QDialog):
     def delete(self):
         if not self._event or self._saved:
             return
-        if QMessageBox.question(self, "Удалить локальное событие?",
-                                f"Удалить «{self._event.title}»? Запись об удалении останется в истории.",
+        if QMessageBox.question(self, tr("Удалить локальное событие?"),
+                                tr("Удалить «{0}»? Запись об удалении останется в истории.").format(self._event.title),
                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return

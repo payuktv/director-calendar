@@ -6,6 +6,8 @@ from uuid import uuid4
 
 from PySide6.QtCore import QLockFile, QObject, QTimer, Signal
 
+from .i18n import tr
+
 
 class SingleInstance(QObject):
     activated = Signal()
@@ -28,7 +30,7 @@ class SingleInstance(QObject):
     def acquire(self):
         if not self.lock.tryLock(0):
             if self.lock.error() != QLockFile.LockError.LockFailedError:
-                raise OSError('Не удалось получить доступ к папке данных приложения.')
+                raise OSError(tr('Не удалось получить доступ к папке данных приложения.'))
             return False
         self.owner = True
         self.activation_path.unlink(missing_ok=True)

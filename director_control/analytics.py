@@ -6,6 +6,7 @@ from dataclasses import dataclass, fields
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
+from .i18n import decimal_text, tr
 from .storage import Event
 from .provenance import work_origin
 from .source_state import source_state
@@ -22,7 +23,7 @@ def period_bounds(anchor: date, mode: str) -> tuple[date, date]:
     if mode == 'month':
         start = anchor.replace(day=1)
         return start, date(start.year + (start.month == 12), start.month % 12 + 1, 1)
-    raise ValueError('Неизвестный период аналитики')
+    raise ValueError(tr('Неизвестный период аналитики'))
 
 
 def interval(start: str | None, end: str | None):
@@ -229,37 +230,37 @@ def build_report(anchor, mode, only_tracked, events, categories, rules, metadata
 
 def export_report(report: Report, destination: Path | str):
     """Weighted period summary and additive daily data, suitable for Russian Excel."""
-    headers = ['Строка', 'С', 'По', 'Категории', 'В плане', 'Выполнено из плана',
-               'Выполнено по дате факта/плана', 'Частично', 'Отменено из плана', 'Перенесено', 'Не подтверждено',
-               'Провалено из плана — ассистент', 'Провалено из плана — директор',
-               'Отменено всего', 'Провалено всего', 'Провалено — ассистент', 'Провалено — директор',
-               'Исполнение, %', 'План, мин', 'Факт, мин', 'Вне плана, мин', 'План не зафиксирован, мин',
-               'Доля внепланового, %', 'Доля — нижняя граница', 'Ожидают фактического времени', 'Сравнимых событий',
-               'Среднее абсолютное отклонение начала, мин', 'Среднее абсолютное отклонение длительности, мин',
-               'Начало вне допуска', 'Длительность вне допуска', 'Повторно учтено при пересечениях, мин',
-               'Дней с зафиксированным планом', 'Дней с полной загрузкой Mail.ru', 'Дней в периоде',
-               'Событий с предупреждением источника']
+    headers = [tr('Строка'), tr('С'), tr('По'), tr('Категории'), tr('В плане'), tr('Выполнено из плана'),
+               tr('Выполнено по дате факта/плана'), tr('Частично'), tr('Отменено из плана'), tr('Перенесено'), tr('Не подтверждено'),
+               tr('Провалено из плана — ассистент'), tr('Провалено из плана — директор'),
+               tr('Отменено всего'), tr('Провалено всего'), tr('Провалено — ассистент'), tr('Провалено — директор'),
+               tr('Исполнение, %'), tr('План, мин'), tr('Факт, мин'), tr('Вне плана, мин'), tr('План не зафиксирован, мин'),
+               tr('Доля внепланового, %'), tr('Доля — нижняя граница'), tr('Ожидают фактического времени'), tr('Сравнимых событий'),
+               tr('Среднее абсолютное отклонение начала, мин'), tr('Среднее абсолютное отклонение длительности, мин'),
+               tr('Начало вне допуска'), tr('Длительность вне допуска'), tr('Повторно учтено при пересечениях, мин'),
+               tr('Дней с зафиксированным планом'), tr('Дней с полной загрузкой Mail.ru'), tr('Дней в периоде'),
+               tr('Событий с предупреждением источника')]
 
     def row(label, start, end, m, summary=False):
         return [label, start.isoformat(), (end - timedelta(days=1)).isoformat(),
-                'Контролируемые' if report.only_tracked else 'Все', m.planned, m.done, m.completed,
+                tr('Контролируемые') if report.only_tracked else tr('Все'), m.planned, m.done, m.completed,
                 m.partial, m.cancelled, m.moved, m.pending, m.failed_assistant, m.failed_director,
                 m.cancelled_total, m.failed_total, m.failed_assistant_total, m.failed_director_total,
                 m.completion_percent, m.planned_seconds / 60,
                 m.actual_seconds / 60, m.unplanned_seconds / 60, m.unknown_seconds / 60,
-                m.unplanned_percent, 'Да' if m.unknown_seconds else 'Нет', m.missing_time, m.comparable,
+                m.unplanned_percent, tr('Да') if m.unknown_seconds else tr('Нет'), m.missing_time, m.comparable,
                 m.mean_start_minutes, m.mean_duration_minutes, m.start_outside, m.duration_outside,
                 m.overlap_seconds / 60, report.frozen_days if summary else None,
                 report.loaded_days if summary else None, len(report.daily) if summary else None,
                 report.source_warnings if summary else None]
 
     def value(v):
-        return '' if v is None else f'{v:.2f}'.replace('.', ',') if isinstance(v, float) else v
+        return '' if v is None else decimal_text(f'{v:.2f}') if isinstance(v, float) else v
 
     with Path(destination).open('w', encoding='utf-8-sig', newline='') as stream:
         writer = csv.writer(stream, delimiter=';')
         writer.writerow(headers)
-        writer.writerow([value(v) for v in row('Итого', report.start, report.end, report.totals, True)])
+        writer.writerow([value(v) for v in row(tr('Итого'), report.start, report.end, report.totals, True)])
         for day, metrics in report.daily.items():
-            writer.writerow([value(v) for v in row('День', day, day + timedelta(days=1), metrics)])
+            writer.writerow([value(v) for v in row(tr('День'), day, day + timedelta(days=1), metrics)])
 

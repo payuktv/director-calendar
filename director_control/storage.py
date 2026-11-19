@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Iterator
 from zoneinfo import ZoneInfo
 
+from .i18n import tr
 from .provenance import work_origin
 from .event_status import STATUSES, FAILED_STATUSES, fill_completed_actual
 from .record_validation import (
@@ -31,6 +32,13 @@ DEFAULT_CATEGORIES = [
 ]
 
 
+_BUILTIN_CATEGORY_NAMES = {name for name, _, _ in DEFAULT_CATEGORIES} | {"Весь день (Mail.ru)"}
+
+
+def category_label(name):
+    return tr(name) if name in _BUILTIN_CATEGORY_NAMES else name
+
+
 def default_data_dir() -> Path:
     if override := os.environ.get("DIRECTOR_CONTROL_DATA_DIR"):
         return Path(override).expanduser()
@@ -45,12 +53,14 @@ def now_iso() -> str:
 
 
 def validate_interval(start: str, end: str, label: str = "Интервал") -> None:
+    if label == "Интервал":
+        label = tr("Интервал")
     try:
         s, e = datetime.fromisoformat(start), datetime.fromisoformat(end)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"{label}: неверный формат даты/времени") from exc
+        raise ValueError(tr("{0}: неверный формат даты/времени").format(label)) from exc
     if s >= e:
-        raise ValueError(f"{label}: время окончания должно быть позже начала")
+        raise ValueError(tr("{0}: время окончания должно быть позже начала").format(label))
 
 
 def minutes_between(start: str, end: str) -> int:
@@ -83,7 +93,7 @@ class Event:
 
     @property
     def source_label(self) -> str:
-        return "Локально" if self.source == "local" else "Mail.ru"
+        return tr("Локально") if self.source == "local" else "Mail.ru"
 
 
 class Store:
@@ -113,7 +123,7 @@ class Store:
     def _initialize(self) -> None:
         with self._connect() as con:
             if con.execute("PRAGMA user_version").fetchone()[0] > 4:
-                raise ValueError("База создана более новой версией программы. Обнови приложение.")
+                raise ValueError(tr("База создана более новой версией программы. Обнови приложение."))
             con.executescript("""
                 CREATE TABLE IF NOT EXISTS categories (
                     name TEXT PRIMARY KEY,
@@ -200,7 +210,7 @@ class Store:
             con.execute('''INSERT OR IGNORE INTO baseline_rules SELECT e.id,e.category,c.track,? FROM events e
                 JOIN categories c ON c.name=e.category WHERE e.baseline_start IS NOT NULL''', (tolerance,))
             if con.execute('PRAGMA foreign_key_check').fetchall():
-                raise ValueError('Не удалось обновить формат базы: нарушены связи записей.')
+                raise ValueError(tr('Не удалось обновить формат базы: нарушены связи записей.'))
             con.execute('PRAGMA user_version=4')
 
     def _migrate_local_events(self):
@@ -223,7 +233,7 @@ class Store:
                 con.execute("CREATE TABLE events_v3 " + schema[opening:])
                 if any(row["name"] in {"current_start", "current_end"} and row["notnull"]
                        for row in con.execute("PRAGMA table_info(events_v3)")):
-                    raise ValueError("Не удалось обновить формат временных полей. Исходная база сохранена.")
+                    raise ValueError(tr("Не удалось обновить формат временных полей. Исходная база сохранена."))
                 sequence = con.execute("SELECT seq FROM sqlite_sequence WHERE name='events'").fetchone()
                 objects = con.execute("SELECT sql FROM sqlite_master WHERE tbl_name='events' AND type IN ('index','trigger') AND sql IS NOT NULL").fetchall()
                 con.execute("INSERT INTO events_v3 SELECT * FROM events")
@@ -237,7 +247,7 @@ class Store:
                     else:
                         con.execute("INSERT INTO sqlite_sequence(name,seq) VALUES ('events',?)", (sequence[0],))
                 if con.execute("PRAGMA foreign_key_check").fetchall():
-                    raise ValueError("Не удалось обновить формат базы: нарушены связи записей.")
+                    raise ValueError(tr("Не удалось обновить формат базы: нарушены связи записей."))
                 con.execute("PRAGMA user_version=3")
                 con.commit()
             except Exception:
@@ -259,24 +269,24 @@ class Store:
         try:
             validate_text(name)
         except ValueError:
-            raise ValueError("Недопустимое название категории") from None
+            raise ValueError(tr("Недопустимое название категории")) from None
         name = name.strip()
         if not name or len(name) > 60:
-            raise ValueError("Название категории должно содержать 1–60 символов")
+            raise ValueError(tr("Название категории должно содержать 1–60 символов"))
         if type(track) not in (bool, int) or track not in (0, 1):
-            raise ValueError("Укажи, контролировать ли категорию")
+            raise ValueError(tr("Укажи, контролировать ли категорию"))
         with self._connect() as con:
             con.execute("INSERT INTO categories VALUES (?, ?, ?)", (name, "#6A8DB8", int(track)))
             self._audit(con, None, name, 'Создание категории', {'контролировать': bool(track)})
 
     def set_category_tracking(self, name: str, track: bool) -> None:
         if type(track) not in (bool, int) or track not in (0, 1):
-            raise ValueError("Укажи, контролировать ли категорию")
+            raise ValueError(tr("Укажи, контролировать ли категорию"))
         with self._connect() as con:
             con.execute('BEGIN IMMEDIATE')
             old = con.execute('SELECT track FROM categories WHERE name=?', (name,)).fetchone()
             if old is None:
-                raise ValueError('Категория не найдена')
+                raise ValueError(tr('Категория не найдена'))
             if old['track'] == int(track):
                 return
             con.execute("UPDATE categories SET track=? WHERE name=?", (int(track), name))
@@ -291,7 +301,7 @@ class Store:
         with self._connect() as con:
             if key == 'tolerance_minutes':
                 if not 0 <= int(value) <= 180:
-                    raise ValueError('Допустимое отклонение: от 0 до 180 минут')
+                    raise ValueError(tr('Допустимое отклонение: от 0 до 180 минут'))
                 con.execute('BEGIN IMMEDIATE')
                 old = con.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
                 if old is None or old['value'] != value:
@@ -310,38 +320,38 @@ class Store:
         with self._connect() as con:
             r = con.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
         if r is None:
-            raise KeyError(f"Мероприятие #{event_id} не найдено")
+            raise KeyError(tr("Мероприятие #{0} не найдено").format(event_id))
         return self._as_event(r)
 
     def _validate_event_data(self, data: dict) -> None:
         title = data.get("title")
         if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
-            raise ValueError("Название мероприятия должно содержать 1–200 символов")
+            raise ValueError(tr("Название мероприятия должно содержать 1–200 символов"))
         if data.get("status") not in STATUSES:
-            raise ValueError("Неизвестный статус")
+            raise ValueError(tr("Неизвестный статус"))
         if data.get("category") not in {row["name"] for row in self.categories()}:
-            raise ValueError("Выбери существующую категорию")
-        for start, end, label in (("current_start", "current_end", "Актуальный план"),
-                                  ("actual_start", "actual_end", "Фактическое время")):
+            raise ValueError(tr("Выбери существующую категорию"))
+        for start, end, label in (("current_start", "current_end", tr("Актуальный план")),
+                                  ("actual_start", "actual_end", tr("Фактическое время"))):
             if bool(data.get(start)) != bool(data.get(end)):
-                raise ValueError(f"{label}: укажи оба времени либо оставь оба пустыми")
+                raise ValueError(tr("{0}: укажи оба времени либо оставь оба пустыми").format(label))
             if data.get(start):
                 try:
                     stamps = [datetime.fromisoformat(data[field]) for field in (start, end)]
                 except (TypeError, ValueError) as exc:
-                    raise ValueError(f"{label}: неверный формат даты/времени") from exc
+                    raise ValueError(tr("{0}: неверный формат даты/времени").format(label)) from exc
                 if any(stamp.tzinfo is not None for stamp in stamps):
-                    raise ValueError(f"{label}: укажи местное время без часового пояса")
+                    raise ValueError(tr("{0}: укажи местное время без часового пояса").format(label))
                 validate_interval(data[start], data[end], label)
                 data[start], data[end] = (stamp.isoformat() for stamp in stamps)
             else:
                 data[start] = data[end] = None
         if not data.get("current_start") and not data.get("actual_start"):
-            raise ValueError("Укажи фактическое время внепланового события или интервал плана")
+            raise ValueError(tr("Укажи фактическое время внепланового события или интервал плана"))
         try:
             validate_event_content(data)
         except ValueError:
-            raise ValueError("Некорректные данные события. Проверь название, примечание и время.") from None
+            raise ValueError(tr("Некорректные данные события. Проверь название, примечание и время.")) from None
 
     def create_event(self, title: str, category: str, current_start: str | None = None,
                      current_end: str | None = None, *, actual_start: str | None = None,
@@ -366,11 +376,11 @@ class Store:
         row = con.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
         if row is None:
             if expected_revision is not None:
-                raise EventConflictError('Событие уже удалено. Закрой карточку и обнови календарь.')
-            raise KeyError('Событие не найдено')
+                raise EventConflictError(tr('Событие уже удалено. Закрой карточку и обнови календарь.'))
+            raise KeyError(tr('Событие не найдено'))
         event = self._as_event(row)
         if expected_revision is not None and event.revision != expected_revision:
-            raise EventConflictError('Событие изменилось после открытия карточки. Изменения не сохранены. Закрой карточку и открой её снова.')
+            raise EventConflictError(tr('Событие изменилось после открытия карточки. Изменения не сохранены. Закрой карточку и открой её снова.'))
         return event
 
     def update_event(self, event_id: int, *, expected_revision=None, **updates: str | None) -> None:
@@ -381,15 +391,15 @@ class Store:
     def _update_event(self, con, event_id, expected_revision, updates):
         old = self._checked_event(con, event_id, expected_revision)
         if old.source not in {"caldav", "local"}:
-            raise ValueError("Учёт доступен для событий Mail.ru и новых локальных событий.")
+            raise ValueError(tr("Учёт доступен для событий Mail.ru и новых локальных событий."))
         source_fields = {"title", "current_start", "current_end"}
         if old.source == "caldav" and source_fields.intersection(updates):
-            raise ValueError("Название и плановое время события меняются только в Mail.ru.")
+            raise ValueError(tr("Название и плановое время события меняются только в Mail.ru."))
         allowed = {"category", "actual_start", "actual_end", "status", "note"}
         if old.source == "local":
             allowed |= source_fields
         if not updates or not set(updates).issubset(allowed):
-            raise ValueError("Недопустимые поля изменения")
+            raise ValueError(tr("Недопустимые поля изменения"))
         data = asdict(old)
         data.update(updates)
         if "title" in updates and isinstance(data["title"], str):
@@ -404,7 +414,7 @@ class Store:
             changed_fields.update({"actual_start", "actual_end"})
         self._validate_event_data(data)
         if old.source == "local" and bool(old.current_start) != bool(data["current_start"]):
-            raise ValueError("Тип существующего локального события менять нельзя: сохрани план и факт раздельно.")
+            raise ValueError(tr("Тип существующего локального события менять нельзя: сохрани план и факт раздельно."))
         changes = {k: {"было": getattr(old, k), "стало": data[k]} for k in sorted(changed_fields) if getattr(old, k) != data[k]}
         if not changes:
             return
@@ -420,9 +430,9 @@ class Store:
             con.execute("BEGIN IMMEDIATE")
             event = self._checked_event(con, event_id, expected_revision)
             if event.source != "local":
-                raise ValueError("Удалять можно только локальные события. События Mail.ru меняются в Mail.ru.")
+                raise ValueError(tr("Удалять можно только локальные события. События Mail.ru меняются в Mail.ru."))
             if event.baseline_start:
-                raise ValueError("Событие входит в зафиксированный план. Вместо удаления выбери статус «Отменено».")
+                raise ValueError(tr("Событие входит в зафиксированный план. Вместо удаления выбери статус «Отменено»."))
             self._audit(con, event_id, event.title, "Удаление локального события", asdict(event))
             con.execute("DELETE FROM events WHERE id=?", (event_id,))
 
@@ -431,7 +441,7 @@ class Store:
         with self._connect() as con:
             con.execute('BEGIN IMMEDIATE')
             if con.execute("SELECT 1 FROM day_freezes WHERE day=?", (day,)).fetchone():
-                raise ValueError("Первоначальный план на эту дату уже зафиксирован")
+                raise ValueError(tr("Первоначальный план на эту дату уже зафиксирован"))
             con.execute("INSERT INTO day_freezes VALUES (?, ?)", (day, now_iso()))
             ids = con.execute("SELECT id, title FROM events WHERE source IN ('caldav','local') AND substr(current_start,1,10)=? AND baseline_start IS NULL", (day,)).fetchall()
             con.execute("""UPDATE events SET baseline_start=current_start, baseline_end=current_end, revision=revision+1
@@ -585,14 +595,14 @@ class Store:
         """
         from .history import AuditPage, matches, normalise
         if not isinstance(limit, int) or not 1 <= limit <= 500:
-            raise ValueError('Размер страницы: от 1 до 500 записей.')
+            raise ValueError(tr('Размер страницы: от 1 до 500 записей.'))
         if any(value is not None and (not isinstance(value, int) or value < 0)
                for value in (before_id, ceiling_id)):
-            raise ValueError('Некорректная граница страницы истории.')
+            raise ValueError(tr('Некорректная граница страницы истории.'))
         start = date.fromisoformat(date_from) if isinstance(date_from, str) else date_from
         end = date.fromisoformat(date_to) if isinstance(date_to, str) else date_to
         if start and end and start > end:
-            raise ValueError('Дата «С» должна быть не позже даты «По».')
+            raise ValueError(tr('Дата «С» должна быть не позже даты «По».'))
         clauses, args = [], []
         if start:
             clauses.append('a.changed_at>=?')
@@ -604,7 +614,7 @@ class Store:
             clauses.append('a.event_id IS NULL')
         elif event_id is not None:
             if not isinstance(event_id, int) or event_id <= 0:
-                raise ValueError('Выбери событие из истории.')
+                raise ValueError(tr('Выбери событие из истории.'))
             clauses.append('a.event_id=?')
             args.append(event_id)
         if normalise(event_search):
@@ -643,11 +653,12 @@ class Store:
                   "actual_start", "actual_end", "status", "note", "source"]
         with open(destination, "w", encoding="utf-8-sig", newline="") as out:
             writer = csv.writer(out, delimiter=";")
-            writer.writerow(["ID", "Мероприятие", "Категория", "Первоначально с", "Первоначально до", "Актуально с",
-                             "Актуально до", "Факт с", "Факт до", "Статус", "Комментарий", "Источник"])
+            writer.writerow(["ID", tr("Мероприятие"), tr("Категория"), tr("Первоначально с"), tr("Первоначально до"), tr("Актуально с"),
+                             tr("Актуально до"), tr("Факт с"), tr("Факт до"), tr("Статус"), tr("Комментарий"), tr("Источник")])
             for event in self.daily_events(day):
                 values = asdict(event)
-                values["status"] = STATUSES[values["status"]]
+                values["status"] = tr(STATUSES[values["status"]])
+                values["category"] = category_label(event.category)
                 values["source"] = event.source_label
                 # Protect Excel from interpreting attacker-supplied calendar text as formulas.
                 def excel_safe(value):
@@ -682,13 +693,13 @@ class Store:
                 AND start<=? AND end>=? ORDER BY id DESC LIMIT 1""",
                 (calendar_key, start, end)).fetchone()
         if row is None:
-            return 'Нет подтверждённого полного обновления Mail.ru за выбранный день.'
+            return tr('Нет подтверждённого полного обновления Mail.ru за выбранный день.')
         if row['status'] != 'complete':
-            return ('Последнее обновление Mail.ru за этот день было частичным.' if row['status'] == 'partial'
-                    else 'Последняя попытка обновить Mail.ru за этот день завершилась ошибкой.')
+            return (tr('Последнее обновление Mail.ru за этот день было частичным.') if row['status'] == 'partial'
+                    else tr('Последняя попытка обновить Mail.ru за этот день завершилась ошибкой.'))
         age = datetime.now() - datetime.fromisoformat(row['finished_at'])
         if age < timedelta(0) or age > timedelta(minutes=30):
-            return 'Данные Mail.ru за этот день обновлялись более 30 минут назад. Расписание могло измениться.'
+            return tr('Данные Mail.ru за этот день обновлялись более 30 минут назад. Расписание могло измениться.')
         return ''
 
     def has_schedule_events(self) -> bool:
@@ -705,10 +716,10 @@ class Store:
             for event in snapshot.events:
                 validate_remote_event(event)
         except ValueError:
-            raise ValueError("Некорректные данные календаря. Данные не изменены.") from None
+            raise ValueError(tr("Некорректные данные календаря. Данные не изменены.")) from None
         for event in snapshot.events:
             if event.key in seen:
-                raise ValueError("Повторный идентификатор события в ответе календаря")
+                raise ValueError(tr("Повторный идентификатор события в ответе календаря"))
             seen.add(event.key)
         with self._connect() as con:
             con.execute('BEGIN IMMEDIATE')
@@ -736,7 +747,7 @@ class Store:
                     event_id = row["id"]
                     meta = con.execute("SELECT * FROM calendar_events WHERE event_id=?", (event_id,)).fetchone()
                     if row["source"] != "caldav" or meta is None or meta["calendar_key"] != snapshot.calendar_key:
-                        raise ValueError("Конфликт источника календаря")
+                        raise ValueError(tr("Конфликт источника календаря"))
                     status = row["status"] if meta["local_status"] else source_status
                     changes = {k: {"было": row[k], "стало": v} for k, v in {
                         "title": event.title, "current_start": event.start, "current_end": event.end,

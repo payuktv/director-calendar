@@ -9,6 +9,7 @@ import json
 import math
 
 from .event_status import STATUSES
+from .i18n import tr
 
 
 ERROR = 'В базе некорректные записи приложения. Выбери другую резервную копию.'
@@ -19,7 +20,7 @@ MAX_INTEGER = 2**63 - 2  # Leave room for incrementing a revision/sequence.
 
 def _require(condition):
     if not condition:
-        raise ValueError(ERROR)
+        raise ValueError(tr(ERROR))
 
 
 def validate_text(value, *, nullable=False, nonempty=False, maximum=None):
@@ -186,5 +187,5 @@ def validate_records(con, tables, budget):
     except (ValueError, TypeError, OverflowError, RecursionError):
         budget.check()
         # Never include event text, account identifiers or raw JSON in an error.
-        raise ValueError(ERROR) from None
+        raise ValueError(tr(ERROR)) from None
     budget.check()

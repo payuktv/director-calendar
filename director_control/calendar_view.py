@@ -12,7 +12,8 @@ from PySide6.QtCore import QElapsedTimer, QEvent, QPoint, QPointF, QRectF, Qt, Q
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QTextLayout, QTextOption
 from PySide6.QtWidgets import QApplication, QScrollArea, QStackedWidget, QToolTip, QVBoxLayout, QWidget
 
-from .storage import STATUSES
+from .i18n import tr
+from .storage import STATUSES, category_label
 from .schedule import event_interval
 from .theme import color as theme_color, is_dark
 
@@ -250,8 +251,8 @@ class HitCanvas(QWidget):
             if hit:
                 interval = event_interval(hit, self.board.layer)
                 times = f"{interval[0]:%d.%m %H:%M} — {interval[1]:%d.%m %H:%M}" if interval else ""
-                source = hit.source_label + (" · Вне плана, факт" if hit.is_postfactum else "")
-                detail = escape(f"{hit.title}\n{times}\n{hit.category} · {STATUSES[hit.status]}\n{source}").replace("\n", "<br>")
+                source = hit.source_label + (tr(" · Вне плана, факт") if hit.is_postfactum else "")
+                detail = escape(f"{hit.title}\n{times}\n{category_label(hit.category)} · {tr(STATUSES[hit.status])}\n{source}").replace("\n", "<br>")
                 QToolTip.showText(event.globalPos(), "<p>" + detail + "</p>", self)
                 return True
             QToolTip.hideText()
@@ -300,8 +301,9 @@ class HitCanvas(QWidget):
             used = text(painter, title_rect, event.title, 12, event_foreground(accent), QFont.Weight.DemiBold, wrap=True)
             status_top = title_rect.y() + used + 4
             if used and content.bottom() - status_top >= meta_height:
-                status_text = ("Вне плана · " + STATUSES[event.status] if event.is_postfactum
-                               else STATUSES[event.status] + (" · Локально" if event.source == "local" else ""))
+                label = tr(STATUSES[event.status])
+                status_text = (tr("Вне плана · ") + label if event.is_postfactum
+                               else label + (tr(" · Локально") if event.source == "local" else ""))
                 text(painter, QRectF(content.x(), status_top, content.width(), meta_height), status_text, 10, accent)
         painter.restore()
         self.hits.append((rect, event))
@@ -395,7 +397,7 @@ class DayHeader(HitCanvas):
         for day, x, width in self.board.time_columns():
             if day in self.board.frozen_days:
                 p.fillRect(QRectF(x, 0, width, self.height()), theme_color("frozen_day"))
-            text(p, QRectF(x + 12, 7, width - 16, 17), WEEKDAYS[day.weekday()], 10, theme_color("calendar_muted"), QFont.Weight.DemiBold)
+            text(p, QRectF(x + 12, 7, width - 16, 17), tr(WEEKDAYS[day.weekday()]), 10, theme_color("calendar_muted"), QFont.Weight.DemiBold)
             if day == self.board.today():
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(theme_color("primary"))
@@ -408,11 +410,11 @@ class DayHeader(HitCanvas):
             for row, item in enumerate(self.board.all_day.get(day, [])[:2]):
                 self.draw_chip(p, QRectF(x + 5, 63 + row * 25, width - 10, 22), item, compact=True)
             if len(self.board.all_day.get(day, [])) > 2:
-                text(p, QRectF(x + 9, 113, width - 12, 18), f"Ещё {len(self.board.all_day[day]) - 2} · список", 10, theme_color("calendar_muted"))
+                text(p, QRectF(x + 9, 113, width - 12, 18), tr("Ещё {0} · список").format(len(self.board.all_day[day]) - 2), 10, theme_color("calendar_muted"))
         p.setPen(QPen(theme_color("grid"), 1))
         p.drawLine(QPoint(0, self.height() - 1), QPoint(self.board.grid.width(), self.height() - 1))
         if any(self.board.all_day.values()):
-            text(p, QRectF(2, 65, GUTTER - 5, 20), "Весь день", 9, theme_color("calendar_muted"))
+            text(p, QRectF(2, 65, GUTTER - 5, 20), tr("Весь день"), 9, theme_color("calendar_muted"))
         p.end()
 
     def mousePressEvent(self, event):
@@ -454,7 +456,7 @@ class MonthGrid(HitCanvas):
         width, height = self.width() / 7, (self.height() - 28) / 6
         days = period_days(self.board.focus, "month")
         for col in range(7):
-            text(p, QRectF(col * width + 12, 0, width - 16, 25), WEEKDAYS[col], 10, theme_color("calendar_muted"), QFont.Weight.DemiBold)
+            text(p, QRectF(col * width + 12, 0, width - 16, 25), tr(WEEKDAYS[col]), 10, theme_color("calendar_muted"), QFont.Weight.DemiBold)
         for index, day in enumerate(days):
             x, y = index % 7 * width, 28 + index // 7 * height
             if day == self.board.focus:
@@ -494,7 +496,7 @@ class MonthGrid(HitCanvas):
                 self.draw_chip(p, rect, item, compact=True)
             if len(items) > shown:
                 rect = QRectF(x + 10, y + 34 + shown * 23, width - 16, 20)
-                text(p, rect, f"+{len(items) - shown} событий", 10, theme_color("calendar_muted"))
+                text(p, rect, tr("+{0} событий").format(len(items) - shown), 10, theme_color("calendar_muted"))
                 self.more.append((rect, day))
         p.end()
 
@@ -539,7 +541,7 @@ class CalendarBoard(QWidget):
         self.timed, self.all_day = {}, {}
         self.metadata = {}
         self.frozen_days = frozenset()
-        self.setToolTip("Зелёный фон дня — исходный план зафиксирован")
+        self.setToolTip(tr("Зелёный фон дня — исходный план зафиксирован"))
         self.stack = QStackedWidget()
         timeline = QWidget()
         layout = QVBoxLayout(timeline)

@@ -9,6 +9,8 @@ import re
 import sqlite3
 from time import monotonic
 
+from .i18n import tr
+
 MAX_DATABASE_BYTES = 512 * 1024 * 1024
 MAX_VALUE_BYTES = 8 * 1024 * 1024
 MAX_SCHEMA_OBJECTS = 64
@@ -26,7 +28,7 @@ class Budget:
 
     def check(self):
         if self.expired():
-            raise ValueError('Проверка или копирование базы превысили допустимое время.')
+            raise ValueError(tr('Проверка или копирование базы превысили допустимое время.'))
 
 
 def check_file_size(path):
@@ -37,7 +39,7 @@ def check_file_size(path):
         if candidate.exists():
             total += candidate.stat().st_size
     if total > MAX_DATABASE_BYTES:
-        raise ValueError('Размер базы превышает допустимые 512 МиБ.')
+        raise ValueError(tr('Размер базы превышает допустимые 512 МиБ.'))
 
 
 def configure_connection(con, *, inspection=False):
@@ -64,10 +66,10 @@ _TOKEN = re.compile(r"\s+|'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|[A-Za-z_][A-Za-z_0-
 def tokens(sql):
     result, position = [], 0
     if not isinstance(sql, str) or len(sql) > 128 * 1024:
-        raise ValueError(SCHEMA_ERROR)
+        raise ValueError(tr(SCHEMA_ERROR))
     for match in _TOKEN.finditer(sql):
         if match.start() != position:
-            raise ValueError(SCHEMA_ERROR)
+            raise ValueError(tr(SCHEMA_ERROR))
         position = match.end()
         token = match[0]
         if token.isspace():
@@ -78,7 +80,7 @@ def tokens(sql):
             token = token.lower()
         result.append(token)
     if position != len(sql):
-        raise ValueError(SCHEMA_ERROR)
+        raise ValueError(tr(SCHEMA_ERROR))
     if result and result[-1] == ';':
         result.pop()
     return tuple(result)
@@ -115,15 +117,15 @@ def validate_schema(con):
     known = _table_variants()
     rows = con.execute('SELECT type,name,tbl_name,sql FROM sqlite_schema').fetchmany(MAX_SCHEMA_OBJECTS + 1)
     if len(rows) > MAX_SCHEMA_OBJECTS:
-        raise ValueError(SCHEMA_ERROR)
+        raise ValueError(tr(SCHEMA_ERROR))
     tables = set()
     for kind, name, table, sql in rows:
         if kind == 'table':
             if name != table or name not in known or tokens(sql) not in known[name]:
-                raise ValueError(SCHEMA_ERROR)
+                raise ValueError(tr(SCHEMA_ERROR))
             tables.add(name)
         elif kind != 'index':
-            raise ValueError(SCHEMA_ERROR)
+            raise ValueError(tr(SCHEMA_ERROR))
     # Index column names are read only after the table DDL has been approved.
     columns = {name: {r[1].lower() for r in con.execute('PRAGMA table_info("' + name + '")')}
                for name in tables}
@@ -131,21 +133,21 @@ def validate_schema(con):
         if kind != 'index':
             continue
         if table not in tables:
-            raise ValueError(SCHEMA_ERROR)
+            raise ValueError(tr(SCHEMA_ERROR))
         if sql is None:
             if not re.fullmatch('sqlite_autoindex_' + re.escape(table) + r'_[1-9][0-9]*', name):
-                raise ValueError(SCHEMA_ERROR)
+                raise ValueError(tr(SCHEMA_ERROR))
             continue
         parts = tokens(sql)
         if parts[:6] != ('create', 'index', name.lower(), 'on', table.lower(), '(') or parts[-1:] != (')',):
-            raise ValueError(SCHEMA_ERROR)
+            raise ValueError(tr(SCHEMA_ERROR))
         inner = list(parts[6:-1])
         while inner:
             if inner.pop(0) not in columns[table]:
-                raise ValueError(SCHEMA_ERROR)
+                raise ValueError(tr(SCHEMA_ERROR))
             if inner and inner[0] in ('asc', 'desc'):
                 inner.pop(0)
             if inner and (inner.pop(0) != ',' or not inner):
-                raise ValueError(SCHEMA_ERROR)
+                raise ValueError(tr(SCHEMA_ERROR))
         if len(parts) < 8:
-            raise ValueError(SCHEMA_ERROR)
+            raise ValueError(tr(SCHEMA_ERROR))
