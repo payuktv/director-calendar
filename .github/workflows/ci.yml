@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   test:
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 25 || 15 }}
     strategy:
       matrix:
         os: ${{ fromJSON((inputs.suite == 'full' || github.event_name == 'workflow_dispatch') && '["windows-latest","ubuntu-latest"]' || '["windows-latest"]') }}
