@@ -16,6 +16,7 @@ LIGHT = {
     "hover_border": "#CCC5FA", "pressed": "#EBE6FF", "disabled_text": "#B3B5C4",
     "disabled_border": "#EEEFF5", "disabled_surface": "#FAFAFD", "primary_disabled": "#C5BDF4",
     "nav_text": "#75798E", "nav_hover": "#F6F5FC", "segment_text": "#86899C",
+    "secondary_text": "#64697D",
     "segment_selected": "#5140BF", "segment_border": "#E5E1F7", "segments": "#EFEEF6",
     "danger": "#C45C70", "selection": "#DDD6FF", "focus_border": "#9C8DF3",
     "readonly_surface": "#F4F5F9", "readonly_text": "#8A8DA0", "table_alternate": "#FCFCFF",
@@ -42,6 +43,7 @@ DARK = {
     "hover_border": "#736499", "pressed": "#3D355D", "disabled_text": "#78849A",
     "disabled_border": "#343D50", "disabled_surface": "#242B39", "primary_disabled": "#4D446D",
     "nav_text": "#B0BBD0", "nav_hover": "#262D40", "segment_text": "#A1ADC2",
+    "secondary_text": "#B0BBD0",
     "segment_selected": "#CEBFFF", "segment_border": "#554976", "segments": "#191F2C",
     "danger": "#F09AAC", "selection": "#524476", "focus_border": "#B5A5FF",
     "readonly_surface": "#252C3A", "readonly_text": "#95A1B7", "table_alternate": "#222A3A",
@@ -115,12 +117,34 @@ QComboBox::drop-down { border: none; width: 22px; }
 QComboBox QAbstractItemView { background: $surface; border: 1px solid $control_border; selection-background-color: $soft_accent; }
 QGroupBox { background: $surface; border: 1px solid $border; border-radius: 12px; margin-top: 17px; padding: 22px 16px 16px; font-weight: 650; }
 QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 5px; }
-QGroupBox[settingsSection="true"] { margin-top: 18px; padding: 0; }
-QGroupBox[settingsSection="true"]::title { left: 20px; padding: 0 4px; }
+QTabWidget#SettingsTabs::pane { background: $surface; border: 1px solid $border; border-radius: 10px; }
+QTabWidget#SettingsTabs QTabBar::tab { background: transparent; color: $secondary_text;
+    border: none; border-bottom: 2px solid transparent; padding: 9px 12px; margin: 0 2px 6px 0; font-weight: 600; }
+QTabWidget#SettingsTabs QTabBar::tab:hover { color: $text; background: $hover; }
+QTabWidget#SettingsTabs QTabBar::tab:selected { color: $segment_selected; border-bottom-color: $accent; }
+QTabWidget#SettingsTabs QTabBar::tab:selected:focus { background: $soft_accent; }
+QWidget#SettingsContent, QScrollArea#SettingsScroll { background: $surface; }
+QWidget#SettingsContent QLabel#Muted, QWidget#SettingsContent QHeaderView::section { color: $secondary_text; }
+QFrame#SettingsDivider { background: $border; border: none; max-height: 1px; }
+QGroupBox[settingsSection="true"] { background: transparent; border: none; border-radius: 0;
+    margin-top: 23px; padding: 0; font-size: 15px; font-weight: 600; }
+QGroupBox[settingsSection="true"]::title { subcontrol-origin: margin; subcontrol-position: top left; left: 0; padding: 0; }
+QWidget#SettingsContent QPushButton { padding: 6px 11px; }
+QWidget#SettingsContent QLineEdit, QWidget#SettingsContent QComboBox, QWidget#SettingsContent QSpinBox {
+    min-height: 20px; padding: 5px 9px; }
 QTableWidget { background: $surface; alternate-background-color: $table_alternate; border: 1px solid $border; border-radius: 10px;
     gridline-color: $table_grid; selection-background-color: $soft_accent; selection-color: $selection_text; outline: none; }
 QTableWidget::item { padding: 7px; border-bottom: 1px solid $table_grid; }
 QHeaderView::section { background: $table_header; color: $header_text; border: none; border-bottom: 1px solid $border; padding: 12px 8px; font-size: 11px; font-weight: 600; }
+QTableWidget#HistoryTable::item { padding: 3px 8px; border-bottom: 1px solid $table_grid; }
+QTableWidget#HistoryTable QHeaderView::section { padding: 7px 8px; color: $secondary_text; }
+HistoryPage QLabel#Muted { color: $secondary_text; }
+HistoryPage QPushButton#Link:disabled { color: $muted; }
+QFrame#HistoryFiltersPanel { background: $surface; border: 1px solid $border; border-radius: 8px; }
+QPushButton#HistoryFilters:checked { background: $soft_accent; color: $segment_selected; border-color: $hover_border; }
+QPushButton#HistoryPageButton { background: transparent; border: 1px solid transparent; padding: 5px 8px; }
+QPushButton#HistoryPageButton:hover:enabled { background: $hover; border-color: $hover_border; }
+QPushButton#HistoryPageButton:focus { border-color: $focus_border; }
 QScrollArea { border: none; background: transparent; }
 QScrollBar:vertical { background: transparent; width: 7px; margin: 2px; }
 QScrollBar::handle:vertical { background: $scrollbar; border-radius: 3px; min-height: 30px; }

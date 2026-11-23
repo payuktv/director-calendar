@@ -3,9 +3,10 @@ from datetime import date
 from html import escape
 
 from PySide6.QtCore import QDate, QTimer, Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QCompleter, QDateEdit, QDialog, QDialogButtonBox,
-    QHBoxLayout, QHeaderView, QLineEdit, QPlainTextEdit, QPushButton,
+    QFrame, QHBoxLayout, QHeaderView, QLineEdit, QPlainTextEdit, QPushButton,
     QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -14,6 +15,9 @@ from .i18n import tr
 from .date_picker import install_date_picker
 from .history import describe, display_time, history_title
 from .inspector import plain_label, text_label
+
+
+SHORT_ACTIONS = {'Изменение': 'Данные изменены', 'Фиксация плана': 'План зафиксирован'}
 
 
 def number(value):
@@ -25,14 +29,14 @@ class HistoryEntryDialog(QDialog):
         super().__init__(parent)
         self.requested_event = None
         self.setWindowTitle(tr('Запись истории'))
-        self.resize(700, 570)
-        self.setMinimumSize(540, 390)
+        self.resize(640, 440)
+        self.setMinimumSize(460, 300)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 22)
-        layout.setSpacing(14)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(9)
         description = describe(record['action'], record['details'])
-        for value, name in ((description.action, 'EventTitle'), (history_title(record['title'], record['action']), 'SectionTitle'),
-                            (display_time(record['changed_at'], seconds=True), 'Muted')):
+        metadata = f"{description.action}  ·  {display_time(record['changed_at'], seconds=True)}"
+        for value, name in ((history_title(record['title'], record['action']), 'EventTitle'), (metadata, 'Muted')):
             label = plain_label(value, name)
             label.setWordWrap(True)
             layout.addWidget(label)
@@ -73,21 +77,29 @@ class HistoryPage(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(300)
         self.timer.timeout.connect(self.apply_filters)
 
         search_row = QHBoxLayout()
+        search_row.setSpacing(6)
         self.search = QLineEdit()
-        localized(self.search, placeholderText='Поиск по названию, действию и описанию изменений')
+        localized(self.search, placeholderText='Поиск в истории', accessibleName='Поиск в истории',
+                  toolTip='Поиск по названию, действию и описанию изменений')
         self.search.setClearButtonEnabled(True)
         self.search.setMaxLength(300)
         self.search.textChanged.connect(self.queue_filters)
         self.search.returnPressed.connect(self.apply_filters)
         search_row.addWidget(self.search, 1)
+        self.filters_button = localized(QPushButton(), text='Фильтры')
+        self.filters_button.setObjectName('HistoryFilters')
+        self.filters_button.setCheckable(True)
+        search_row.addWidget(self.filters_button)
         self.reset_button = localized(QPushButton(), text='Сбросить фильтры')
+        self.reset_button.setObjectName('Link')
+        self.reset_button.hide()
         self.reset_button.clicked.connect(self.reset_filters)
         search_row.addWidget(self.reset_button)
         self.refresh_button = localized(QPushButton(), text='Обновить')
@@ -95,9 +107,18 @@ class HistoryPage(QWidget):
         search_row.addWidget(self.refresh_button)
         layout.addLayout(search_row)
 
+        self.filters_panel = QFrame()
+        self.filters_panel.setObjectName('HistoryFiltersPanel')
+        filters = QVBoxLayout(self.filters_panel)
+        filters.setContentsMargins(12, 9, 12, 9)
+        filters.setSpacing(6)
+        self.filters_panel.hide()
+        self.filters_button.toggled.connect(self.filters_panel.setVisible)
+        layout.addWidget(self.filters_panel)
         event_row = QHBoxLayout()
         event_row.addWidget(text_label('Событие'))
         self.event_filter = QComboBox()
+        localized(self.event_filter, accessibleName='Событие')
         self.event_filter.setEditable(True)
         self.event_filter.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.event_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -121,7 +142,7 @@ class HistoryPage(QWidget):
         self.selected_event_button.setEnabled(False)
         self.selected_event_button.clicked.connect(self.filter_selected_event)
         event_row.addWidget(self.selected_event_button)
-        layout.addLayout(event_row)
+        filters.addLayout(event_row)
 
         dates = QHBoxLayout()
         self.date_enabled = localized(QCheckBox(), text='Дата изменения')
@@ -133,11 +154,13 @@ class HistoryPage(QWidget):
         self.date_to = self._date_edit(today)
         for caption, control in (('С', self.date_from), ('По', self.date_to)):
             dates.addWidget(text_label(caption))
+            localized(control, accessibleName=caption)
             dates.addWidget(control)
         dates.addStretch()
-        layout.addLayout(dates)
+        filters.addLayout(dates)
         self.message = plain_label('', 'Muted')
         self.message.setWordWrap(True)
+        self.message.hide()
         layout.addWidget(self.message)
         self.error = plain_label('', 'DangerText')
         self.error.setWordWrap(True)
@@ -145,23 +168,46 @@ class HistoryPage(QWidget):
         layout.addWidget(self.error)
 
         self.table = QTableWidget(0, 4)
+        self.table.setObjectName('HistoryTable')
         set_headers(self.table, ['Когда изменено', 'Событие / объект', 'Действие', 'Что изменилось'])
         self.table.setMinimumWidth(0)
         self.table.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.table.setAlternatingRowColors(True)
-        self.table.setWordWrap(True)
-        self.table.verticalHeader().hide()
-        for column, width in ((0, 155), (1, 200), (2, 185)):
-            self.table.setColumnWidth(column, width)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(False)
+        vertical_header = self.table.verticalHeader()
+        vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        vertical_header.setDefaultSectionSize(38)
+        vertical_header.hide()
+        header = self.table.horizontalHeader()
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self._summary_widths = None
+        for column in (1, 3):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Stretch)
         self.table.activated.connect(self.open_record)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         localized(self.table, toolTip='Двойной щелчок или Enter — полное описание записи')
+        self.empty = plain_label('', 'Muted')
+        self.empty.setWordWrap(True)
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.empty.hide()
+        empty_layout = QVBoxLayout(self.table.viewport())
+        empty_layout.setContentsMargins(16, 8, 16, 8)
+        empty_layout.addWidget(self.empty)
         layout.addWidget(self.table, 1)
         footer = QHBoxLayout()
+        footer.setSpacing(6)
+        self.count = text_label('История ещё не загружена', 'Muted')
+        footer.addWidget(self.count)
+        self.open_entry_button = localized(QPushButton(), text='Открыть запись')
+        self.open_entry_button.setObjectName('Link')
+        self.open_entry_button.clicked.connect(lambda: self.open_record(self.table.currentIndex()))
+        self.open_entry_button.setEnabled(False)
+        footer.addWidget(self.open_entry_button)
+        footer.addStretch()
         self.first_button = localized(QPushButton(), text='К началу')
         self.first_button.clicked.connect(self.refresh_latest)
         self.newer_button = localized(QPushButton(), text='← Новее')
@@ -169,12 +215,11 @@ class HistoryPage(QWidget):
         self.older_button = localized(QPushButton(), text='Старее →')
         self.older_button.clicked.connect(self.go_older)
         for button in (self.first_button, self.newer_button, self.older_button):
+            button.setObjectName('HistoryPageButton')
             button.setEnabled(False)
             footer.addWidget(button)
-        footer.addStretch()
-        self.count = text_label('История ещё не загружена', 'Muted')
-        footer.addWidget(self.count)
         self.page_size = QComboBox()
+        localized(self.page_size, accessibleName='Записей на странице', toolTip='Записей на странице')
         for size in (50, 100, 200):
             add_choice(self.page_size, Message("По {0}", size), size)
         saved = store.get_setting('ui_history_page_size', '100')
@@ -263,11 +308,26 @@ class HistoryPage(QWidget):
         self.cursors, self.page_index, self.ceiling = [None], 0, None
         self.refresh()
 
+    def _fit_summary_columns(self):
+        metrics = self.table.fontMetrics()
+        # Two short cell margins keep full timestamps and everyday actions readable.
+        timestamp_width = metrics.horizontalAdvance('00.00.0000 00:00:00') + 24
+        action_width = max(metrics.horizontalAdvance(tr(label)) for label in SHORT_ACTIONS.values()) + 24
+        if self._summary_widths != (timestamp_width, action_width):
+            self._summary_widths = timestamp_width, action_width
+            self.table.setColumnWidth(0, timestamp_width)
+            self.table.setColumnWidth(2, action_width)
+
     def _load(self, preserve_view=False):
         if not self.window().isEnabled():
             self.dirty = True
             return
+        self._fit_summary_columns()
         event_id, typed = self._event_choice()
+        advanced = int(bool(event_id is not None or typed)) + int(self.date_enabled.isChecked())
+        localized(self.filters_button, text=Message('Фильтры · {0}', advanced) if advanced else 'Фильтры')
+        filtered = bool(advanced or self.search.text().strip())
+        self.reset_button.setVisible(filtered)
         selected = self.table.currentRow()
         selected_id = self.rows[selected]['id'] if preserve_view and 0 <= selected < len(self.rows) else None
         scroll = self.table.verticalScrollBar().value() if preserve_view else 0
@@ -284,20 +344,26 @@ class HistoryPage(QWidget):
             return
         self.page, self.rows, self.ceiling, self.dirty = page, list(page.rows), page.ceiling_id, False
         self.error.hide()
+        self.empty.setVisible(not page.total)
+        self.empty.setText(tr('По выбранным условиям записей нет. Измени или сбрось фильтры.')
+                           if filtered else tr('В истории пока нет записей'))
         self.table.setRowCount(len(self.rows))
+        title_font = self.table.font()
+        title_font.setWeight(QFont.Weight.DemiBold)
         for i, row in enumerate(self.rows):
             description = describe(row['action'], row['details'])
             for column, value in enumerate((display_time(row['changed_at'], seconds=True), history_title(row['title'], row['action']),
                                            description.action, description.details)):
-                item = QTableWidgetItem(value)
+                summary = tr(SHORT_ACTIONS[row['action']]) if column == 2 and row['action'] in SHORT_ACTIONS else value
+                item = QTableWidgetItem(' · '.join(summary.splitlines()))
+                if column == 1:
+                    item.setFont(title_font)
                 item.setToolTip('<qt>' + escape(value).replace('\n', '<br>') + '</qt>')
                 self.table.setItem(i, column, item)
-        self.table.resizeRowsToContents()
-        for i in range(len(self.rows)):
-            self.table.setRowHeight(i, max(48, min(108, self.table.rowHeight(i))))
         self.table.clearSelection()
         self.table.setCurrentCell(-1, -1)
         self.selected_event_button.setEnabled(False)
+        self.open_entry_button.setEnabled(False)
         if selected_id is not None:
             for i, row in enumerate(self.rows):
                 if row['id'] == selected_id:
@@ -307,9 +373,11 @@ class HistoryPage(QWidget):
         start = self.page_index * self.page_size.currentData() + 1 if self.rows else 0
         finish = start + len(self.rows) - 1 if self.rows else 0
         self.count.setText(tr("{0}–{1} из {2}").format(number(start), number(finish), number(page.total)))
-        self.message.setText((tr("Новых записей по фильтру: {0}. Нажми «Обновить», чтобы перейти к ним.").format(number(page.newer_count))
-                              if page.newer_count else tr('Двойной щелчок или Enter — полное описание записи.'))
-                             if page.total else tr('По выбранным условиям записей нет. Измени или сбрось фильтры.'))
+        self.message.setVisible(bool(page.newer_count))
+        if page.newer_count:
+            self.message.setText(tr("Новых записей по фильтру: {0}. Нажми «Обновить», чтобы перейти к ним.").format(number(page.newer_count)))
+        for button in (self.newer_button, self.older_button, self.first_button):
+            button.setVisible(self.page_index > 0 or page.has_older or page.newer_count > 0)
         self.newer_button.setEnabled(self.page_index > 0)
         self.first_button.setEnabled(self.page_index > 0 or page.newer_count > 0)
         self.older_button.setEnabled(page.has_older)
@@ -318,10 +386,11 @@ class HistoryPage(QWidget):
         self.page, self.rows, self.dirty = None, [], True
         self.table.setRowCount(0)
         self.count.setText(tr('Записи не показаны'))
-        self.message.setText('')
+        self.message.hide()
+        self.empty.hide()
         self.error.setText(str(exc))
         self.error.show()
-        for button in (self.first_button, self.newer_button, self.older_button, self.selected_event_button):
+        for button in (self.first_button, self.newer_button, self.older_button, self.selected_event_button, self.open_entry_button):
             button.setEnabled(False)
 
     def go_older(self):
@@ -353,6 +422,7 @@ class HistoryPage(QWidget):
 
     def _selection_changed(self):
         row = self.table.currentRow()
+        self.open_entry_button.setEnabled(0 <= row < len(self.rows))
         self.selected_event_button.setEnabled(0 <= row < len(self.rows) and self.rows[row]['event_id'] is not None)
 
     def filter_selected_event(self):
