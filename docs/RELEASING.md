@@ -8,11 +8,13 @@
 
 ## Publication gates
 
-**Release** calls **Tests** with `suite: full` at its own source commit. Both Windows and Linux tests must pass without skips; the Windows shortcut test remains mandatory. After these pass, a Windows job builds and checks the distribution using the same composite action as PR acceptance. Installation, upgrade, launch, reinstallation, uninstall/data-preservation and backup/recovery checks remain mandatory. Focused PR success cannot replace these full release checks.
+**Release** resolves the source commit of the preceding published version and compares it to the candidate commit. A verified change limited to supported literal colors or UI labels and translations can use the cosmetic suite on both Windows and Linux, including when accompanied by documentation, release notes and numeric version bumps. The full suites run for changes to behavior, runtime, packaging or CI, for other unrecognized changes, and whenever the baseline cannot be verified. This comparison includes all changes since publication, even when the PR that starts the release is small.
+
+Both platforms must pass with zero skips. Windows also runs the native shortcut test. The Windows distribution then goes through installation, launch, upgrade, reinstallation, uninstall with data preservation, and backup and recovery checks before publication.
 
 PR tests run on Windows with affected-area selection and a conservative full-suite fallback. Ordinary branch pushes do not duplicate them, and main pushes do not independently duplicate Release's tests or package build. Packaging/native lifecycle changes also run distribution acceptance on the PR. Other changes receive that check once at release. PR concurrency cancels superseded runs; release publication is never cancelled by that policy. See [testing policy](TESTING.md).
 
-The publish job depends on the complete platform test workflow. It builds and verifies the Windows files in that same job, then checks their exact file set, version, source commit, binary checksums and all required acceptance flags, and matches the recorded upgrade source with the acceptance report. Publication receives the actual composite-action outcome and cannot run after a failed build or acceptance step. The exact tested files are uploaded directly to Releases, without an intermediate Actions artifact or another rebuild.
+The publish job depends on success of both platform test jobs. It builds and verifies the Windows files in that same job, then checks their exact file set, version, source commit, binary checksums and all required acceptance flags, and matches the recorded upgrade source with the acceptance report. Publication receives the actual composite-action outcome and cannot run after a failed build or acceptance step. The exact tested files are uploaded directly to Releases, without an intermediate Actions artifact or another rebuild.
 
 Only the publish job has `contents: write`. It creates the exact `vMAJOR.MINOR.PATCH` tag on the tested commit, uploads the full set into a **draft**, verifies the uploaded sizes and SHA-256 digests, then publishes. A changed `main` or tag aborts publication. Releases below v1.0.0 are marked **Pre-release**; the workflow does not declare production readiness or advance versions itself.
 
@@ -38,7 +40,7 @@ Before the first release only, the bootstrap baseline is v0.10.0 at `a7e524281a3
 
 The v0.13.10 candidate closes the two findings from the v0.13.9 audit. The v1.0 feature scope is frozen: the current single-user Windows application, read-only Mail.ru import, plan/fact tracking, history and backup/recovery. Another general audit is not a publication gate.
 
-Required automated acceptance is the full Windows/Linux suite and the distribution gates above. The candidate adds a shipped-worker check for invalid UIDs, rejected writes leaving the original database unchanged, and successful reopening after accepted writes. CalDAV and the XML runtime acceptance use one policy that rejects DTDs, entities and external references.
+Acceptance for v1.0.0 required the full Windows and Linux suites and the distribution gates above. The candidate added a shipped-worker check for invalid UIDs, rejected writes leaving the original database unchanged, and successful reopening after accepted writes. CalDAV and the XML runtime acceptance use one policy that rejects DTDs, entities and external references.
 
 The completed target-system checklist for the frozen candidate was:
 

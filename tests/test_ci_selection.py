@@ -1,7 +1,7 @@
 """Focused checks must include affected areas and fail conservatively to full."""
 import pytest
 
-from scripts.run_ci_tests import changed_paths, is_version_only, main, select_tests, version_only_paths
+from scripts.run_ci_tests import changed_paths, classify_paths, cosmetic_release_paths, is_version_only, main, select_tests
 
 
 def test_sync_change_keeps_related_domains_without_unrelated_theme_rendering():
@@ -63,6 +63,8 @@ def test_suite_from_environment_is_validated_before_running_any_command(monkeypa
     ('director_control/__init__.py', '__version__="0.13.2"', '__version__="0.13.3"\n__version__="1.0.0"', False),
     ('director_control/__init__.py', '__version__="0.13.2"', '__version__=get_version()', False),
     ('director_control/__init__.py', '__version__="0.13.2"', '__version__="custom"', False),
+    ('director_control/__init__.py', '__version__="0.13.2"\nCOPY=__version__',
+     'COPY=__version__\n__version__="0.13.3"', False),
     ('director_control/__init__.py', '__version__="0.13.2"', 'invalid python !', False),
 ])
 def test_version_exemption_requires_unchanged_code_and_metadata(path, before, after, expected):
@@ -89,7 +91,77 @@ def test_version_detection_reads_exact_diff_commits_and_falls_back_on_missing_bl
         return ('__version__="0.13.2"' if args[-1].startswith('a'*40) else '__version__="0.13.3"').encode()
 
     monkeypatch.setattr(subprocess, 'check_output', git_output)
-    assert version_only_paths(['pyproject.toml', 'director_control/__init__.py'], 'a'*40, 'b'*40) == {
-        'director_control/__init__.py'}
+    assert classify_paths(['pyproject.toml', 'director_control/__init__.py'], 'a'*40, 'b'*40) == (
+        {'director_control/__init__.py'}, set())
     assert ['git', 'show', 'a'*40+':director_control/__init__.py'] in calls
     assert ['git', 'show', 'b'*40+':director_control/__init__.py'] in calls
+
+
+def test_release_scope_compares_all_commits_from_published_baseline(tmp_path, monkeypatch):
+    import subprocess
+    from scripts import run_ci_tests
+
+    def git(*args):
+        return subprocess.check_output(['git', *args], cwd=tmp_path, text=True).strip()
+
+    def commit():
+        git('add', '.')
+        git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture')
+        return git('rev-parse', 'HEAD')
+
+    monkeypatch.setattr(run_ci_tests, 'ROOT', tmp_path)
+    git('init', '-q')
+    package = tmp_path / 'director_control'
+    package.mkdir()
+    catalog = package / 'english.py'
+    catalog.write_text('MESSAGES = {"Day": "Day"}\n')
+    version = tmp_path / 'pyproject.toml'
+    version.write_text('[project]\nversion="1.0.0"\n')
+    base = commit()
+    (tmp_path / 'README.md').write_text('Updated installation notes')
+    version.write_text('[project]\nversion="1.0.1"\n')
+    catalog.write_text('MESSAGES = {"Day": "Calendar day"}\n')
+    first = commit()
+    expected = {'director_control/english.py'}
+    assert cosmetic_release_paths(base, first) == expected
+    for platform in ('Windows', 'Linux'):
+        paths, _ = select_tests(expected, platform, display_only=expected)
+        assert 'tests/test_language.py' in paths and 'tests/test_gui_smoke.py' in paths
+        assert ('tests/windows/test_shortcut.py' in paths) == (platform == 'Windows')
+
+    (package / 'storage.py').write_text('SCHEMA_VERSION = 2\n')
+    with_logic = commit()
+    catalog.write_text('MESSAGES = {"Day": "Selected day"}\n')
+    latest = commit()
+    assert cosmetic_release_paths(with_logic, latest) == expected
+    assert not cosmetic_release_paths(base, latest)
+    assert not cosmetic_release_paths(latest, base)
+    assert not cosmetic_release_paths('invalid', latest)
+    assert not cosmetic_release_paths('a' * 40, latest)
+
+
+@pytest.mark.parametrize('platform,sys_platform', [('Linux', 'linux'), ('Windows', 'win32')])
+@pytest.mark.parametrize('matching_head', [True, False])
+def test_cosmetic_entry_point_on_both_platforms(monkeypatch, tmp_path, platform, sys_platform, matching_head):
+    from scripts import run_ci_tests
+    import json
+    import sys
+
+    monkeypatch.setattr(run_ci_tests, 'ROOT', tmp_path)
+    monkeypatch.setenv('RELEASE_BASE_SHA', 'a' * 40)
+    monkeypatch.delenv('GITHUB_STEP_SUMMARY', raising=False)
+    monkeypatch.setenv('RELEASE_HEAD_SHA', 'b' * 40)
+    monkeypatch.setattr(sys, 'platform', sys_platform)
+    monkeypatch.setattr(run_ci_tests.subprocess, 'check_output', lambda *a, **k: ('b' if matching_head else 'c') * 40)
+    def verify_range(base, head):
+        assert matching_head and (base, head) == ('a' * 40, 'b' * 40)
+        return {'director_control/english.py'}
+    monkeypatch.setattr(run_ci_tests, 'cosmetic_release_paths', verify_range)
+    monkeypatch.setattr(run_ci_tests.subprocess, 'run', lambda *a, **k: run_ci_tests.subprocess.CompletedProcess([], 0))
+    assert main(['--suite', 'cosmetic', '--platform', platform]) == 0
+    paths = json.loads((tmp_path / 'ci-test-plan.json').read_text())['paths']
+    if matching_head:
+        assert 'tests/test_language.py' in paths and 'tests/test_storage.py' in paths
+        assert ('tests/windows/test_shortcut.py' in paths) == (platform == 'Windows')
+    else:
+        assert paths == ['tests']

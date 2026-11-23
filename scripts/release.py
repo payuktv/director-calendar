@@ -16,6 +16,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from director_control.runtime_versions import verify_runtime
+from scripts.run_ci_tests import cosmetic_release_paths
 
 MAX_UPGRADE_ASSET = 512 * 1024 * 1024
 BOOTSTRAP = {'tag': 'v0.10.0', 'version': '0.10.0',
@@ -234,6 +235,21 @@ def candidate(api, version, sha):
     return True
 
 
+def prepare_release(api, version, sha):
+    publish = candidate(api, version, sha)
+    base_sha = ''
+    if publish:
+        try:
+            previous = previous_release(api, version)
+        except (RuntimeError, OSError, ValueError) as exc:
+            print(f'Full suite: could not resolve the previous published release ({exc}).')
+        else:
+            if not previous['bootstrap'] and cosmetic_release_paths(previous['sha'], sha):
+                base_sha = previous['sha']
+    output(publish=str(publish).lower(), tag=f'v{version}',
+           suite='cosmetic' if base_sha else 'full', base_sha=base_sha)
+
+
 def digest(path):
     with path.open('rb') as file:
         return hashlib.file_digest(file, 'sha256').hexdigest()
@@ -357,7 +373,7 @@ def main():
     notes = release_notes(version)
     sha = os.environ['GITHUB_SHA']
     if args.command == 'prepare':
-        output(publish=str(candidate(api, version, sha)).lower(), tag=f'v{version}')
+        prepare_release(api, version, sha)
     else:
         if os.environ.get('GITHUB_REF') != 'refs/heads/main':
             raise ValueError('Release publication is restricted to main.')

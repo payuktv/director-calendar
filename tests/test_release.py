@@ -107,6 +107,28 @@ def test_first_release_uses_explicit_bootstrap_and_missing_tag_is_an_error():
         release.previous_release(api, VERSION)
 
 
+@pytest.mark.parametrize('baseline,cosmetic,suite', [
+    ('published', True, 'cosmetic'), ('published', False, 'full'),
+    ('bootstrap', True, 'full'), ('missing-tag', True, 'full'),
+])
+def test_prepare_selects_cosmetic_only_for_verified_published_baseline(monkeypatch, baseline, cosmetic, suite):
+    api = FakeGitHub()
+    if baseline != 'bootstrap':
+        api.listed = [dict(tag_name='v0.12.0', draft=False)]
+    if baseline == 'published':
+        api.tags['v0.12.0'] = OLD_SHA
+    def classify(base, head):
+        assert baseline == 'published' and (base, head) == (OLD_SHA, SHA)
+        return {'director_control/english.py'} if cosmetic else set()
+
+    plan = {}
+    monkeypatch.setattr(release, 'cosmetic_release_paths', classify)
+    monkeypatch.setattr(release, 'output', lambda **values: plan.update(values))
+    release.prepare_release(api, VERSION, SHA)
+    assert plan == dict(publish='true', tag='v' + VERSION, suite=suite,
+                        base_sha=OLD_SHA if suite == 'cosmetic' else '')
+
+
 def test_network_failure_does_not_silently_fall_back_to_bootstrap():
     class Broken(FakeGitHub):
         def releases(self):

@@ -8,7 +8,7 @@ During development, run tests for the behavior being changed and its related sto
 - `scripts/run_ci_tests.py` combines fixed smoke checks with an explicit affected-area map and changed test modules. Every Windows run includes the real shortcut integration test.
 - Broad changes, storage/schema, runtime entry points, shared fixtures, dependencies, the selector/CI configuration, removed tests and unmapped files select the complete Windows suite. An unknown change cannot silently receive a narrow selection.
 - A plain version bump in `pyproject.toml` and `director_control/__init__.py` preserves focused selection only after comparing both commit versions and confirming that all other metadata and Python code are unchanged. Dependency or runtime changes still select the full suite.
-- UI/visual changes select the relevant rendering tests. Isolated calendar transport changes do not run theme rendering tests.
+- UI changes select the tests for the affected screens. When a translation catalog edit is verified as a change to literal entries, selection includes the language tests. Changing the structure or behavior of the catalog selects the full Windows suite.
 - Superseded runs for the same PR are cancelled. Dependency packages are cached. The selected paths, slowest test timings and complete JUnit report are retained in the job log and summary, without Actions artifact storage. Oversized summaries link readers to the full JSON-encoded report in the log.
 - Packaging/native lifecycle PRs also run Windows distribution acceptance. Other PRs do not build two installers just to check a source change.
 
@@ -16,13 +16,17 @@ For example, changes to Mail.ru transport select transport, recurrence, withdraw
 
 ## Releases
 
-Release explicitly invokes the full Windows and Linux suites on the final main commit. After these pass, it builds the Windows distribution and validates installation, previous-version upgrade, preservation of data, backups and recovery before uploading those same files directly to Releases. Publication requires all tests and distribution checks to pass. A focused PR report never substitutes for the full release result.
+Release determines the test scope for the final commit on `main`. It resolves the preceding published version to its source commit and examines the entire change between those commits, including earlier merged PRs.
 
-The reusable test workflow defaults to full scope. An explicit manual Tests run also runs both complete platform suites. Main does not separately repeat the same jobs while Release runs them. Linux omits native Windows collection; skips, failures, empty reports and missing native Windows coverage are rejected as before.
+- **Cosmetic release.** If the whole change matches the supported edits to literal palette colors or displayed labels and translations, run smoke tests and the affected checks on both Windows and Linux. Documentation, release notes and numeric version bumps can accompany these edits.
+- **Full release.** Changes to logic, data, runtime, dependencies, packaging, test infrastructure or CI select both full suites. A missing or unverifiable baseline or an unrecognized change also selects full testing. The first release containing the CI policy change itself therefore receives full testing.
+- **Every release.** Each platform must produce a nonempty report with zero failures, errors and skips. Windows must pass the native shortcut test. After both pass, validate the installer, upgrade from the previous published version, data preservation, backups and recovery. Publish the verified distribution directly from that job.
+
+Running **Tests** manually runs both full suites. Running **Release** manually applies the same release scope selection as an automatic publication.
 
 ## Updating the map
 
-When introducing a narrow mapping, include affected consumers as well as direct unit tests, and review the mapping together with the feature. New or uncertain modules can remain unmapped and run the full suite. Update `tests/test_ci_selection.py` when changing selection policy. This map is a PR feedback optimization, not a promise that unrelated test modules can never expose a regression.
+When introducing a narrow mapping, include affected consumers as well as direct unit tests, and review the mapping together with the feature. New or uncertain modules can remain unmapped and run the full suite. Update the selector regression tests when changing either the PR map or the criteria for a cosmetic release.
 
 The interpreter is pinned by `.python-version` (3.14.10) for both platform suites and packaging. Distribution acceptance reads Python, Expat and OpenSSL versions inside the frozen executable; publication rejects missing, older or different runtimes. The highest earlier published installer is the upgrade baseline, with complete installed-file hash comparison.
 

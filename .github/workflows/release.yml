@@ -19,8 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       publish: ${{ steps.release.outputs.publish }}
+      suite: ${{ steps.release.outputs.suite }}
+      base_sha: ${{ steps.release.outputs.base_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version-file: '.python-version'
@@ -35,7 +39,8 @@ jobs:
     if: needs.prepare.outputs.publish == 'true'
     uses: ./.github/workflows/ci.yml
     with:
-      suite: full
+      suite: ${{ needs.prepare.outputs.suite || 'full' }}
+      base_sha: ${{ needs.prepare.outputs.base_sha }}
 
   publish:
     needs: [prepare, tests]
