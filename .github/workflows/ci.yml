@@ -8,6 +8,8 @@ on:
       suite:
         type: string
         default: full
+      base_sha:
+        type: string
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -21,7 +23,7 @@ jobs:
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 25 || 15 }}
     strategy:
       matrix:
-        os: ${{ fromJSON((inputs.suite == 'full' || github.event_name == 'workflow_dispatch') && '["windows-latest","ubuntu-latest"]' || '["windows-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["windows-latest"]' || '["windows-latest","ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
@@ -66,7 +68,9 @@ jobs:
           DIRECTOR_CONTROL_DATA_DIR: ${{ runner.temp }}/director-control-tests
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          TEST_SUITE: ${{ github.event_name == 'workflow_dispatch' && 'full' || inputs.suite || 'focused' }}
+          RELEASE_BASE_SHA: ${{ inputs.base_sha }}
+          RELEASE_HEAD_SHA: ${{ github.sha }}
+          TEST_SUITE: ${{ github.event_name == 'pull_request' && 'focused' || (inputs.suite == 'cosmetic' && inputs.base_sha != '' && 'cosmetic') || 'full' }}
         run: python scripts/run_ci_tests.py --platform ${{ runner.os }}
       - name: Verify zero skips and required platform coverage
         if: always()
