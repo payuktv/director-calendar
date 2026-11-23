@@ -65,6 +65,9 @@ def test_combined_date_event_and_text_filters_and_reset(window):
     record(store, event_id=eid, title='Итоговое совещание', changed_at='2026-10-21T00:00:00')
     record(store, title='Параметры', changed_at='2026-10-20T12:00:00')
     h.refresh_latest()
+    assert not h.filters_panel.isVisible() and not h.reset_button.isVisible()
+    QTest.mouseClick(h.filters_button, Qt.MouseButton.LeftButton)
+    assert h.filters_panel.isVisible()
     h.event_filter.setEditText('ЕЖ')  # Old name, case and ё/е work for the entire event history.
     h.date_from.setDate(QDate(2026, 10, 20))
     h.date_to.setDate(QDate(2026, 10, 20))
@@ -72,8 +75,12 @@ def test_combined_date_event_and_text_filters_and_reset(window):
     h.search.setText('Выполнено')
     QTest.qWait(350)
     assert len(h.rows) == 1 and h.rows[0]['changed_at'] == '2026-10-20T23:59:59'
+    QTest.mouseClick(h.filters_button, Qt.MouseButton.LeftButton)
+    assert not h.filters_panel.isVisible() and '2' in h.filters_button.text() and h.reset_button.isVisible()
     QTest.mouseClick(h.reset_button, Qt.MouseButton.LeftButton)
     assert len(h.rows) == 5 and not h.date_enabled.isChecked()
+    assert not h.reset_button.isVisible() and '2' not in h.filters_button.text()
+    QTest.mouseClick(h.filters_button, Qt.MouseButton.LeftButton)
     h.event_filter.setCurrentIndex(h.event_filter.findData('system'))
     QTest.qWait(350)
     assert len(h.rows) == 1 and h.rows[0]['event_id'] is None
@@ -108,6 +115,7 @@ def test_selected_row_filters_deleted_event_and_dialog_keeps_its_history(window)
     h.refresh_latest()
     row = next(i for i, entry in enumerate(h.rows) if entry['event_id'] == eid)
     h.table.setCurrentCell(row, 0)
+    QTest.mouseClick(h.filters_button, Qt.MouseButton.LeftButton)
     QTest.mouseClick(h.selected_event_button, Qt.MouseButton.LeftButton)
     assert len(h.rows) == 3 and all(row['event_id'] == eid for row in h.rows)
     assert 'удалено' in h.event_filter.currentText()
@@ -117,12 +125,15 @@ def test_selected_row_filters_deleted_event_and_dialog_keeps_its_history(window)
     dialog.close()
 
 
-def test_enter_opens_full_plain_text_description_and_event_link(window):
+@pytest.mark.parametrize('activation', ['enter', 'button'])
+def test_open_full_plain_text_description_and_event_link(window, activation):
     store, h = window.store, window.history_page
     eid = event(store)
     long_note = '<b>Итог встречи</b>\n' + ('Подробности ' * 180)
     store.update_event(eid, note=long_note, actual_start='2026-10-26T09:10:00', actual_end='2026-10-26T10:30:00')
     h.refresh_latest()
+    assert h.table.rowHeight(0) == h.table.verticalHeader().defaultSectionSize()
+    assert '\n' not in h.table.item(0, 3).text() and '<b>Итог встречи</b>' in h.table.item(0, 3).text()
     errors, requested = [], []
     # Test the History link while keeping the already-covered event form out of this modal test.
     h.open_requested.disconnect()
@@ -143,7 +154,11 @@ def test_enter_opens_full_plain_text_description_and_event_link(window):
 
     QTimer.singleShot(0, inspect)
     h.table.setCurrentCell(0, 0)
-    QTest.keyClick(h.table, Qt.Key.Key_Return)
+    if activation == 'enter':
+        QTest.keyClick(h.table, Qt.Key.Key_Return)
+    else:
+        assert h.open_entry_button.isEnabled()
+        QTest.mouseClick(h.open_entry_button, Qt.MouseButton.LeftButton)
     if errors:
         raise errors[0]
     assert requested == [eid]
@@ -158,6 +173,7 @@ def test_invalid_dates_and_read_failure_clear_stale_results_and_recover(window, 
     h.date_to.setDate(QDate(2026, 10, 26))
     h.date_enabled.setChecked(True)
     assert h.table.rowCount() == 0 and not h.error.isHidden()
+    assert h.empty.isHidden()
     assert 'Дата' in h.error.text() and not h.older_button.isEnabled()
     h.date_from.setDate(QDate(2026, 10, 26))
     assert h.table.rowCount() == 1 and h.error.isHidden()
@@ -174,11 +190,43 @@ def test_invalid_dates_and_read_failure_clear_stale_results_and_recover(window, 
     assert h.table.rowCount() == 1 and h.error.isHidden()
 
 
+def test_empty_journal_and_empty_search_have_distinct_states(window):
+    h = window.history_page
+    assert h.empty.isVisible() and h.empty.text() == 'В истории пока нет записей'
+    assert not h.older_button.isVisible() and not h.reset_button.isVisible()
+    record(window.store, title='Запланированная встреча')
+    h.refresh_latest()
+    assert not h.empty.isVisible()
+    h.search.setText('Несуществующая запись')
+    QTest.qWait(350)
+    assert h.empty.isVisible() and 'условиям' in h.empty.text()
+    assert h.reset_button.isVisible() and not h.open_entry_button.isEnabled()
+
+
+def test_common_actions_and_timestamps_fit_after_live_language_switch(window):
+    h = window.history_page
+    for action in ('Изменение', 'Фиксация плана'):
+        record(window.store, action=action)
+    h.refresh_latest()
+    window.resize(1000, 700)
+    for language in ('ru', 'en', 'ru'):
+        window.language_input.setCurrentIndex(window.language_input.findData(language))
+        QApplication.processEvents()
+        labels = {h.table.item(row, 2).text() for row in range(h.table.rowCount())}
+        assert labels == ({'Details changed', 'Plan fixed'} if language == 'en' else {'Данные изменены', 'План зафиксирован'})
+        for column in (0, 2):
+            for row in range(h.table.rowCount()):
+                index = h.table.model().index(row, column)
+                assert h.table.columnWidth(column) >= h.table.sizeHintForIndex(index).width()
+        assert min(h.table.columnWidth(1), h.table.columnWidth(3)) >= 128
+
+
 @pytest.mark.parametrize('theme', ['light', 'dark'])
 def test_narrow_window_long_event_name_and_shared_date_picker(window, theme):
     store, h = window.store, window.history_page
     eid = event(store, 'Очень длинное название события ' * 6)
     h.refresh_latest()
+    QTest.mouseClick(h.filters_button, Qt.MouseButton.LeftButton)
     h.event_filter.setCurrentIndex(h.event_filter.findData(eid))
     QTest.qWait(350)
     apply_theme(theme)

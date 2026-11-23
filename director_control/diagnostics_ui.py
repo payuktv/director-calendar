@@ -1,7 +1,7 @@
 """Local log access and a queued, non-modal notice for unhandled Python errors."""
 from PySide6.QtCore import QObject, Signal, Slot, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QApplication, QGroupBox, QHBoxLayout, QMessageBox, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QGroupBox, QHBoxLayout, QLineEdit, QMessageBox, QPushButton, QVBoxLayout
 
 from .widget_text import localized
 from .i18n import tr
@@ -46,12 +46,11 @@ class DiagnosticsPanel(QGroupBox):
         localized(self, title='Диагностика')
         self.setProperty('settingsSection', True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
-        self.path_label = plain_label(str(diagnostics.log_path()))
-        self.path_label.setWordWrap(True)
-        self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(self.path_label)
+        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(10)
+        self.path_field = localized(QLineEdit(), accessibleName='Путь к журналу')
+        self.path_field.setReadOnly(True)
+        layout.addWidget(self.path_field)
         note = text_label('Журнал хранит тип ошибки и место в коде: без текстов ошибок, паролей и содержимого календаря. '
                            'До четырёх файлов по 1 МБ; старые записи заменяются автоматически. '
                            'Файлы никуда не отправляются.', 'Muted')
@@ -71,7 +70,10 @@ class DiagnosticsPanel(QGroupBox):
         layout.addLayout(row)
 
     def showEvent(self, event):
-        self.path_label.setText(str(diagnostics.log_path()))
+        path = str(diagnostics.log_path())
+        self.path_field.setText(path)
+        self.path_field.setToolTip(path)
+        self.path_field.setCursorPosition(0)
         localized(self.status, text='Журнал доступен.' if diagnostics.available() else
                   'Журнал недоступен. Проверь доступ и свободное место в папке данных.')
         super().showEvent(event)

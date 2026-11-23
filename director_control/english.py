@@ -1,6 +1,18 @@
 """English interface strings keyed by their Russian originals."""
 
 MESSAGES = {
+    "Приложение": "Application",
+    "План и категории": "Plan and categories",
+    "Путь к журналу": "Log file path",
+    "Разделы настроек": "Settings sections",
+    "Поиск в истории": "Search history",
+    "Фильтры": "Filters",
+    "Данные изменены": "Details changed",
+    "План зафиксирован": "Plan fixed",
+    "Фильтры · {0}": "Filters · {0}",
+    "В истории пока нет записей": "No history entries yet",
+    "Открыть запись": "Open entry",
+    "Записей на странице": "Entries per page",
     "Неизвестный период аналитики": "Unknown analytics period",
     "Строка": "Row",
     "С": "From",
@@ -622,9 +634,9 @@ MESSAGES = {
     "Не удалось сохранить подключение. Проверь настройки и повтори.": (
         "Could not save the connection. Check the settings and try again."
     ),
-    "Сначала укажи подключение на вкладке «Настройки».": "Set up the connection in Settings first.",
-    "Введи пароль приложения на вкладке «Настройки» и сохрани подключение.": (
-        "Enter your app password in Settings and save the connection."
+    "Сначала настрой подключение в разделе «Настройки → Mail.ru».": "Set up the connection in Settings → Mail.ru first.",
+    "Введи пароль приложения в разделе «Настройки → Mail.ru» и сохрани подключение.": (
+        "Enter your app password in Settings → Mail.ru and save the connection."
     ),
     "Обновляем календарь Mail.ru…": "Syncing the Mail.ru calendar…",
     "Не удалось начать обновление. Проверь настройки подключения.": (
@@ -816,8 +828,6 @@ MESSAGES = {
     "План, факт и качество учёта за выбранный период": (
         "Planned work, actual time and tracking quality for the selected period"
     ),
-    "Изменения расписания и решений": "Schedule changes and decisions",
-    "Подключение календаря и рабочие параметры": "Calendar connection and preferences",
     "Добавить": "Add",
     "Добавить локальное событие · Ctrl+N": "Add a local event · Ctrl+N",
     "Список": "Agenda",
