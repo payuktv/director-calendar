@@ -542,7 +542,7 @@ class CalendarBoard(QWidget):
         self.timed, self.all_day = {}, {}
         self.metadata = {}
         self.frozen_days = frozenset()
-        localized(self, toolTip="Зелёный фон дня — исходный план зафиксирован")
+        localized(self, toolTip="Лавандовый фон дня означает, что исходный план зафиксирован")
         self.stack = QStackedWidget()
         timeline = QWidget()
         layout = QVBoxLayout(timeline)

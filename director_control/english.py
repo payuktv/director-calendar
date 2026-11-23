@@ -300,7 +300,7 @@ MESSAGES = {
     " · Локально": " · Local",
     "Ещё {0} · список": "{0} more · show list",
     "+{0} событий": "+{0} events",
-    "Зелёный фон дня — исходный план зафиксирован": "A green day background means the original plan is fixed",
+    "Лавандовый фон дня означает, что исходный план зафиксирован": "A lavender day background means the original plan is fixed",
     "Не удалось открыть хранилище паролей Windows. Введи пароль заново.": (
         "Could not open Windows Credential Manager. Enter your password again."
     ),
