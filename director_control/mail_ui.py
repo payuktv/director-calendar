@@ -52,6 +52,8 @@ class MailPanel(QGroupBox):
     changed = Signal()
     message = Signal(str)
     busy_changed = Signal(bool)
+    review_updated = Signal(int)
+    review_requested = Signal()
 
     def __init__(self, store, selected_day, parent=None):
         super().__init__(parent)
@@ -109,7 +111,16 @@ class MailPanel(QGroupBox):
         last = store.get_setting("mail_last_sync").replace("T", " ")
         self.status = localized(QLabel(), text=Message("Последнее успешное обновление: {0}", last or Message("ещё не было")))
         self.status.setWordWrap(True)
-        layout.addWidget(self.status)
+        result_row = QHBoxLayout()
+        result_row.addWidget(self.status)
+        self.review_button = QPushButton()
+        localized(self.review_button, toolTip='Показать события Mail.ru, требующие проверки')
+        self.review_button.clicked.connect(self.review_requested)
+        result_row.addWidget(self.review_button)
+        result_row.addStretch()
+        layout.addLayout(result_row)
+        self.review_key = CalendarConfig(self.url.text(), self.login.text()).calendar_key if self.url.text() else None
+        self.refresh_review_count()
         note = localized(QLabel(), text="Загружаем 30 дней до и 90 дней после выбранной даты. Время отображается в выбранном часовом поясе. "
                       "Название и плановое время меняй в Mail.ru; категорию, факт и итоги — здесь. "
                       "Исчезнувшие будущие события без фиксации и локальных отметок убираются из плана; остальные требуют проверки. Пароль не хранится в базе или GitHub.")
@@ -127,6 +138,15 @@ class MailPanel(QGroupBox):
             return ''
         config = CalendarConfig(self.store.get_setting('mail_url'), self.store.get_setting('mail_login'))
         return self.store.sync_warning(day, config.calendar_key)
+
+    def refresh_review_count(self):
+        self._set_review_count(self.store.mail_review_count(self.review_key) if self.review_key else 0)
+
+    def _set_review_count(self, count):
+        self.review_count = count
+        localized(self.review_button, text=Message('Требуют проверки · {0}', count))
+        self.review_button.setVisible(count > 0)
+        self.review_updated.emit(count)
 
     def sync_failed(self, text):
         message = diagnostic_message(text)
@@ -220,12 +240,14 @@ class MailPanel(QGroupBox):
             result = self.store.apply_calendar_snapshot(snapshot)
             last = self.store.get_setting("mail_last_sync").replace("T", " ")
             if snapshot.complete:
-                self.show_status(Message("Mail.ru обновлён {0}: новых {1}, изменено {2}, убрано из плана {3}, требуют проверки {4}.",
-                                         last, result['added'], result['updated'], result['withdrawn'], result['missing']))
+                self.show_status(Message("Mail.ru обновлён {0}: новых {1}, изменено {2}, убрано из плана {3}.",
+                                         last, result['added'], result['updated'], result['withdrawn']))
             else:
                 summary = Message("Mail.ru загружен частично: новых {0}, изменено {1}; недоступных записей {2}. Прежние записи сохранены, исчезновения не проверялись. ",
                                   result['added'], result['updated'], len(snapshot.unavailable))
                 self.show_status(Message('{0}{1}', summary, diagnostic_message(snapshot.unavailable[0])))
+            self.review_key = snapshot.calendar_key
+            self._set_review_count(result['missing'])
             self.changed.emit()
         except Exception:
             record_error('mail.apply')

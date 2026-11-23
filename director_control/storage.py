@@ -18,7 +18,7 @@ from .event_status import STATUSES, FAILED_STATUSES, fill_completed_actual
 from .record_validation import (
     validate_calendar_window, validate_event_content, validate_remote_event, validate_text,
 )
-from .source_state import source_state
+from .source_state import SourceState, source_state
 
 DEFAULT_CATEGORIES = [
     ("Совещания", "#6678E8", 1),
@@ -94,6 +94,13 @@ class Event:
     @property
     def source_label(self) -> str:
         return tr("Локально") if self.source == "local" else "Mail.ru"
+
+
+@dataclass(frozen=True)
+class MailReviewItem:
+    event: Event
+    state: SourceState
+    all_day: bool
 
 
 class Store:
@@ -675,6 +682,28 @@ class Store:
         with self._connect() as con:
             return {r["event_id"]: dict(r) for r in con.execute("SELECT * FROM calendar_events")}
 
+    def _mail_review_items(self, con: sqlite3.Connection, calendar_key: str) -> Iterator[MailReviewItem]:
+        # A warning survives subsequent syncs of other date ranges until it is resolved.
+        rows = con.execute("""SELECT e.*, m.missing, m.cancelled, m.local_status, m.all_day, m.baseline_all_day
+            FROM events e JOIN calendar_events m ON m.event_id=e.id
+            WHERE m.calendar_key=? AND (m.missing=1 OR m.cancelled=1)
+            AND COALESCE(e.current_start,e.baseline_start,e.actual_start) IS NOT NULL
+            ORDER BY COALESCE(e.current_start,e.baseline_start,e.actual_start), e.id""", (calendar_key,))
+        for row in rows:
+            event = self._as_event(row)
+            state = source_state(event, dict(row))
+            if state.needs_review:
+                all_day = row['all_day'] if event.current_start else event.baseline_start and row['baseline_all_day']
+                yield MailReviewItem(event, state, bool(all_day))
+
+    def mail_review_items(self, calendar_key: str) -> list[MailReviewItem]:
+        with self._connect() as con:
+            return list(self._mail_review_items(con, calendar_key))
+
+    def mail_review_count(self, calendar_key: str) -> int:
+        with self._connect() as con:
+            return sum(1 for _ in self._mail_review_items(con, calendar_key))
+
     def record_sync_failure(self, calendar_key, start, end):
         def stamp(value):
             value = value.isoformat() if isinstance(value, date) else value
@@ -795,19 +824,13 @@ class Store:
                               else 'Проваленное событие отсутствует в Mail.ru' if state.code == 'failed_missing'
                               else 'Нет в ответе Mail.ru')
                     self._audit(con, row["id"], row["title"], action, {"требует проверки": state.needs_review})
-                    stats["missing"] += 1
             sync_key = "mail_last_sync" if snapshot.complete else "mail_last_partial"
             con.execute("INSERT INTO calendar_syncs(calendar_key,start,end,status,finished_at) VALUES (?,?,?,?,?)",
                         (snapshot.calendar_key, snapshot.start, snapshot.end,
                          'complete' if snapshot.complete else 'partial', now_iso()))
             con.execute("INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                         (sync_key, now_iso()))
-            review_rows = con.execute("""SELECT e.*,m.missing,m.cancelled,m.local_status FROM events e
-                JOIN calendar_events m ON e.id=m.event_id WHERE m.calendar_key=?
-                AND (m.missing=1 OR m.cancelled=1) AND (e.current_start IS NOT NULL
-                OR e.baseline_start IS NOT NULL OR e.actual_start IS NOT NULL)""",
-                (snapshot.calendar_key,)).fetchall()
-            stats['missing'] = sum(source_state(self._as_event(row), dict(row)).needs_review for row in review_rows)
+            stats['missing'] = sum(1 for _ in self._mail_review_items(con, snapshot.calendar_key))
         return stats
 
 

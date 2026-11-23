@@ -18,6 +18,7 @@ from .i18n import LANGUAGE_CHOICES, configure_widgets, current_language, tr, ui_
 from .storage import Event, STATUSES, Store, category_label, default_data_dir
 from .source_state import source_state
 from .mail_ui import MailPanel
+from .mail_review_ui import MailReviewDialog
 
 
 from .theme import apply_theme, current_theme, color as theme_color, icon
@@ -123,8 +124,8 @@ class EventDialog(QDialog):
             return control
 
         start, end = event.current_start, event.current_end
-        self.start_input = date_edit(start)
-        self.end_input = date_edit(end)
+        self.start_input = date_edit(start) if start else QLineEdit(tr('не заполнено'))
+        self.end_input = date_edit(end) if end else QLineEdit(tr('не заполнено'))
         form.addRow(tr("Актуальный план: начало"), self.start_input)
         form.addRow(tr("Актуальный план: конец"), self.end_input)
         for control in (self.title_input, self.start_input, self.end_input):
@@ -142,8 +143,8 @@ class EventDialog(QDialog):
         self.fact_checkbox = QCheckBox(tr("Указать фактическое время"))
         self.fact_checkbox.setChecked(bool(event.actual_start))
         form.addRow("", self.fact_checkbox)
-        self.fact_start = date_edit(event.actual_start or start)
-        self.fact_end = date_edit(event.actual_end or end)
+        self.fact_start = date_edit(event.actual_start or start or event.baseline_start)
+        self.fact_end = date_edit(event.actual_end or end or event.baseline_end)
         self.fact_start.setEnabled(self.fact_checkbox.isChecked())
         self.fact_end.setEnabled(self.fact_checkbox.isChecked())
         self.fact_checkbox.toggled.connect(self.fact_start.setEnabled)
@@ -312,10 +313,20 @@ class MainWindow(QMainWindow):
         self.mail_refresh.setIcon(icon("sync", "white"))
         head.addWidget(self.mail_refresh)
         layout.addLayout(head)
+        self.mail_notice = QWidget()
+        notice_layout = QHBoxLayout(self.mail_notice)
+        notice_layout.setContentsMargins(0, 0, 0, 0)
         self.mail_status = plain_label("", "Muted")
         self.mail_status.setWordWrap(True)
         self.mail_status.hide()
-        layout.addWidget(self.mail_status)
+        notice_layout.addWidget(self.mail_status)
+        self.mail_review_button = QPushButton()
+        localized(self.mail_review_button, toolTip='Показать события Mail.ru, требующие проверки')
+        self.mail_review_button.clicked.connect(self.show_mail_review)
+        notice_layout.addWidget(self.mail_review_button)
+        notice_layout.addStretch()
+        self.mail_notice.hide()
+        layout.addWidget(self.mail_notice)
         self.tabs = QTabWidget()
         self.tabs.tabBar().hide()
         layout.addWidget(self.tabs, 1)
@@ -324,6 +335,8 @@ class MainWindow(QMainWindow):
         self._build_analytics_tab()
         self._build_history_tab()
         self._build_settings_tab()
+        self.mail_panel.review_requested.connect(self.show_mail_review)
+        self.mail_panel.review_updated.connect(self._update_review_action)
         self.new_event_shortcut = QShortcut(QKeySequence.StandardKey.New, self)
         self.new_event_shortcut.activated.connect(self.add_event)
         self.tabs.currentChanged.connect(self.navigate)
@@ -361,6 +374,7 @@ class MainWindow(QMainWindow):
         self.nav_buttons[index].setChecked(True)
         self.search.setVisible(index == 0)
         self.mail_refresh.setVisible(index in (0, 1))
+        self._update_review_action()
         if index == 2:
             self.history_page.refresh()
         if index == 1 and self.analytics_page.dirty:
@@ -595,6 +609,7 @@ class MainWindow(QMainWindow):
         try:
             self.store.update_event(event_id, expected_revision=expected_revision, status=status)
             self._selected_id = event_id
+            self.mail_panel.refresh_review_count()
             self.reload()
         except Exception as exc:
             error_box(self, exc)
@@ -764,6 +779,28 @@ class MainWindow(QMainWindow):
     def _show_panel_notice(self, label):
         localized(self.mail_status, text=text_source(label))
         self.mail_status.show()
+        self.mail_notice.show()
+
+    def _update_review_action(self):
+        count = self.mail_panel.review_count
+        localized(self.mail_review_button, text=Message('Требуют проверки · {0}', count))
+        visible = count > 0 and self.tabs.currentIndex() in (0, 1)
+        self.mail_review_button.setVisible(visible)
+        self.mail_notice.setVisible(visible or not self.mail_status.isHidden())
+
+    def show_mail_review(self):
+        try:
+            dialog = MailReviewDialog(self.store, self.mail_panel.review_key, self)
+        except Exception as exc:
+            error_box(self, exc)
+            return
+        dialog.open_requested.connect(self.open_event)
+        self.mail_panel.review_updated.connect(dialog.refresh)
+        try:
+            dialog.exec()
+        finally:
+            self.mail_panel.review_updated.disconnect(dialog.refresh)
+            dialog.deleteLater()
 
     def reload(self, *_):
         if not hasattr(self, "mail_panel"):
@@ -904,6 +941,8 @@ class MainWindow(QMainWindow):
         dialog = (LocalEventDialog(self.store, datetime.fromisoformat(event.current_start or event.actual_start), event, self)
                   if event.source == "local" else EventDialog(self.store, event, self))
         if dialog.exec() == QDialog.DialogCode.Accepted:
+            if event.source == "caldav":
+                self.mail_panel.refresh_review_count()
             if event.source == "local" and dialog.event_id is not None and self.tabs.currentIndex() == 0:
                 updated = self._find_event(dialog.event_id)
                 span = event_interval(updated, self.layer.currentData()) if updated else None

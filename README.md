@@ -1,8 +1,8 @@
-# Director Calendar — v1.6.0
+# Director Calendar — v1.7.0
 
 A local Windows desktop application for tracking a CEO's schedule, original plan, actual work and change history. Mail.ru is a read-only calendar source; local events and execution records stay on the user's computer.
 
-**Status:** stable v1.6.0. The original v1.0 feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The interface supports English and Russian.
+**Status:** stable v1.7.0. The original v1.0 feature scope passed target-system acceptance on v0.13.10; see the [acceptance record](docs/ACCEPTANCE-v1.0.0.md) and mandatory [publication gates](docs/RELEASING.md). The interface supports English and Russian.
 
 ## Features
 
@@ -27,22 +27,22 @@ Screenshots use synthetic data and may show an earlier interface revision. No de
 
 Target platform: Windows 10/11 x64. Use the installer for normal use; Python, PowerShell and administrator privileges are not required to run the installed application.
 
-1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.6.0](https://github.com/payuktv/director-calendar/releases/tag/v1.6.0)**.
+1. Open [GitHub Releases](https://github.com/payuktv/director-calendar/releases) and select the intended version, currently **[v1.7.0](https://github.com/payuktv/director-calendar/releases/tag/v1.7.0)**.
 2. Read its release notes and known limitations. Versions below v1.0.0 are marked **Pre-release**.
 3. Download the installer from **Assets**. GitHub's automatic source-code archives are for development, not installation.
 4. Close any running Director Calendar instance, including older source-based launches.
-5. Run `DirectorCalendar-1.6.0-Setup-x64.exe` as your normal Windows user.
+5. Run `DirectorCalendar-1.7.0-Setup-x64.exe` as your normal Windows user.
 6. Open **Director Calendar** from the desktop or Start menu.
 
 Release assets include the installer, portable ZIP, SHA-256 checksums, build/dependency information, distribution acceptance report, upgrade-source record and release manifest. A release is published only after Windows/Linux tests and Windows distribution acceptance pass for the same source commit, and uploaded assets are verified. Releases provide the permanent download channel; verified files are uploaded directly without intermediate Actions artifact storage. Installers are not currently Authenticode-signed.
 
-For portable use, extract the **entire** `DirectorCalendar-1.6.0-portable-x64.zip`. Keep `DirectorCalendar.exe` alongside `version.txt` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
+For portable use, extract the **entire** `DirectorCalendar-1.7.0-portable-x64.zip`. Keep `DirectorCalendar.exe` alongside `version.txt` and `_internal` together. Data still lives in AppData, not beside the executable. Create a shortcut from Settings if needed.
 
 ## Update and data locations
 
 The calendar checks for stable versions at startup and daily while open. Read the changes in the update window and choose **Download update** or **Later**. Downloading closes this window. The bottom-left update icon reopens the notes or shows progress. After verification, a small notification offers **Restart** or **Later**. An ordinary close and relaunch keeps the current version until you confirm installation. The prepared package and its notes remain available offline. You can switch off automatic checks or check manually in **Settings → Application → Application updates**.
 
-To move from v1.2.0 or earlier, install v1.6.0 once or extract its complete portable ZIP. Versions v1.1.0 and v1.2.0 can find this transitional installer through their existing update panel. Subsequent versions use the portable ZIP directly with the existing shortcut. The version shown in the calendar reflects the running package. Windows Installed Apps identifies the original installer. Versions v1.3.0–v1.3.2 use their existing updater for the transition to v1.6.0.
+To move from v1.2.0 or earlier, install v1.7.0 once or extract its complete portable ZIP. Versions v1.1.0 and v1.2.0 can find this transitional installer through their existing update panel. Subsequent versions use the portable ZIP directly with the existing shortcut. The version shown in the calendar reflects the running package. Windows Installed Apps identifies the original installer. Versions v1.3.0–v1.3.2 use their existing updater for the transition to v1.7.0.
 
 The updater requests public release metadata over HTTPS, checks the ZIP's exact size and SHA-256, and tests the extracted runtime before making it available. Only the official repository and GitHub release asset hosts are used. A slow transfer can continue as long as bytes are arriving. After a temporary disconnection, the app retries up to three times and requests the remaining bytes. If the server returns the whole package, it restarts the transfer and verifies it. Closing the calendar cancels an unfinished transfer. Each verified version lives under `.director-updates` beside the application, so portable installations need a writable folder. The database, credentials and pre-update backup use their existing locations.
 
@@ -78,6 +78,8 @@ A missing event in a bounded server response is **not proof of deletion**. After
 Mail.ru may include the selected calendar collection itself in a query response. The client requests resource types and ignores that collection's `calendar-data 404` only when a successful response explicitly identifies the exact selected address as both a collection and a calendar. Unreadable event resources still make the import partial. Withdrawn records can be opened from History in a read-only card without inventing a current time.
 
 Cancelling or explicitly marking an event as failed locally and then removing it in Mail.ru is an expected workflow. After a complete query confirms its absence in the loaded period, the retained record has no source warning. Its local status and failure attribution remain in the calendar, original plan, analytics and History; no actual work time is invented. Unfrozen records also retain this outcome. Source reappearance or cancellation never silently overwrites the chosen local status. Reverting to an unresolved status while the source remains missing restores the warning. Missing pending, completed, partial or moved events and source cancellations conflicting with a local completion still require review. The synchronization result, agenda, inspector and analytics use the same source-state rules.
+
+When the sync result reports outstanding warnings, click **Needs review** in the calendar or in **Settings → Mail.ru**. The list shows the date, event name, local status and reason for each warning in the connected calendar. Select an entry to open its event card. The list includes unresolved warnings across dates and is available from saved local data after restart.
 
 After importing a calendar, switching accounts/collections is blocked. The display time zone cannot be changed once schedule events exist. UTC/TZID values are converted on import; floating times use the selected zone.
 
@@ -238,6 +240,7 @@ Hosted runners still have Python installed, although the packaged child processe
 
 | Version | Main change |
 | --- | --- |
+| v1.7.0 | Open the individual Mail.ru events that need review |
 | v1.6.0 | Settings grouped by topic and a more compact, searchable history view |
 | v1.5.2 | Lavender backgrounds for fixed-plan days in both themes |
 | v1.5.1 | Switch the interface language immediately in Settings |

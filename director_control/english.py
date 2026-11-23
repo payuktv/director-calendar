@@ -642,9 +642,20 @@ MESSAGES = {
     "Не удалось начать обновление. Проверь настройки подключения.": (
         "Could not start the sync. Check your connection settings."
     ),
-    "Mail.ru обновлён {0}: новых {1}, изменено {2}, убрано из плана {3}, требуют проверки {4}.": (
-        "Mail.ru synced {0}: {1} new, {2} changed, {3} removed from the plan, {4} to review."
+    "Mail.ru обновлён {0}: новых {1}, изменено {2}, убрано из плана {3}.": (
+        "Mail.ru synced {0}: {1} new, {2} changed, {3} removed from the schedule."
     ),
+    "Требуют проверки · {0}": "Needs review · {0}",
+    "Показать события Mail.ru, требующие проверки": "Show Mail.ru events that need review",
+    "События Mail.ru, требующие проверки": "Mail.ru events that need review",
+    "Дата и время": "Date and time",
+    "Статус в календаре": "Local status",
+    "Причина проверки": "Reason for review",
+    "Нет в ответе Mail.ru": "Missing from the Mail.ru response",
+    "Событие могло быть перенесено за пределы загруженного периода Mail.ru.": (
+        "An event missing from the Mail.ru response may have moved outside the synced period."
+    ),
+    "Событий для проверки нет": "No events need review",
     (
         "Mail.ru загружен частично: новых {0}, изменено {1}; недоступных записей {2}. Прежние записи "
         "сохранены, исчезновения не проверялись. "

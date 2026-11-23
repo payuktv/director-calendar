@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 
 from director_control.backups import create_backup, restore_backup
+from director_control.mail_calendar import CalendarSnapshot, RemoteEvent
 from director_control.source_state import source_state
 from director_control.storage import Event, Store
 from tests.test_mail_calendar import event, parse
@@ -96,3 +97,39 @@ def test_cancelled_source_conflict_count_matches_analytics(tmp_path):
     assert store.apply_calendar_snapshot(changed)['missing'] == 1
     assert store.analytics_report('2026-10-22', 'day', only_tracked=False).source_warnings == 1
     assert store.get_event(original.id).status == 'done'
+
+
+def test_review_list_matches_sync_across_dates_and_distinguishes_duplicate_titles(tmp_path):
+    store = Store(tmp_path / 'db')
+    day = RemoteEvent('day', 'day', '', 'Совещание', '2099-11-01T00:00:00', '2099-11-02T00:00:00', all_day=True)
+    later = RemoteEvent('later', 'later', '', 'Совещание', '2099-11-10T11:00:00', '2099-11-10T12:00:00')
+    first = CalendarSnapshot('calendar-one', '2099-11-01T00:00:00', '2099-12-01T00:00:00', (later, day))
+    store.apply_calendar_snapshot(first)
+    day_id = store.daily_events('2099-11-01')[0].id
+    later_id = store.daily_events('2099-11-10')[0].id
+    store.update_event(day_id, note='Keep the local details')
+    store.update_event(later_id, status='done')
+    absent = replace(first, events=(replace(later, cancelled=True),))
+    assert store.apply_calendar_snapshot(replace(absent, unavailable=('unreadable resource',)))['missing'] == 1
+    assert [item.event.id for item in store.mail_review_items(first.calendar_key)] == [later_id]
+    assert store.apply_calendar_snapshot(absent)['missing'] == 2
+    other = replace(first, calendar_key='calendar-two', events=(replace(later, key='other', uid='other'),))
+    store.apply_calendar_snapshot(other)
+    other_id = next(e.id for e in store.daily_events('2099-11-10') if e.id != later_id)
+    store.update_event(other_id, note='Keep')
+    assert store.apply_calendar_snapshot(replace(other, events=()))['missing'] == 1
+
+    december = replace(first, start=first.end, end='2100-01-01T00:00:00', events=())
+    count = store.apply_calendar_snapshot(december)['missing']
+    items = store.mail_review_items(first.calendar_key)
+    assert count == store.mail_review_count(first.calendar_key) == len(items) == 2
+    assert [(item.event.id, item.state.code, item.all_day) for item in items] == [
+        (day_id, 'missing', True), (later_id, 'source_cancelled_conflict', False)]
+    assert all(item.event.title == 'Совещание' and item.state.warning for item in items)
+    assert [item.event.id for item in store.mail_review_items(other.calendar_key)] == [other_id]
+
+    store.update_event(day_id, status='cancelled')
+    assert [item.event.id for item in store.mail_review_items(first.calendar_key)] == [later_id]
+    assert store.apply_calendar_snapshot(first)['missing'] == store.mail_review_count(first.calendar_key) == 0
+    assert not store.mail_review_items(first.calendar_key)
+    assert store.mail_review_count(other.calendar_key) == 1
