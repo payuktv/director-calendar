@@ -267,9 +267,11 @@ def test_switch_updates_open_release_notes_and_preserves_download(live_window, m
     panel._result(update_check.parse_release(payload(data)))
     dialog = panel.dialog
     assert dialog.isVisible() and dialog.description.toPlainText() == 'Описание выпуска'
+    russian_state = dialog.eyebrow.text()
     choose(w, 'en')
     assert panel.dialog is dialog and dialog.isVisible()
     assert dialog.windowTitle() == 'Application update'
+    assert dialog.eyebrow.text() and dialog.eyebrow.text() != russian_state
     assert dialog.description.toPlainText() == 'English release notes' and dialog.confirm.text() == 'Download update'
     downloads = []
     preparer = panel.preparer
@@ -283,6 +285,7 @@ def test_switch_updates_open_release_notes_and_preserves_download(live_window, m
     assert panel.status.text() == 'Загружаем и проверяем версию 5.0.0…'
     panel.show_details()
     assert dialog.description.toPlainText() == 'Описание выпуска' and dialog.confirm.isHidden()
+    assert dialog.progress.isVisible() and dialog.progress.value() == 41
     dialog.reject()
 
 

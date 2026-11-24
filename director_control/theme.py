@@ -17,6 +17,7 @@ LIGHT = {
     "disabled_border": "#EEEFF5", "disabled_surface": "#FAFAFD", "primary_disabled": "#C5BDF4",
     "nav_text": "#75798E", "nav_hover": "#F6F5FC", "segment_text": "#86899C",
     "secondary_text": "#64697D",
+    "release_tint": "#E5DFFC",
     "segment_selected": "#5140BF", "segment_border": "#E5E1F7", "segments": "#EFEEF6",
     "danger": "#C45C70", "selection": "#DDD6FF", "focus_border": "#9C8DF3",
     "readonly_surface": "#F4F5F9", "readonly_text": "#8A8DA0", "table_alternate": "#FCFCFF",
@@ -44,6 +45,7 @@ DARK = {
     "disabled_border": "#343D50", "disabled_surface": "#242B39", "primary_disabled": "#4D446D",
     "nav_text": "#B0BBD0", "nav_hover": "#262D40", "segment_text": "#A1ADC2",
     "secondary_text": "#B0BBD0",
+    "release_tint": "#403452",
     "segment_selected": "#CEBFFF", "segment_border": "#554976", "segments": "#191F2C",
     "danger": "#F09AAC", "selection": "#524476", "focus_border": "#B5A5FF",
     "readonly_surface": "#252C3A", "readonly_text": "#95A1B7", "table_alternate": "#222A3A",
@@ -102,6 +104,29 @@ QPushButton#Danger { color: $danger; }
 QPushButton#ThemeToggle { text-align: left; padding: 10px 12px; }
 QPushButton#UpdateIndicator { background: $soft_accent; border: 1px solid $hover_border; padding: 4px; }
 QPushButton#UpdateIndicator:hover { background: $pressed; border-color: $focus_border; }
+QDialog#ReleaseDialog { background: $surface; }
+QFrame#ReleaseHero {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0.6, stop:0 $soft_accent, stop:1 $release_tint);
+    border: none; border-bottom: 1px solid $segment_border; }
+QLabel#ReleaseEyebrow { color: $segment_selected; font-size: 13px; font-weight: 650; }
+QLabel#ReleaseTitle { color: $text; font-size: 32px; font-weight: 700; letter-spacing: -0.8px; }
+QLabel#ReleaseMeta { color: $secondary_text; font-size: 12px; }
+QFrame#ReleaseBody { background: $surface; border: none; }
+QLabel#ReleaseSectionTitle { color: $text; font-size: 19px; font-weight: 650; }
+QTextEdit#ReleaseNotes { background: $surface; color: $text; font-size: 14px; border: 1px solid transparent;
+    padding: 0; selection-background-color: $selection; selection-color: $selection_text; }
+QTextEdit#ReleaseNotes:focus { border-color: $focus_border; border-radius: 5px; }
+QFrame#ReleaseFooter { background: $background; border: none; border-top: 1px solid $border; }
+QLabel#ReleaseState { color: $secondary_text; font-size: 12px; }
+QLabel#ReleaseState[attention="true"] { color: $text; font-weight: 600; }
+QLabel#ReleasePercent { color: $segment_selected; font-size: 13px; font-weight: 650; }
+QProgressBar#ReleaseProgress { background: $segment_border; border-radius: 3px; }
+QProgressBar#ReleaseProgress::chunk { background: $accent; border-radius: 3px; }
+QDialog#ReleaseDialog QPushButton { min-height: 18px; padding: 8px 17px; font-size: 13px; }
+QPushButton#ReleaseLater { background: transparent; border: 1px solid transparent; color: $secondary_text; }
+QPushButton#ReleaseLater:hover { background: $hover; color: $text; border-color: $hover_border; }
+QPushButton#ReleaseLater:focus { border: 1px solid $focus_border; color: $text; }
+QDialog#ReleaseDialog QPushButton#Primary:focus { border: 2px solid $segment_selected; padding: 7px 16px; }
 QPushButton#Link { color: $accent; background: transparent; border: none; text-align: left; padding-left: 0; }
 QTabWidget::pane { border: none; background: transparent; }
 QTabWidget#AnalyticsDetails QTabBar::tab { background: $segments; color: $segment_text; border: none; border-radius: 7px; padding: 9px 16px; margin: 0 5px 8px 0; }

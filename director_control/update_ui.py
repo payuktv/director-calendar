@@ -1,15 +1,18 @@
 """Prepare a stable Windows update in the background and restart on request."""
+from html import escape
+import re
 import sys
 
-from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QGroupBox, QHBoxLayout,
-                               QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout)
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Qt, QTimer, Signal
+from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFrame, QGroupBox, QHBoxLayout,
+                               QProgressBar, QPushButton, QTextEdit, QVBoxLayout, QWidget)
 
 from .widget_text import Message, diagnostic_message, localized, render
 from .i18n import tr
 from . import __version__
 from .inspector import plain_label, text_label
 from .package_update import WORKER_IDLE_SECONDS, install_root, packaged, pending_notes, pending_target, version_key
+from .release_art import ReleaseArtwork
 from .update_check import UpdateChecker, release_description
 
 
@@ -94,23 +97,77 @@ class UpdateDialog(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
+        self.setObjectName('ReleaseDialog')
         localized(self, windowTitle='Обновление приложения')
-        self.resize(520, 335)
+        self.resize(600, 418)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 20, 22, 18)
-        layout.setSpacing(12)
-        self.title = plain_label('', 'EventTitle')
-        layout.addWidget(self.title)
-        self.description = QPlainTextEdit()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        hero = QFrame()
+        hero.setObjectName('ReleaseHero')
+        header = QHBoxLayout(hero)
+        header.setContentsMargins(26, 18, 24, 18)
+        heading = QVBoxLayout()
+        heading.setSpacing(4)
+        self.eyebrow = plain_label('', 'ReleaseEyebrow')
+        self.title = plain_label('', 'ReleaseTitle')
+        self.metadata = plain_label('', 'ReleaseMeta')
+        self.metadata.setWordWrap(True)
+        heading.addStretch()
+        heading.addWidget(self.eyebrow)
+        heading.addWidget(self.title)
+        heading.addWidget(self.metadata)
+        heading.addStretch()
+        header.addLayout(heading, 1)
+        self.artwork = ReleaseArtwork(hero)
+        header.addWidget(self.artwork, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(hero)
+
+        body = QFrame()
+        body.setObjectName('ReleaseBody')
+        content = QVBoxLayout(body)
+        content.setContentsMargins(26, 18, 26, 12)
+        content.setSpacing(8)
+        content.addWidget(text_label('Что нового', 'ReleaseSectionTitle'))
+        self.description = QTextEdit()
+        self.description.setObjectName('ReleaseNotes')
         self.description.setReadOnly(True)
+        self.description.setFrameShape(QFrame.Shape.NoFrame)
+        self.description.setTabChangesFocus(True)
+        self.description.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.description.document().setDocumentMargin(0)
         localized(self.description, accessibleName='Описание изменений')
-        layout.addWidget(self.description, 1)
-        self.state = plain_label('', 'Muted')
-        self.state.setWordWrap(True)
-        layout.addWidget(self.state)
+        self._notes_source = None
+        content.addWidget(self.description, 1)
+        layout.addWidget(body, 1)
+
+        footer = QFrame()
+        footer.setObjectName('ReleaseFooter')
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(26, 13, 26, 15)
+        footer_layout.setSpacing(8)
+        self.progress_row = QWidget()
+        progress_layout = QHBoxLayout(self.progress_row)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        self.progress = QProgressBar()
+        self.progress.setObjectName('ReleaseProgress')
+        self.progress.setFixedHeight(6)
+        self.progress.setTextVisible(False)
+        localized(self.progress, accessibleName='Загрузка обновления')
+        self.percent = plain_label('', 'ReleasePercent')
+        self.progress.valueChanged.connect(lambda value: self.percent.setText(f'{value}%'))
+        self.progress.setValue(0)
+        progress_layout.addWidget(self.progress, 1)
+        progress_layout.addWidget(self.percent)
+        footer_layout.addWidget(self.progress_row)
         actions = QHBoxLayout()
-        actions.addStretch()
+        actions.setSpacing(8)
+        self.state = plain_label('', 'ReleaseState')
+        self.state.setWordWrap(True)
+        actions.addWidget(self.state, 1)
         self.later = localized(QPushButton(), text='Позже')
+        self.later.setObjectName('ReleaseLater')
         self.later.setDefault(True)
         self.later.clicked.connect(self.reject)
         actions.addWidget(self.later)
@@ -119,7 +176,34 @@ class UpdateDialog(QDialog):
         self.confirm.setAutoDefault(False)
         self.confirm.clicked.connect(self.accept)
         actions.addWidget(self.confirm)
-        layout.addLayout(actions)
+        footer_layout.addLayout(actions)
+        layout.addWidget(footer)
+
+    def set_notes(self, notes):
+        if self._notes_source == notes:
+            return
+        self._notes_source = notes
+        paragraphs = []
+        marker_width = self.description.fontMetrics().horizontalAdvance('• ')
+        for line in notes.splitlines():
+            if line:
+                # Release bodies supply text only. Build the limited styling locally.
+                content = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', escape(line))
+                indent = f'margin-left:{marker_width}px; text-indent:-{marker_width}px;' if line.startswith('• ') else ''
+                paragraphs.append(f'<p style="margin:0 0 9px 0; {indent}">{content}</p>')
+        self.description.setHtml(''.join(paragraphs))
+
+    def show_phase(self, phase):
+        labels = {'available': 'Доступно обновление', 'downloading': 'Загрузка обновления',
+                  'ready': 'Готово к установке', 'error': 'Требуется повторная загрузка'}
+        self.eyebrow.setText(tr(labels[phase]))
+        self.artwork.set_phase(phase)
+        self.progress_row.setVisible(phase == 'downloading')
+        attention = phase == 'error'
+        if self.state.property('attention') != attention:
+            self.state.setProperty('attention', attention)
+            self.state.style().unpolish(self.state)
+            self.state.style().polish(self.state)
 
 
 class UpdatePanel(QGroupBox):
@@ -216,25 +300,33 @@ class UpdatePanel(QGroupBox):
             hint = tr("Доступна версия {0}").format(version)
         self.indicator_changed.emit(hint)
         if self.dialog:
-            self.dialog.title.setText(hint)
-            notes = self.release.notes if self.release and self.release.version == version else release_description(self.ready_notes_body)
-            if self.dialog.description.toPlainText() != notes:
-                self.dialog.description.setPlainText(notes)
-            if ready:
-                state = tr('Загрузка завершена. Для установки перезапусти календарь.')
-            elif self.preparer.busy:
-                state = tr('Загрузка идёт в фоне. Календарём можно пользоваться.')
-            elif self.download_message:
-                state = render(self.download_message)
-            elif self.supported:
-                state = tr("Размер загрузки: {0:.0f} МБ.").format(self.release.package.size / 2**20)
-            else:
-                state = tr('Установка обновлений доступна в сборке для Windows.')
-            self.dialog.state.setText(state)
-            action = tr('Повторить загрузку') if self.download_message else tr('Скачать обновление')
-            self.dialog.confirm.setText(tr('Перезапустить и установить') if ready else action)
-            self.dialog.confirm.setVisible(self.supported and not self.preparer.busy)
-            self.dialog.later.setText(tr('Закрыть') if self.preparer.busy or not self.supported else tr('Позже'))
+            self._refresh_dialog(version, ready)
+
+    def _refresh_dialog(self, version, ready):
+        dialog = self.dialog
+        offer = self.release if self.release and self.release.version == version else None
+        dialog.title.setText(tr('Версия {0}').format(version))
+        metadata = tr('Сейчас установлена версия {0}').format(self.installed_version)
+        if offer and not ready and self.supported:
+            metadata += '   ·   ' + tr('{0:.0f} МБ').format(offer.package.size / 2**20)
+        dialog.metadata.setText(metadata)
+        dialog.set_notes(offer.notes if offer else release_description(self.ready_notes_body))
+        if self.preparer.busy:
+            phase, state = 'downloading', tr('Загрузка идёт в фоне. Календарём можно пользоваться.')
+        elif ready:
+            phase, state = 'ready', tr('Загрузка завершена. Для установки перезапусти календарь.')
+        elif self.download_message:
+            phase, state = 'error', render(self.download_message)
+        elif self.supported:
+            phase, state = 'available', tr('Во время загрузки можно продолжить работу.')
+        else:
+            phase, state = 'available', tr('Установка обновлений доступна в сборке для Windows.')
+        dialog.show_phase(phase)
+        dialog.state.setText(state)
+        action = tr('Повторить загрузку') if phase == 'error' else tr('Скачать обновление')
+        dialog.confirm.setText(tr('Перезапустить и установить') if ready else action)
+        dialog.confirm.setVisible(self.supported and not self.preparer.busy)
+        dialog.later.setText(tr('Закрыть') if self.preparer.busy or not self.supported else tr('Позже'))
 
     def start_automatic(self):
         if self.supported and self._read_pending():
@@ -304,6 +396,8 @@ class UpdatePanel(QGroupBox):
         if self.dialog is None:
             self.dialog = UpdateDialog(self.window())
             self.dialog.accepted.connect(self._confirmed)
+            self.progress.valueChanged.connect(self.dialog.progress.setValue)
+            self.dialog.progress.setValue(max(0, self.progress.value()))
         self.announced_version = self.offered_version
         self._refresh()
         self.dialog.show()

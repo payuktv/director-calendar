@@ -5,8 +5,10 @@ import os
 import pytest
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from director_control import update_check as updates
@@ -274,8 +276,11 @@ def test_startup_offer_later_manual_reopen_download_and_restart(app, monkeypatch
     checker.reply.feed(payload(data))
     assert panel.dialog.isVisible() and not prep.busy and not restarts
     assert '1.0.3' in panel.dialog.title.text() and hints[-1]
+    assert '1.0.2' in panel.dialog.metadata.text()
+    assert not panel.dialog.progress.isVisible()
     assert panel.dialog.description.toPlainText() == '• Итоги недели'
-    panel.dialog.later.click()
+    QTest.keyClick(panel.dialog, Qt.Key.Key_Return)
+    assert not panel.dialog.isVisible() and not prep.busy
     checker.manager.reply = Reply()
     panel._auto_check()
     checker.reply.feed(payload(data))
@@ -290,7 +295,10 @@ def test_startup_offer_later_manual_reopen_download_and_restart(app, monkeypatch
     prep.progress.emit(38)
     assert panel.progress.value() == 38
     panel.show_details()
-    assert panel.dialog.confirm.isHidden()
+    assert panel.dialog.confirm.isHidden() and panel.dialog.progress.isVisible()
+    assert panel.dialog.progress.value() == 38
+    prep.progress.emit(63)
+    assert panel.dialog.progress.value() == 63
     panel.dialog.later.click()
     target = tmp_path / 'v1.0.3' / 'DirectorCalendar.exe'
     monkeypatch.setattr(update_ui, 'pending_target', lambda *args: target)
@@ -299,13 +307,37 @@ def test_startup_offer_later_manual_reopen_download_and_restart(app, monkeypatch
     assert notices == ['1.0.3'] and not restarts and not panel.dialog.isVisible()
     panel.details_button.click()
     assert panel.dialog.confirm.text() == 'Перезапустить и установить'
-    panel.dialog.later.click()
-    assert not restarts
+    assert not panel.dialog.progress.isVisible()
+    QTest.keyClick(panel.dialog, Qt.Key.Key_Escape)
+    assert not panel.dialog.isVisible() and not restarts
     panel.show_details()
     panel.dialog.confirm.click()
     assert restarts == [True]
     panel.cancel()
     panel.close()
+
+
+def test_announcement_formats_highlights_and_keeps_html_in_notes_literal(app):
+    from director_control.update_ui import UpdatePanel
+    checker, _, _ = checker_for(Reply())
+    panel = UpdatePanel(checker=checker, preparer=Preparer(), installed_version='1.0.2', supported=True)
+    data = release_data()
+    data['body'] = ('# v1.0.3\n\nEnglish notes\n\n## Что нового\n\n'
+                    '- Нажми **«Требуют проверки»** рядом с результатом обновления.\n'
+                    '- Для заметки используй <b>текст</b>.\n\nSource commit: example')
+    try:
+        panel.check_button.click()
+        checker.reply.feed(payload(data))
+        notes = panel.dialog.description
+        assert notes.isReadOnly() and notes.accessibleName()
+        text = notes.toPlainText()
+        assert 'Нажми «Требуют проверки»' in text and '<b>текст</b>' in text
+        assert '**' not in text and 'English notes' not in text and 'Source commit:' not in text
+        highlight = notes.document().find('«Требуют проверки»')
+        assert not highlight.isNull() and highlight.charFormat().fontWeight() >= QFont.Weight.DemiBold
+    finally:
+        panel.cancel()
+        panel.close()
 
 
 def test_disabled_auto_checks_and_manual_retry(app, tmp_path, monkeypatch):
@@ -317,6 +349,7 @@ def test_disabled_auto_checks_and_manual_retry(app, tmp_path, monkeypatch):
     prep = Preparer()
     panel = update_ui.UpdatePanel(store=store, checker=checker, preparer=prep, installed_version='1.0.2', supported=True)
     monkeypatch.setattr(update_ui, 'pending_target', lambda *args: None)
+    panel.show()
     panel.start_automatic()
     assert not panel.automatic.isChecked() and not panel.startup.isActive() and not panel.daily.isActive()
     panel._auto_check()
@@ -332,6 +365,13 @@ def test_disabled_auto_checks_and_manual_retry(app, tmp_path, monkeypatch):
     assert panel.dialog.confirm.text() == 'Повторить загрузку'
     panel.dialog.confirm.click()
     assert prep.busy
+    prep.cancel()
+    error = 'Загрузка прервалась. Проверь подключение и попробуй снова.'
+    prep.failed.emit(error)
+    assert panel.dialog.isVisible() and panel.dialog.state.text() == error
+    assert not panel.dialog.progress.isVisible() and panel.dialog.confirm.text() == 'Повторить загрузку'
+    QTest.keyClick(panel.dialog, Qt.Key.Key_Return)
+    assert not prep.busy and not panel.dialog.isVisible()
     panel.automatic.setChecked(True)
     assert panel.daily.isActive() and store.get_setting('app_auto_updates') == '1'
     panel.cancel()
